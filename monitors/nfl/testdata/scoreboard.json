@@ -1,0 +1,151 @@
+{
+ "week": {
+  "number": 5
+ },
+ "events": [
+  {
+   "id": "401872980",
+   "date": "2026-10-09T00:15Z",
+   "name": "Tampa Bay Buccaneers at Dallas Cowboys",
+   "shortName": "TB @ DAL",
+   "competitions": [
+    {
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "16",
+       "team": {
+        "id": "6",
+        "abbreviation": "DAL",
+        "displayName": "Dallas Cowboys",
+        "shortDisplayName": "Cowboys"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "24",
+       "team": {
+        "id": "27",
+        "abbreviation": "TB",
+        "displayName": "Tampa Bay Buccaneers",
+        "shortDisplayName": "Buccaneers"
+       }
+      }
+     ],
+     "status": {
+      "type": {
+       "state": "post",
+       "shortDetail": "Final",
+       "completed": true
+      }
+     },
+     "broadcasts": [
+      {
+       "market": "national",
+       "names": [
+        "Prime Video"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401872990",
+   "date": "2026-10-11T17:00Z",
+   "name": "Chicago Bears at Green Bay Packers",
+   "shortName": "CHI @ GB",
+   "competitions": [
+    {
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "3",
+       "team": {
+        "id": "9",
+        "abbreviation": "GB",
+        "displayName": "Green Bay Packers",
+        "shortDisplayName": "Packers"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "7",
+       "team": {
+        "id": "3",
+        "abbreviation": "CHI",
+        "displayName": "Chicago Bears",
+        "shortDisplayName": "Bears"
+       }
+      }
+     ],
+     "status": {
+      "type": {
+       "state": "in",
+       "shortDetail": "7:42 - 2nd",
+       "completed": false
+      }
+     },
+     "situation": {
+      "downDistanceText": "2nd & 6 at GB 41"
+     },
+     "broadcasts": [
+      {
+       "market": "national",
+       "names": [
+        "Fox"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "401872981",
+   "date": "2026-10-11T13:30Z",
+   "name": "Philadelphia Eagles at Jacksonville Jaguars",
+   "shortName": "PHI VS JAX",
+   "competitions": [
+    {
+     "competitors": [
+      {
+       "homeAway": "home",
+       "score": "0",
+       "team": {
+        "id": "30",
+        "abbreviation": "JAX",
+        "displayName": "Jacksonville Jaguars",
+        "shortDisplayName": "Jaguars"
+       }
+      },
+      {
+       "homeAway": "away",
+       "score": "0",
+       "team": {
+        "id": "21",
+        "abbreviation": "PHI",
+        "displayName": "Philadelphia Eagles",
+        "shortDisplayName": "Eagles"
+       }
+      }
+     ],
+     "status": {
+      "type": {
+       "state": "pre",
+       "shortDetail": "10/11 - 9:30 AM EDT",
+       "completed": false
+      }
+     },
+     "broadcasts": [
+      {
+       "market": "national",
+       "names": [
+        "NFL Net"
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

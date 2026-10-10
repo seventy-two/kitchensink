@@ -1,0 +1,324 @@
+// Package nfl shows the week's NFL games from ESPN's scoreboard and
+// notifies kick-offs, scores and final results for followed teams.
+package nfl
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/seventy-two/kitchensink/monitor"
+)
+
+func init() {
+	monitor.Register("nfl", func(c json.RawMessage) (monitor.Monitor, error) { return New(c) })
+}
+
+const defaultScoreboardURL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
+
+// Config is the monitor's config.
+type Config struct {
+	// Teams are the abbreviations of followed teams, e.g. ["CHI", "GB"].
+	Teams []string `json:"teams"`
+	// Scores notifies every score in followed teams' games, not just
+	// kick-off and the result. It defaults to true.
+	Scores *bool `json:"scores"`
+	// AllFinals notifies the result of every game, followed or not.
+	AllFinals bool `json:"allFinals"`
+	// Timezone is the zone kick-off times are shown in. It defaults to the
+	// server's.
+	Timezone string `json:"timezone"`
+	// LiveInterval is how often to poll while a game is on. It defaults to
+	// one minute.
+	LiveInterval monitor.Duration `json:"liveInterval"`
+	// ScoreboardURL replaces ESPN's endpoint, for tests.
+	ScoreboardURL string `json:"scoreboardURL"`
+}
+
+// Monitor is the NFL monitor.
+type Monitor struct {
+	cfg    Config
+	teams  map[string]bool
+	scores bool
+	zone   *time.Location
+	live   time.Duration
+}
+
+// New builds the monitor from its JSON config.
+func New(raw json.RawMessage) (*Monitor, error) {
+	var c Config
+	if err := monitor.Decode(raw, &c); err != nil {
+		return nil, err
+	}
+	m := &Monitor{cfg: c, teams: map[string]bool{}, scores: true, zone: time.Local, live: time.Minute}
+	for _, t := range c.Teams {
+		m.teams[strings.ToUpper(t)] = true
+	}
+	if c.Scores != nil {
+		m.scores = *c.Scores
+	}
+	if c.Timezone != "" {
+		z, err := time.LoadLocation(c.Timezone)
+		if err != nil {
+			return nil, err
+		}
+		m.zone = z
+	}
+	if c.LiveInterval > 0 {
+		m.live = time.Duration(c.LiveInterval)
+	}
+	if m.cfg.ScoreboardURL == "" {
+		m.cfg.ScoreboardURL = defaultScoreboardURL
+	}
+	return m, nil
+}
+
+type scoreboard struct {
+	Week struct {
+		Number int `json:"number"`
+	} `json:"week"`
+	Events []struct {
+		ID           string    `json:"id"`
+		Date         espnTime  `json:"date"`
+		Competitions []contest `json:"competitions"`
+	} `json:"events"`
+}
+
+type contest struct {
+	Competitors []struct {
+		HomeAway string `json:"homeAway"`
+		Score    string `json:"score"`
+		Team     struct {
+			Abbreviation     string `json:"abbreviation"`
+			ShortDisplayName string `json:"shortDisplayName"`
+		} `json:"team"`
+	} `json:"competitors"`
+	Status struct {
+		Type struct {
+			State       string `json:"state"` // pre, in or post
+			ShortDetail string `json:"shortDetail"`
+		} `json:"type"`
+	} `json:"status"`
+	Situation *struct {
+		DownDistanceText string `json:"downDistanceText"`
+	} `json:"situation"`
+	Broadcasts []struct {
+		Names []string `json:"names"`
+	} `json:"broadcasts"`
+}
+
+// espnTime parses ESPN's dates, which leave out seconds: "2026-10-11T17:00Z".
+type espnTime struct{ time.Time }
+
+func (t *espnTime) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	v, err := time.Parse("2006-01-02T15:04Z07:00", s)
+	if err != nil {
+		v, err = time.Parse(time.RFC3339, s)
+	}
+	t.Time = v
+	return err
+}
+
+// game is one game, flattened.
+type game struct {
+	id                   string
+	kickoff              time.Time
+	state, detail        string
+	away, home           string // abbreviations
+	awayName, homeName   string
+	awayScore, homeScore string
+	broadcast            string
+}
+
+func (g game) score() string {
+	return fmt.Sprintf("%s %s – %s %s", g.away, g.awayScore, g.homeScore, g.home)
+}
+
+func (m *Monitor) fetch(ctx context.Context, client *http.Client) (int, []game, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.cfg.ScoreboardURL, nil)
+	if err != nil {
+		return 0, nil, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, nil, fmt.Errorf("scoreboard returned %s", resp.Status)
+	}
+	var sb scoreboard
+	if err := json.NewDecoder(resp.Body).Decode(&sb); err != nil {
+		return 0, nil, fmt.Errorf("decoding scoreboard: %w", err)
+	}
+	var games []game
+	for _, e := range sb.Events {
+		if len(e.Competitions) == 0 {
+			continue
+		}
+		c := e.Competitions[0]
+		g := game{id: e.ID, kickoff: e.Date.Time, state: c.Status.Type.State, detail: c.Status.Type.ShortDetail}
+		for _, t := range c.Competitors {
+			if t.HomeAway == "home" {
+				g.home, g.homeName, g.homeScore = t.Team.Abbreviation, t.Team.ShortDisplayName, t.Score
+			} else {
+				g.away, g.awayName, g.awayScore = t.Team.Abbreviation, t.Team.ShortDisplayName, t.Score
+			}
+		}
+		if c.Situation != nil && c.Situation.DownDistanceText != "" && g.state == "in" {
+			g.detail += " · " + c.Situation.DownDistanceText
+		}
+		for _, b := range c.Broadcasts {
+			if len(b.Names) > 0 {
+				g.broadcast = b.Names[0]
+				break
+			}
+		}
+		games = append(games, g)
+	}
+	return sb.Week.Number, games, nil
+}
+
+func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, error) {
+	week, games, err := m.fetch(ctx, env.HTTP)
+	if err != nil {
+		return monitor.Result{}, err
+	}
+	var events []monitor.Event
+	for _, g := range games {
+		events = append(events, m.gameEvents(g)...)
+	}
+	return monitor.Result{
+		Blocks: []monitor.Block{m.table(week, games)},
+		Events: events,
+		Next:   m.next(games, env.Now()),
+	}, nil
+}
+
+func (m *Monitor) followed(g game) bool {
+	return m.teams[g.away] || m.teams[g.home]
+}
+
+// gameEvents describes the state of a game as events. Keys are stable for
+// each state and score, so the engine only passes on what's changed.
+func (m *Monitor) gameEvents(g game) []monitor.Event {
+	url := "https://www.espn.com/nfl/game/_/gameId/" + g.id
+	followed := m.followed(g)
+	switch g.state {
+	case "in":
+		if !followed {
+			return nil
+		}
+		events := []monitor.Event{{
+			Key:   "kickoff:" + g.id,
+			Title: fmt.Sprintf("%s @ %s has kicked off", g.away, g.home),
+			Body:  g.broadcast,
+			URL:   url,
+		}}
+		if m.scores && (g.awayScore != "0" || g.homeScore != "0") {
+			events = append(events, monitor.Event{
+				Key:   fmt.Sprintf("score:%s:%s-%s", g.id, g.awayScore, g.homeScore),
+				Title: g.score(),
+				Body:  g.detail,
+				URL:   url,
+			})
+		}
+		return events
+	case "post":
+		if !followed && !m.cfg.AllFinals {
+			return nil
+		}
+		prio := monitor.PriorityLow
+		if followed {
+			prio = monitor.PriorityHigh
+		}
+		return []monitor.Event{{
+			Key:      "final:" + g.id,
+			Title:    "Final: " + g.score(),
+			Body:     g.detail,
+			URL:      url,
+			Priority: prio,
+		}}
+	}
+	return nil
+}
+
+// next polls every LiveInterval while a game is on or due to start, and
+// otherwise wakes in time for the next kick-off.
+func (m *Monitor) next(games []game, now time.Time) time.Duration {
+	var soonest time.Duration
+	for _, g := range games {
+		switch {
+		case g.state == "in", g.state == "pre" && !g.kickoff.After(now):
+			return m.live
+		case g.state == "pre":
+			if d := g.kickoff.Sub(now); soonest == 0 || d < soonest {
+				soonest = d
+			}
+		}
+	}
+	// The engine only uses this if it's sooner than the interval.
+	return soonest
+}
+
+func (m *Monitor) table(week int, games []game) monitor.Block {
+	b := monitor.Block{
+		Type:  monitor.BlockTable,
+		Title: fmt.Sprintf("Week %d", week),
+		Columns: []monitor.Column{
+			{Title: "Away"},
+			{Title: "", Align: monitor.AlignRight},
+			{Title: "Home"},
+			{Title: "", Align: monitor.AlignRight},
+			{Title: "Status"},
+		},
+		Rows: [][]monitor.Cell{},
+	}
+	for _, g := range games {
+		team := func(abbr, name string) monitor.Cell {
+			c := monitor.Cell{Text: name}
+			if m.teams[abbr] {
+				c.Tone = monitor.ToneAccent
+			}
+			return c
+		}
+		awayScore, homeScore := g.awayScore, g.homeScore
+		status := monitor.Cell{Text: g.detail, URL: "https://www.espn.com/nfl/game/_/gameId/" + g.id}
+		switch g.state {
+		case "pre":
+			awayScore, homeScore = "", ""
+			status.Text = g.kickoff.In(m.zone).Format("Mon 15:04")
+			if g.broadcast != "" {
+				status.Text += " " + g.broadcast
+			}
+			status.Tone = monitor.ToneMuted
+		case "in":
+			status.Tone = monitor.ToneWarn
+		}
+		awayCell, homeCell := monitor.Cell{Text: awayScore}, monitor.Cell{Text: homeScore}
+		if g.state == "post" {
+			if n(awayScore) > n(homeScore) {
+				awayCell.Tone = monitor.ToneGood
+			} else if n(homeScore) > n(awayScore) {
+				homeCell.Tone = monitor.ToneGood
+			}
+		}
+		b.Rows = append(b.Rows, []monitor.Cell{
+			team(g.away, g.awayName), awayCell, team(g.home, g.homeName), homeCell, status,
+		})
+	}
+	return b
+}
+
+func n(s string) int {
+	var v int
+	fmt.Sscan(s, &v)
+	return v
+}

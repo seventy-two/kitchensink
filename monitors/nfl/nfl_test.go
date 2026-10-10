@@ -1,0 +1,87 @@
+package nfl
+
+import (
+	"context"
+	"encoding/json"
+	"testing"
+	"time"
+
+	"github.com/seventy-two/kitchensink/monitor"
+	"github.com/seventy-two/kitchensink/monitor/monitortest"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// The fixture has TB @ DAL final 24–16, CHI @ GB live at 7–3, and PHI @ JAX
+// (a London game) kicking off at 13:30 UTC on Sunday.
+var now = time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+
+func newMonitor(t *testing.T, srv string, extra map[string]any) *Monitor {
+	t.Helper()
+	cfg := map[string]any{"scoreboardURL": srv, "timezone": "Europe/London"}
+	for k, v := range extra {
+		cfg[k] = v
+	}
+	raw, _ := json.Marshal(cfg)
+	m, err := New(raw)
+	require.NoError(t, err)
+	return m
+}
+
+func TestTable(t *testing.T) {
+	srv := monitortest.Serve(t, "testdata/scoreboard.json")
+	m := newMonitor(t, srv.URL, map[string]any{"teams": []string{"chi"}})
+	res, err := m.Poll(context.Background(), monitortest.Env(now))
+	require.NoError(t, err)
+
+	require.Len(t, res.Blocks, 1)
+	b := res.Blocks[0]
+	assert.Equal(t, "Week 5", b.Title)
+	require.Len(t, b.Rows, 3)
+	text := func(r []monitor.Cell) []string {
+		var out []string
+		for _, c := range r {
+			out = append(out, c.Text)
+		}
+		return out
+	}
+	assert.Equal(t, []string{"Buccaneers", "24", "Cowboys", "16", "Final"}, text(b.Rows[0]))
+	assert.Equal(t, monitor.ToneGood, b.Rows[0][1].Tone, "the winner's score is highlighted")
+	assert.Equal(t, []string{"Bears", "7", "Packers", "3", "7:42 - 2nd · 2nd & 6 at GB 41"}, text(b.Rows[1]))
+	assert.Equal(t, monitor.ToneAccent, b.Rows[1][0].Tone, "followed teams are highlighted")
+	assert.Equal(t, []string{"Eagles", "", "Jaguars", "", "Sun 14:30 NFL Net"}, text(b.Rows[2]), "kick-off in UK time")
+}
+
+func TestEventsForFollowedTeams(t *testing.T) {
+	srv := monitortest.Serve(t, "testdata/scoreboard.json")
+
+	m := newMonitor(t, srv.URL, map[string]any{"teams": []string{"CHI", "TB"}})
+	res, err := m.Poll(context.Background(), monitortest.Env(now))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"final:401872980", "kickoff:401872990", "score:401872990:7-3"}, monitortest.Keys(res.Events))
+	assert.Equal(t, "Final: TB 24 – 16 DAL", res.Events[0].Title)
+	assert.Equal(t, monitor.PriorityHigh, res.Events[0].Priority)
+	assert.Equal(t, "CHI 7 – 3 GB", res.Events[2].Title)
+
+	m = newMonitor(t, srv.URL, map[string]any{"teams": []string{"CHI"}, "scores": false})
+	res, err = m.Poll(context.Background(), monitortest.Env(now))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"kickoff:401872990"}, monitortest.Keys(res.Events))
+
+	m = newMonitor(t, srv.URL, map[string]any{"allFinals": true})
+	res, err = m.Poll(context.Background(), monitortest.Env(now))
+	require.NoError(t, err)
+	require.Equal(t, []string{"final:401872980"}, monitortest.Keys(res.Events))
+	assert.Equal(t, monitor.PriorityLow, res.Events[0].Priority, "unfollowed results are low priority")
+}
+
+func TestNext(t *testing.T) {
+	m := newMonitor(t, "http://unused", map[string]any{"liveInterval": "2m"})
+	kickoff := now.Add(90 * time.Minute)
+	pre := game{state: "pre", kickoff: kickoff}
+
+	assert.Equal(t, 2*time.Minute, m.next([]game{pre, {state: "in"}}, now), "live game")
+	assert.Equal(t, 90*time.Minute, m.next([]game{{state: "post"}, pre}, now), "wake for kick-off")
+	assert.Equal(t, 2*time.Minute, m.next([]game{pre}, kickoff.Add(time.Minute)), "kick-off passed but ESPN still says pre")
+	assert.Zero(t, m.next([]game{{state: "post"}}, now), "nothing coming: keep the interval")
+}

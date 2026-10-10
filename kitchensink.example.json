@@ -1,0 +1,42 @@
+{
+  "listen": "127.0.0.1:6030",
+  "database": "kitchensink.db",
+  "token": "${KITCHENSINK_TOKEN}",
+  "notifiers": [],
+  "monitors": [
+    {
+      "type": "stocks",
+      "title": "Watchlist",
+      "interval": "5m",
+      "config": {
+        "symbols": ["AAPL", "TSLA", ".FTSE", "BTC.CM="],
+        "movePct": 5,
+        "targets": { "AAPL": { "above": 350, "below": 300 } }
+      }
+    },
+    {
+      "type": "nfl",
+      "title": "NFL",
+      "interval": "30m",
+      "config": { "teams": ["CHI"], "timezone": "Europe/London" }
+    },
+    {
+      "type": "weather",
+      "title": "Weather",
+      "interval": "15m",
+      "config": {
+        "place": "London",
+        "latitude": 51.5072,
+        "longitude": -0.1276,
+        "timezone": "Europe/London",
+        "frostC": 0
+      }
+    },
+    {
+      "type": "autotrader",
+      "title": "AutoTrader",
+      "interval": "2h",
+      "config": { "searchURL": "${AUTOTRADER_SEARCH_URL}" }
+    }
+  ]
+}

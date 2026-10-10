@@ -1,0 +1,10 @@
+# Binaries
+/kitchensink
+*.exe
+# Local config and data
+kitchensink.json
+*.db
+*.db-*
+*.log
+# Windows client build output
+clients/windows/build/

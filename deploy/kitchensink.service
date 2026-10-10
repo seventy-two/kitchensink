@@ -1,0 +1,15 @@
+[Unit]
+Description=kitchensink monitors
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/kitchensink
+ExecStart=/opt/kitchensink/kitchensink -config /opt/kitchensink/kitchensink.json
+# Values the config refers to as ${NAME}.
+EnvironmentFile=/opt/kitchensink/kitchensink.env
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

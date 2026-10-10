@@ -1,0 +1,139 @@
+# kitchensink
+
+A small self-hosted service that keeps an eye on things for you (stock
+prices, NFL games, the weather, car adverts) and tells your devices when
+something happens. Clients get a live dashboard of everything being watched
+and a notification for each event.
+
+- **Server**: Go, one binary, SQLite. Runs the monitors on their intervals,
+  keeps an event log and serves an HTTP API with a live
+  [server-sent events](https://html.spec.whatwg.org/multipage/server-sent-events.html)
+  stream.
+- **Windows dashboard**: native C++ (Win32, Dear ImGui), in `clients/windows`.
+- Optional **ntfy** notifier, for phones without a kitchensink client.
+
+## Monitors
+
+| Type | Source | Notifies |
+| --- | --- | --- |
+| `stocks` | CNBC quotes | a symbol's daily move passing each multiple of `movePct`; a price crossing a target |
+| `nfl` | ESPN scoreboard | kick-off, scores and results for followed teams; optionally every result |
+| `weather` | [Open-Meteo](https://open-meteo.com) (no key needed) | rain due within the hour, frost, strong gusts |
+| `autotrader` | AutoTrader UK search | newly listed cars |
+
+Each monitor also returns a dashboard panel, polls on its own interval and
+can ask to be polled sooner (the NFL monitor polls every minute while a
+followed game is on).
+
+## Running it
+
+```sh
+go build ./cmd/kitchensink
+cp kitchensink.example.json kitchensink.json   # then edit it
+KITCHENSINK_TOKEN=$(openssl rand -hex 32) ./kitchensink -config kitchensink.json
+```
+
+`-check` validates the config and exits. `deploy/` has an example systemd
+unit and nginx location.
+
+### Config
+
+```json
+{
+  "listen": "127.0.0.1:6030",
+  "database": "kitchensink.db",
+  "token": "${KITCHENSINK_TOKEN}",
+  "notifiers": [{ "type": "ntfy", "config": { "url": "https://ntfy.sh/your-topic" } }],
+  "monitors": [
+    { "type": "stocks", "interval": "5m", "config": { "symbols": ["AAPL", ".FTSE"], "movePct": 5 } }
+  ]
+}
+```
+
+- `${NAME}` is replaced with an environment variable, so tokens and
+  personal details (postcodes, search URLs) can stay out of the file.
+- Each monitor takes `id` (defaults to the type; needed only when you use a
+  type twice), `title`, `interval` (default `5m`), `disabled` and its own
+  `config`. Unknown fields are errors, so typos show up at startup.
+- See `kitchensink.example.json` and each monitor's `Config` type for the
+  options.
+
+## API
+
+Every `/api` request needs `Authorization: Bearer <token>`.
+
+| Request | Returns |
+| --- | --- |
+| `GET /api/monitors` | `{"monitors": [Snapshot...]}`, in config order |
+| `GET /api/events?since=ID&limit=N` | `{"events": [Event...]}` after `since`, or the latest `limit` (default 100) |
+| `GET /api/stream?since=ID&heartbeat=S` | a server-sent events stream (below) |
+| `POST /api/monitors/{id}/refresh` | 202; the monitor polls now |
+| `GET /healthz` | `ok`, no token needed |
+
+The stream sends:
+
+1. `event` for each event after `since` (or the `Last-Event-ID` header),
+   so a client that reconnects catches up on what it missed;
+2. `snapshot` for every monitor;
+3. `ready`, with `{"last": ID}`;
+4. then `event` and `snapshot` messages as they happen, and a `: ping`
+   comment every `heartbeat` seconds (default 30, 5 to 900).
+
+Each `event` message carries the event's ID as its SSE `id`.
+
+**Event**: `id`, `monitor`, `key`, `time`, `title`, `body`, `url`, `image`,
+`priority` (`low`, `normal`, `high`) and `quiet`. Quiet events go in the
+history but shouldn't raise a notification.
+
+**Snapshot**: `monitor`, `kind`, `title`, `updated`, `error` (the last
+poll's, with the last good blocks kept) and `blocks`. Every monitor is
+drawn from the same few block types, so clients need no per-monitor code:
+
+| Block `type` | Fields |
+| --- | --- |
+| `stats` | `stats`: `label`, `value`, `detail`, `tone`, `series` (a sparkline) |
+| `table` | `columns` (`title`, `align`) and `rows` of cells (`text`, `tone`, `url`) |
+| `list` | `items`: `title`, `subtitle`, `detail`, `url`, `image`, `tone` |
+| `text` | `text` |
+
+Tones are `good`, `bad`, `warn`, `muted`, `accent`, or empty for plain text.
+
+## Writing a monitor
+
+A monitor is a package that implements `monitor.Monitor` and registers a
+factory:
+
+```go
+package mything
+
+func init() {
+	monitor.Register("mything", func(raw json.RawMessage) (monitor.Monitor, error) {
+		var c Config
+		if err := monitor.Decode(raw, &c); err != nil {
+			return nil, err
+		}
+		return &Monitor{cfg: c}, nil
+	})
+}
+
+func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, error) {
+	// Fetch with env.HTTP; keep anything between polls in env.State.
+	return monitor.Result{
+		Blocks: []monitor.Block{{Type: monitor.BlockText, Text: "hello"}},
+		Events: []monitor.Event{{Key: "something-2026-10-10", Title: "Something happened"}},
+	}, nil
+}
+```
+
+Then import it from `cmd/kitchensink/main.go` and add it to the config.
+
+- Event keys only need to be unique within the monitor. The engine drops
+  any key it has seen before, so a monitor can report the current state on
+  every poll without repeating notifications.
+- `monitor/monitortest` has an in-memory `State`, an `Env` with a fixed
+  clock and a server that replays saved API responses; the bundled
+  monitors' tests show how to use them.
+
+## Licence
+
+MIT
