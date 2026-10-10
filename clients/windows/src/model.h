@@ -1,0 +1,107 @@
+// The dashboard's data: snapshots and events as the server sends them, and
+// the state built from the stream. Nothing here depends on Windows, so it's
+// unit tested on any platform.
+#pragma once
+
+#include <cstdint>
+#include <deque>
+#include <set>
+#include <string>
+#include <vector>
+
+#include <nlohmann/json.hpp>
+
+namespace ks {
+
+enum class Tone { None, Good, Bad, Warn, Muted, Accent };
+enum class Align { Left, Right, Center };
+enum class Priority { Low, Normal, High };
+
+struct Stat {
+    std::string label, value, detail;
+    Tone tone = Tone::None;
+    std::vector<float> series;
+};
+
+struct Column {
+    std::string title;
+    Align align = Align::Left;
+};
+
+struct Cell {
+    std::string text, url;
+    Tone tone = Tone::None;
+};
+
+struct Item {
+    std::string title, subtitle, detail, url, image;
+    Tone tone = Tone::None;
+};
+
+// Block is one part of a monitor's panel. Only the fields for its type are
+// set: "stats", "table", "list" or "text".
+struct Block {
+    std::string type, title, text;
+    std::vector<Stat> stats;
+    std::vector<Column> columns;
+    std::vector<std::vector<Cell>> rows;
+    std::vector<Item> items;
+};
+
+struct Snapshot {
+    std::string monitor, kind, title, error;
+    int64_t updated = 0;  // Unix seconds; 0 if never polled
+    std::vector<Block> blocks;
+};
+
+struct Event {
+    int64_t id = 0;
+    std::string monitor, key, title, body, url, image;
+    int64_t time = 0;  // Unix seconds
+    Priority priority = Priority::Normal;
+    bool quiet = false;
+};
+
+Snapshot ParseSnapshot(const nlohmann::json& j);
+Event ParseEvent(const nlohmann::json& j);
+Priority ParsePriority(const std::string& s);
+
+// ParseTime parses an RFC 3339 time such as "2026-10-10T19:02:00.69+01:00"
+// into Unix seconds. It returns 0 if the time can't be parsed.
+int64_t ParseTime(const std::string& s);
+
+// Ago describes how long before now a time was: "just now", "4m ago",
+// "2h ago", "3d ago".
+std::string Ago(int64_t then, int64_t now);
+
+// Model is the dashboard's state, built from the stream.
+class Model {
+public:
+    // BeginSync is called when the stream connects. Monitors the server
+    // doesn't send a snapshot for before EndSync are dropped, so ones
+    // removed from the config disappear.
+    void BeginSync();
+    void EndSync();
+
+    void ApplySnapshot(Snapshot s);
+    // AddEvent stores an event and reports whether it was new.
+    bool AddEvent(Event e);
+
+    const std::vector<Snapshot>& Snapshots() const { return snapshots_; }
+    // Events are newest first.
+    const std::deque<Event>& Events() const { return events_; }
+    int64_t LastEventID() const { return lastEventID_; }
+    // TitleOf returns a monitor's title, or its ID if it has no snapshot.
+    std::string TitleOf(const std::string& monitor) const;
+
+    static constexpr size_t kMaxEvents = 300;
+
+private:
+    std::vector<Snapshot> snapshots_;
+    std::deque<Event> events_;
+    int64_t lastEventID_ = 0;
+    bool syncing_ = false;
+    std::set<std::string> synced_;
+};
+
+}  // namespace ks
