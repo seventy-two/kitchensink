@@ -166,3 +166,10 @@ func TestParse(t *testing.T) {
 	_, ok = parsePct("")
 	assert.False(t, ok)
 }
+
+func TestFormatPct(t *testing.T) {
+	assert.Equal(t, "+5.48%", formatPct("+5.4756%"))
+	assert.Equal(t, "-1.06%", formatPct("-1.06%"))
+	assert.Equal(t, "UNCH", formatPct("UNCH"))
+	assert.Equal(t, "", formatPct(""))
+}

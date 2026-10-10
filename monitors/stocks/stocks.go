@@ -186,7 +186,7 @@ func (m *Monitor) moveEvents(q quote) []monitor.Event {
 	}
 	return []monitor.Event{{
 		Key:      fmt.Sprintf("move:%s:%s:%s%g", q.Symbol, day, dir, level),
-		Title:    fmt.Sprintf("%s %s %s today", displayName(q), dir, strings.TrimLeft(q.ChangePct, "+-")),
+		Title:    fmt.Sprintf("%s %s %.2f%% today", displayName(q), dir, math.Abs(pct)),
 		Body:     fmt.Sprintf("%s %s (%s)", q.Last, q.CurrencyCode, q.Change),
 		URL:      "https://www.cnbc.com/quotes/" + url.PathEscape(q.Symbol),
 		Priority: prio,
@@ -214,7 +214,7 @@ func (m *Monitor) targetEvents(q quote, crossed map[string]bool, now int64) []mo
 			events = append(events, monitor.Event{
 				Key:      fmt.Sprintf("target:%s:%d", key, now),
 				Title:    fmt.Sprintf("%s is %s %g", displayName(q), dir, *level),
-				Body:     fmt.Sprintf("%s %s (%s today)", q.Last, q.CurrencyCode, q.ChangePct),
+				Body:     fmt.Sprintf("%s %s (%s today)", q.Last, q.CurrencyCode, formatPct(q.ChangePct)),
 				URL:      "https://www.cnbc.com/quotes/" + url.PathEscape(q.Symbol),
 				Priority: monitor.PriorityHigh,
 			})
@@ -254,14 +254,14 @@ func table(quotes []quote) monitor.Block {
 		tone := toneOf(q.ChangePct)
 		ext := monitor.Cell{Tone: monitor.ToneMuted}
 		if x := q.Extended; x != nil && x.Last != "" && q.MarketStatus != "REG_MKT" {
-			ext = monitor.Cell{Text: x.Last + " " + x.ChangePct, Tone: toneOf(x.ChangePct)}
+			ext = monitor.Cell{Text: x.Last + " " + formatPct(x.ChangePct), Tone: toneOf(x.ChangePct)}
 		}
 		b.Rows = append(b.Rows, []monitor.Cell{
 			{Text: q.Symbol, URL: "https://www.cnbc.com/quotes/" + url.PathEscape(q.Symbol)},
 			{Text: q.Name, Tone: monitor.ToneMuted},
 			{Text: q.Last},
 			{Text: q.Change, Tone: tone},
-			{Text: q.ChangePct, Tone: tone},
+			{Text: formatPct(q.ChangePct), Tone: tone},
 			ext,
 		})
 	}
@@ -285,6 +285,16 @@ func toneOf(pct string) monitor.Tone {
 	default:
 		return monitor.ToneBad
 	}
+}
+
+// formatPct rounds a CNBC percentage to two places, since small caps
+// come with as many as four ("+5.4756%").
+func formatPct(s string) string {
+	pct, ok := parsePct(s)
+	if !ok || !strings.ContainsAny(s, "0123456789") {
+		return s
+	}
+	return fmt.Sprintf("%+.2f%%", pct)
 }
 
 // parsePct parses "+1.06%"; CNBC writes no change as "UNCH".
