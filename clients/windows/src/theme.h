@@ -17,6 +17,7 @@ struct Fonts {
     ImFont* heading = nullptr;
     ImFont* big = nullptr;
     ImFont* title = nullptr;
+    ImFont* chrome = nullptr;  // window button glyphs, at the size Windows uses
 };
 
 // Icon code points in Segoe Fluent Icons / Segoe MDL2 Assets, merged into
@@ -25,6 +26,10 @@ namespace icon {
 inline constexpr const char* Refresh = "\xEE\x9C\xAC";   // U+E72C
 inline constexpr const char* Settings = "\xEE\x9C\x93";  // U+E713
 inline constexpr const char* Warning = "\xEE\x9E\xBA";   // U+E7BA
+inline constexpr const char* Minimise = "\xEE\xA4\xA1";  // U+E921
+inline constexpr const char* Maximise = "\xEE\xA4\xA2";  // U+E922
+inline constexpr const char* Restore = "\xEE\xA4\xA3";   // U+E923
+inline constexpr const char* Close = "\xEE\xA2\xBB";     // U+E8BB
 }  // namespace icon
 
 // SystemUsesDarkTheme reads the Windows "app mode" setting.

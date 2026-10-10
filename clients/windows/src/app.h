@@ -1,6 +1,7 @@
 // The dashboard: state from the stream, drawn with ImGui.
 #pragma once
 
+#include <windows.h>
 #include <d3d11.h>
 
 #include <functional>
@@ -11,6 +12,7 @@
 
 #include "config.h"
 #include "images.h"
+#include "imgui_internal.h"
 #include "model.h"
 #include "net.h"
 #include "theme.h"
@@ -20,8 +22,9 @@ namespace ks {
 class App {
 public:
     // wake is called from background threads when there's something new.
-    // notify shows a Windows notification.
-    App(ID3D11Device* device, std::function<void()> wake,
+    // notify shows a Windows notification. The header doubles as hwnd's
+    // title bar, with its own window buttons.
+    App(HWND hwnd, ID3D11Device* device, std::function<void()> wake,
         std::function<void(const std::string& title, const std::string& body)> notify);
     ~App();
 
@@ -44,12 +47,17 @@ public:
     // or INFINITE if none are waiting.
     unsigned long FlushIn() const;
 
+    // InCaption reports whether a point in client pixels is on the title
+    // bar but not on one of its buttons, so dragging there moves the window.
+    bool InCaption(float x, float y) const;
+
     // Busy reports whether the UI needs frames drawn continuously, e.g.
     // while typing.
     bool Busy() const { return busy_; }
 
 private:
     void header();
+    float windowButtons();
     void cards(float width);
     void card(const Snapshot& s, float width);
     void block(const Block& b);
@@ -60,6 +68,12 @@ private:
     void empty(const char* message, bool settingsButton);
     void settings();
     void openSettings();
+
+    HWND hwnd_;
+    float captionH_ = 0;
+    std::vector<ImRect> noDrag_;  // title bar buttons, from the last frame
+    int hoverButton_ = -1;        // window button under the mouse, for its tooltip
+    double hoverSince_ = 0;
 
     float scale_ = 1;
     bool dark_ = true;

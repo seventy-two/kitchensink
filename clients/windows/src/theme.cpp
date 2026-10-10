@@ -155,6 +155,12 @@ Fonts LoadFonts(float scale) {
     f.heading = add(semibold, 16, false);
     f.big = add(semibold, 26, false);
     f.title = add(semibold, 20, false);
+    if (exists(iconFont)) {
+        ImFontConfig cfg;
+        cfg.OversampleH = 2;
+        f.chrome = io.Fonts->AddFontFromFileTTF(iconFont.c_str(), 10 * scale, &cfg, icons);
+    }
+    if (!f.chrome) f.chrome = f.caption;
     io.FontDefault = f.body;
     return f;
 }

@@ -4,6 +4,7 @@
 #include <shellapi.h>
 
 #include <algorithm>
+#include <cmath>
 #include <ctime>
 
 #include "imgui.h"
@@ -80,9 +81,10 @@ void OpenURL(const std::string& url) {
     ShellExecuteW(nullptr, L"open", Widen(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }
 
-App::App(ID3D11Device* device, std::function<void()> wake,
+App::App(HWND hwnd, ID3D11Device* device, std::function<void()> wake,
          std::function<void(const std::string&, const std::string&)> notify)
-    : config_(LoadConfig()),
+    : hwnd_(hwnd),
+      config_(LoadConfig()),
       client_(std::make_unique<Client>(wake)),
       images_(std::make_unique<ImageCache>(device, wake)),
       notify_(std::move(notify)) {
@@ -176,7 +178,6 @@ void App::Frame() {
                      ImGuiWindowFlags_NoScrollWithMouse);
 
     header();
-    ImGui::Dummy(ImVec2(0, 4 * scale_));
 
     float gap = 16 * scale_;
     float avail = ImGui::GetContentRegionAvail().x;
@@ -205,12 +206,35 @@ void App::Frame() {
     ImGui::End();
 }
 
+bool App::InCaption(float x, float y) const {
+    if (y >= captionH_) return false;
+    for (const ImRect& r : noDrag_)
+        if (r.Contains(ImVec2(x, y))) return false;
+    return true;
+}
+
+// header draws the title bar: the name and connection status on the left,
+// settings and the window buttons on the right. Everything else on it
+// drags the window (see InCaption).
 void App::header() {
     const Palette& p = Colours();
-    float top = ImGui::GetCursorPosY();
+    ImVec2 origin = ImGui::GetWindowPos();
+    float width = ImGui::GetWindowWidth();
+    captionH_ = 44 * scale_;
+    noDrag_.clear();
+
+    // Windows 10 draws no border along the top of a window without a
+    // standard title bar, so draw one to match the sides.
+    if (!IsZoomed(hwnd_))
+        ImGui::GetWindowDrawList()->AddLine(origin, ImVec2(origin.x + width, origin.y), u32(p.border));
+
+    float left = windowButtons();
+
     ImGui::PushFont(fonts_.title);
+    float titleH = ImGui::GetTextLineHeight();
+    float mid = captionH_ / 2;
+    ImGui::SetCursorPos(ImVec2(ImGui::GetStyle().WindowPadding.x, mid - titleH / 2));
     ImGui::TextUnformatted("kitchensink");
-    float titleH = ImGui::GetItemRectSize().y;
     ImGui::PopFont();
 
     ConnState state = client_->State();
@@ -231,22 +255,92 @@ void App::header() {
     ImGui::SameLine(0, 16 * scale_);
     ImGui::PushFont(fonts_.caption);
     float textH = ImGui::GetTextLineHeight();
-    ImGui::SetCursorPosY(top + (titleH - textH) / 2);
+    ImGui::SetCursorPosY(mid - textH / 2);
     ImVec2 pos = ImGui::GetCursorScreenPos();
     float r = 4 * scale_;
     ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(pos.x + r, pos.y + textH / 2), r, u32(dot));
     ImGui::Dummy(ImVec2(r * 2, textH));
     ImGui::SameLine(0, 6 * scale_);
-    ImGui::SetCursorPosY(top + (titleH - textH) / 2);
+    ImGui::SetCursorPosY(mid - textH / 2);
+    // Long errors stop short of the buttons.
+    ImGui::PushClipRect(ImGui::GetCursorScreenPos(), ImVec2(left - 48 * scale_, origin.y + captionH_), true);
     mutedText(status);
+    ImGui::PopClipRect();
     ImGui::PopFont();
 
     float bw = ImGui::CalcTextSize(icon::Settings).x + ImGui::GetStyle().FramePadding.x * 2;
-    ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - bw);
-    ImGui::SetCursorPosY(top + (titleH - ImGui::GetFrameHeight()) / 2);
-    if (ImGui::Button(icon::Settings)) openSettings();
+    ImGui::SameLine();
+    ImGui::SetCursorPos(ImVec2(left - origin.x - 8 * scale_ - bw, mid - ImGui::GetFrameHeight() / 2));
+    // Flat until hovered, like the window buttons beside it.
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+    bool open = ImGui::Button(icon::Settings);
+    ImGui::PopStyleColor();
+    if (open) openSettings();
+    noDrag_.push_back(ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax()));
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Settings");
-    ImGui::SetCursorPosY(top + std::max(titleH, ImGui::GetFrameHeight()) + ImGui::GetStyle().ItemSpacing.y);
+    ImGui::SetCursorPosY(captionH_ + 8 * scale_);
+}
+
+// windowButtons draws minimise, maximise and close in the top-right corner,
+// like Windows' own, and returns where they start. They read the mouse
+// directly rather than being ImGui items, so they keep working while the
+// settings dialog is open.
+float App::windowButtons() {
+    const Palette& p = Colours();
+    const ImGuiIO& io = ImGui::GetIO();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImVec2 origin = ImGui::GetWindowPos();
+    float w = std::round(46 * scale_), h = captionH_;
+    float x = origin.x + ImGui::GetWindowWidth();
+    bool active = GetForegroundWindow() == hwnd_;
+    bool zoomed = IsZoomed(hwnd_);
+
+    ImGui::PushClipRect(origin, ImVec2(x, origin.y + h), false);
+    ImGui::PushFont(fonts_.chrome);
+    enum { Minimise, Maximise, Close };
+    const char* glyphs[] = {icon::Minimise, zoomed ? icon::Restore : icon::Maximise, icon::Close};
+    const char* tips[] = {"Minimise", zoomed ? "Restore down" : "Maximise", "Close (keeps running in the tray)"};
+    x -= 3 * w;
+    float left = x;
+    bool anyHovered = false;
+    for (int i = 0; i < 3; i++, x += w) {
+        ImRect r(ImVec2(x, origin.y), ImVec2(x + w, origin.y + h));
+        noDrag_.push_back(r);
+        bool hovered = r.Contains(io.MousePos);
+        bool held = hovered && io.MouseDown[0] && r.Contains(io.MouseClickedPos[0]);
+        bool clicked = hovered && io.MouseReleased[0] && r.Contains(io.MouseClickedPos[0]);
+
+        ImVec4 glyph = active ? p.text : p.muted;
+        if (i == Close && (hovered || held)) {
+            dl->AddRectFilled(r.Min, r.Max, held ? IM_COL32(0xC4, 0x2B, 0x1C, 0xE6) : IM_COL32(0xC4, 0x2B, 0x1C, 0xFF));
+            glyph = ImVec4(1, 1, 1, 1);
+        } else if (hovered) {
+            float a = (held ? 0.12f : 0.07f) * (dark_ ? 1.0f : 0.8f);
+            dl->AddRectFilled(r.Min, r.Max, dark_ ? u32(ImVec4(1, 1, 1, a)) : u32(ImVec4(0, 0, 0, a)));
+            glyph = p.text;
+        }
+        ImVec2 size = ImGui::CalcTextSize(glyphs[i]);
+        dl->AddText(ImVec2(std::floor(x + (w - size.x) / 2), std::floor(origin.y + (h - size.y) / 2)), u32(glyph),
+                    glyphs[i]);
+        if (hovered) {
+            if (hoverButton_ != i) hoverButton_ = i, hoverSince_ = ImGui::GetTime();
+            if (!io.MouseDown[0] && ImGui::GetTime() - hoverSince_ > 0.6) {
+                ImGui::PushFont(fonts_.body);
+                ImGui::SetTooltip("%s", tips[i]);
+                ImGui::PopFont();
+            }
+            anyHovered = true;
+        }
+        if (clicked) {
+            if (i == Minimise) ShowWindow(hwnd_, SW_MINIMIZE);
+            if (i == Maximise) ShowWindow(hwnd_, zoomed ? SW_RESTORE : SW_MAXIMIZE);
+            if (i == Close) PostMessageW(hwnd_, WM_CLOSE, 0, 0);
+        }
+    }
+    if (!anyHovered) hoverButton_ = -1;
+    ImGui::PopFont();
+    ImGui::PopClipRect();
+    return left;
 }
 
 void App::empty(const char* message, bool settingsButton) {

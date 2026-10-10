@@ -5,6 +5,7 @@
 #include <d3d11.h>
 #include <dwmapi.h>
 #include <shellapi.h>
+#include <windowsx.h>
 
 #include <algorithm>
 #include <memory>
@@ -152,6 +153,30 @@ void trayMenu() {
     }
 }
 
+// hitTest finds what part of the window a point is over. The standard
+// resize borders on the sides and bottom stay; the top one sits inside the
+// title bar the app draws.
+LRESULT hitTest(HWND h, WPARAM wParam, LPARAM lParam) {
+    LRESULT hit = DefWindowProcW(h, WM_NCHITTEST, wParam, lParam);
+    if (hit != HTCLIENT) return hit;
+    POINT pt{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+    ScreenToClient(h, &pt);
+    if (!IsZoomed(h)) {
+        UINT dpi = GetDpiForWindow(h);
+        int band = GetSystemMetricsForDpi(SM_CYFRAME, dpi);
+        if (pt.y < band) {
+            RECT rc;
+            GetClientRect(h, &rc);
+            int corner = band + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi) * 2;
+            if (pt.x < corner) return HTTOPLEFT;
+            if (pt.x >= rc.right - corner) return HTTOPRIGHT;
+            return HTTOP;
+        }
+    }
+    if (app && app->InCaption(float(pt.x), float(pt.y))) return HTCAPTION;
+    return HTCLIENT;
+}
+
 LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (ImGui_ImplWin32_WndProcHandler(h, msg, wParam, lParam)) return true;
     if (msg == taskbarCreated && taskbarCreated) {
@@ -159,6 +184,20 @@ LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
     }
     switch (msg) {
+    case WM_NCCALCSIZE:
+        if (wParam) {
+            // Keep the standard frame except the title bar, so the window
+            // still resizes, snaps and has a shadow like any other.
+            auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam);
+            RECT before = params->rgrc[0];
+            DefWindowProcW(h, msg, wParam, lParam);
+            // A maximised window hangs over the screen edges by its frame
+            // width, so the top needs the same inset as the sides.
+            params->rgrc[0].top = before.top + (IsZoomed(h) ? params->rgrc[0].left - before.left : 0);
+            return 0;
+        }
+        break;
+    case WM_NCHITTEST: return hitTest(h, wParam, lParam);
     case WM_SIZE:
         if (wParam != SIZE_MINIMIZED) {
             resizeW = LOWORD(lParam);
@@ -244,6 +283,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR cmdLine, int) {
     float scale = ImGui_ImplWin32_GetDpiScaleForMonitor(MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY));
     hwnd = CreateWindowExW(0, kClassName, L"kitchensink", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
                            int(1360 * scale), int(860 * scale), nullptr, nullptr, instance, nullptr);
+    // Recalculate the frame now WM_NCCALCSIZE has removed the title bar.
+    SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
     taskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
     if (!createDevice()) {
         MessageBoxW(nullptr, L"Couldn't start Direct3D 11.", L"kitchensink", MB_ICONERROR);
@@ -259,7 +300,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR cmdLine, int) {
     ImGui_ImplDX11_Init(device, context);
 
     app = std::make_unique<ks::App>(
-        device, [] { PostMessageW(hwnd, WM_APP_WAKE, 0, 0); }, showNotification);
+        hwnd, device, [] { PostMessageW(hwnd, WM_APP_WAKE, 0, 0); }, showNotification);
     app->SetScale(ImGui_ImplWin32_GetDpiScaleForHwnd(hwnd));
     applyTheme();
     addTrayIcon();

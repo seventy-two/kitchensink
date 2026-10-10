@@ -11,6 +11,8 @@ result is a single `kitchensink.exe` with nothing to install.
 - Keeps the server's event stream open, reconnects with backoff, and
   catches up on events missed while offline. A burst of events becomes one
   notification.
+- Draws its own title bar, which keeps Windows' resizing, snapping, shadow
+  and double-click to maximise.
 - Closing the window keeps it running in the tray; **Quit** is in the tray
   icon's menu. It can start with Windows (minimised to the tray).
 - Follows the Windows light or dark app theme (set `KITCHENSINK_THEME` to
