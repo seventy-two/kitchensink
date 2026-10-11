@@ -98,9 +98,9 @@ func TestSummary(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, monitor.SummaryChips, res.SummaryStyle)
 	assert.Equal(t, []monitor.Stat{
-		{Label: "PHI @ JAX", Value: "14:30"},
-		{Label: "CHI @ GB", Value: "7–3", Tone: monitor.ToneAccent},
-	}, res.Summary)
+		{Label: "PHI\n@\nJAX", Value: "14:30", Detail: "NFL Net"},
+		{Label: "CHI\n@\nGB", Value: "7–3", Detail: "2nd 7:42", Tone: monitor.ToneAccent},
+	}, res.Summary, "teams stacked; time and channel, or score and clock")
 	res, err = newMonitor(t, srv.URL, nil).Poll(context.Background(), monitortest.Env(now))
 	require.NoError(t, err)
 	assert.Equal(t, monitor.ToneWarn, res.Summary[1].Tone, "live, not followed")
@@ -110,7 +110,7 @@ func TestSummary(t *testing.T) {
 	res, err = newMonitor(t, srv.URL, nil).Poll(context.Background(), monitortest.Env(tuesday))
 	require.NoError(t, err)
 	assert.Equal(t, monitor.SummaryChips, res.SummaryStyle)
-	assert.Equal(t, []string{"CHI @ GB"}, []string{res.Summary[0].Label})
+	assert.Equal(t, "CHI\n@\nGB", res.Summary[0].Label)
 
 	// Without games today: the followed teams' games this week.
 	body, err := os.ReadFile("testdata/scoreboard.json")
@@ -121,4 +121,10 @@ func TestSummary(t *testing.T) {
 	assert.Equal(t, monitor.SummaryTiles, res.SummaryStyle)
 	require.Len(t, res.Summary, 3)
 	assert.Equal(t, monitor.Stat{Label: "TB @ DAL", Value: "24–16", Detail: "Final", Tone: monitor.ToneBad}, res.Summary[0], "a followed team's loss")
+}
+
+func TestClock(t *testing.T) {
+	assert.Equal(t, "2nd 7:42", clock("7:42 - 2nd · 2nd & 6 at GB 41"))
+	assert.Equal(t, "4th 0:12", clock("0:12 - 4th"))
+	assert.Equal(t, "Halftime", clock("Halftime"))
 }

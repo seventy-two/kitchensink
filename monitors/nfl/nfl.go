@@ -334,9 +334,11 @@ var newYork = func() *time.Location {
 	return l
 }()
 
-// today is a chip for each of today's games, in kick-off order: the
-// kick-off time until it starts, then the score. Followed teams' games are
-// highlighted, and live ones marked. It's nil on a day without games.
+// today is a chip for each of today's games, in kick-off order: the teams
+// stacked ("PHI", "@", "JAX") to keep chips narrow, then the kick-off time
+// and channel until it starts, the score and clock while it's on, and the
+// final score. Followed teams' games are highlighted, and live ones
+// marked. It's nil on a day without games.
 func (m *Monitor) today(games []game, now time.Time) ([]monitor.Stat, monitor.SummaryStyle) {
 	day := now.In(newYork).Format("2006-01-02")
 	var todays []game
@@ -351,13 +353,16 @@ func (m *Monitor) today(games []game, now time.Time) ([]monitor.Stat, monitor.Su
 	sort.SliceStable(todays, func(i, j int) bool { return todays[i].kickoff.Before(todays[j].kickoff) })
 	var out []monitor.Stat
 	for _, g := range todays {
-		s := monitor.Stat{Label: g.away + " @ " + g.home, Value: g.awayScore + "–" + g.homeScore}
+		s := monitor.Stat{Label: g.away + "\n@\n" + g.home, Value: g.awayScore + "–" + g.homeScore}
 		switch g.state {
 		case "pre":
 			s.Value = g.kickoff.In(m.zone).Format("15:04")
+			s.Detail = g.broadcast
 		case "in":
+			s.Detail = clock(g.detail)
 			s.Tone = monitor.ToneWarn
 		case "post":
+			s.Detail = "Final"
 			s.Tone = monitor.ToneMuted
 		}
 		if m.followed(g) {
@@ -366,6 +371,16 @@ func (m *Monitor) today(games []game, now time.Time) ([]monitor.Stat, monitor.Su
 		out = append(out, s)
 	}
 	return out, monitor.SummaryChips
+}
+
+// clock shortens a live game's status for a chip: "7:42 - 2nd · 2nd & 6
+// at GB 41" becomes "2nd 7:42"; others, such as "Halftime", stay.
+func clock(detail string) string {
+	status, _, _ := strings.Cut(detail, " · ")
+	if t, quarter, ok := strings.Cut(status, " - "); ok {
+		return quarter + " " + t
+	}
+	return status
 }
 
 // summary is the followed teams' games this week: the score once they've
