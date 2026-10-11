@@ -5,6 +5,20 @@
   "notifiers": [],
   "monitors": [
     {
+      "type": "calendar",
+      "title": "Calendar",
+      "interval": "15m",
+      "config": {
+        "calendars": [
+          { "name": "Work", "url": "${WORK_CALENDAR_URL}", "tone": "accent" },
+          { "name": "Personal", "url": "${PERSONAL_CALENDAR_URL}", "tone": "good" }
+        ],
+        "timezone": "Europe/London",
+        "days": 7,
+        "remindMinutes": 10
+      }
+    },
+    {
       "type": "stocks",
       "title": "Watchlist",
       "interval": "5m",

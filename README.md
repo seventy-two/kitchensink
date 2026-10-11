@@ -1,7 +1,7 @@
 # kitchensink
 
 A small self-hosted service that keeps an eye on things for you (stock
-prices, NFL games, the weather, car adverts) and tells your devices when
+prices, NFL games, the weather, car adverts, your calendars) and tells your devices when
 something happens. Clients get a live dashboard of everything being watched
 and a notification for each event.
 
@@ -20,10 +20,24 @@ and a notification for each event.
 | `nfl` | ESPN scoreboard | kick-off, scores and results for followed teams; optionally every result |
 | `weather` | [Open-Meteo](https://open-meteo.com) (no key needed) | rain due within the hour, frost, strong gusts |
 | `autotrader` | AutoTrader UK search | newly listed cars |
+| `calendar` | iCalendar (ICS) feeds, e.g. Google or Outlook | each timed event, `remindMinutes` (default 10) before it starts |
 
 Each monitor also returns a dashboard panel, polls on its own interval and
 can ask to be polled sooner (the NFL monitor polls every minute while a
 followed game is on).
+
+### Calendars
+
+The `calendar` monitor merges any number of ICS feeds into one view of the
+next `days` days, one table per day, and links each event's Teams, Meet or
+Zoom call. Recurring events, exceptions and moved instances are handled.
+Each feed's address is a secret, so put it in the environment:
+
+- **Google Calendar**: Settings → the calendar → *Integrate calendar* →
+  *Secret address in iCal format*.
+- **Outlook / Microsoft 365**: Settings → Calendar → *Shared calendars* →
+  *Publish a calendar*, with *Can view all details*, then copy the ICS link.
+  Some work accounts don't allow publishing.
 
 ## Running it
 
