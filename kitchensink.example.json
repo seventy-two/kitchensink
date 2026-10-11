@@ -24,6 +24,7 @@
       "interval": "5m",
       "config": {
         "symbols": ["AAPL", "TSLA", ".FTSE", "BTC.CM="],
+        "holdings": ["AAPL", "TSLA"],
         "movePct": 5,
         "targets": { "AAPL": { "above": 350, "below": 300 } }
       }

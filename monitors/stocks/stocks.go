@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -27,6 +28,10 @@ const defaultQuoteURL = "https://quote.cnbc.com/quote-html-webservice/restQuote/
 type Config struct {
 	// Symbols are CNBC symbols, e.g. "AAPL", ".FTSE", "BTC.CM=".
 	Symbols []string `json:"symbols"`
+	// Holdings are the symbols you hold, largest first. They lead the
+	// table in this order, highlighted, and make up the summary in place
+	// of the biggest movers. Any not in Symbols are watched too.
+	Holdings []string `json:"holdings"`
 	// MovePct notifies each time a symbol's daily move passes another
 	// multiple of it, so 5 notifies at 5%, 10%, 15%... either way. 0 turns
 	// move alerts off. It defaults to 5.
@@ -47,6 +52,7 @@ type Target struct {
 type Monitor struct {
 	cfg     Config
 	movePct float64
+	rank    map[string]int // holding symbol, upper case, to its place
 }
 
 // New builds the monitor from its JSON config.
@@ -55,13 +61,24 @@ func New(raw json.RawMessage) (*Monitor, error) {
 	if err := monitor.Decode(raw, &c); err != nil {
 		return nil, err
 	}
+	rank := map[string]int{}
+	for i, h := range c.Holdings {
+		h = strings.ToUpper(strings.TrimSpace(h))
+		if _, dup := rank[h]; dup {
+			continue
+		}
+		rank[h] = i
+		if !slices.ContainsFunc(c.Symbols, func(s string) bool { return strings.EqualFold(s, h) }) {
+			c.Symbols = append(c.Symbols, h)
+		}
+	}
 	if len(c.Symbols) == 0 {
 		return nil, fmt.Errorf("stocks needs at least one symbol")
 	}
 	if c.QuoteURL == "" {
 		c.QuoteURL = defaultQuoteURL
 	}
-	m := &Monitor{cfg: c, movePct: 5}
+	m := &Monitor{cfg: c, movePct: 5, rank: rank}
 	if c.MovePct != nil {
 		m.movePct = *c.MovePct
 	}
@@ -155,25 +172,44 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		return monitor.Result{}, err
 	}
 
-	return monitor.Result{Blocks: []monitor.Block{table(quotes)}, Summary: summary(quotes), Events: events}, nil
+	return monitor.Result{Blocks: []monitor.Block{m.table(quotes)}, Summary: m.summary(quotes), Events: events}, nil
 }
 
 // moversLen is how many symbols the summary shows.
 const moversLen = 4
 
-// summary is the biggest movers today, either way.
-func summary(quotes []quote) []monitor.Stat {
-	sorted := append([]quote(nil), quotes...)
-	sort.SliceStable(sorted, func(i, j int) bool {
-		a, _ := parsePct(sorted[i].ChangePct)
-		b, _ := parsePct(sorted[j].ChangePct)
-		return math.Abs(a) > math.Abs(b)
-	})
+// summary is your holdings, largest first, or without any the biggest
+// movers today, either way.
+func (m *Monitor) summary(quotes []quote) []monitor.Stat {
+	var picked []quote
+	if len(m.rank) > 0 {
+		for _, q := range quotes {
+			if m.held(q) {
+				picked = append(picked, q)
+			}
+		}
+		sort.SliceStable(picked, func(i, j int) bool {
+			return m.rank[strings.ToUpper(picked[i].Symbol)] < m.rank[strings.ToUpper(picked[j].Symbol)]
+		})
+	} else {
+		picked = append([]quote(nil), quotes...)
+		sort.SliceStable(picked, func(i, j int) bool {
+			a, _ := parsePct(picked[i].ChangePct)
+			b, _ := parsePct(picked[j].ChangePct)
+			return math.Abs(a) > math.Abs(b)
+		})
+		picked = picked[:min(moversLen, len(picked))]
+	}
 	var out []monitor.Stat
-	for _, q := range sorted[:min(moversLen, len(sorted))] {
+	for _, q := range picked {
 		out = append(out, monitor.Stat{Label: displayName(q), Value: formatPct(q.ChangePct), Detail: q.Last, Tone: toneOf(q.ChangePct)})
 	}
 	return out
+}
+
+func (m *Monitor) held(q quote) bool {
+	_, ok := m.rank[strings.ToUpper(q.Symbol)]
+	return ok
 }
 
 // moveEvents notifies for each multiple of movePct the day's move has
@@ -248,10 +284,18 @@ func (m *Monitor) targetEvents(q quote, crossed map[string]bool, now int64) []mo
 	return events
 }
 
-// table lists the quotes, biggest risers first.
-func table(quotes []quote) monitor.Block {
+// table lists your holdings, largest first, then the other quotes,
+// biggest risers first.
+func (m *Monitor) table(quotes []quote) monitor.Block {
 	sorted := append([]quote(nil), quotes...)
 	sort.SliceStable(sorted, func(i, j int) bool {
+		hi, hj := m.held(sorted[i]), m.held(sorted[j])
+		switch {
+		case hi && hj:
+			return m.rank[strings.ToUpper(sorted[i].Symbol)] < m.rank[strings.ToUpper(sorted[j].Symbol)]
+		case hi != hj:
+			return hi
+		}
 		a, _ := parsePct(sorted[i].ChangePct)
 		b, _ := parsePct(sorted[j].ChangePct)
 		return a > b
@@ -274,8 +318,12 @@ func table(quotes []quote) monitor.Block {
 		if x := q.Extended; x != nil && x.Last != "" && q.MarketStatus != "REG_MKT" {
 			ext = monitor.Cell{Text: x.Last + " " + formatPct(x.ChangePct), Tone: toneOf(x.ChangePct)}
 		}
+		symbol := monitor.Cell{Text: q.Symbol, URL: "https://www.cnbc.com/quotes/" + url.PathEscape(q.Symbol)}
+		if m.held(q) {
+			symbol.Tone = monitor.ToneAccent
+		}
 		b.Rows = append(b.Rows, []monitor.Cell{
-			{Text: q.Symbol, URL: "https://www.cnbc.com/quotes/" + url.PathEscape(q.Symbol)},
+			symbol,
 			{Text: q.Name, Tone: monitor.ToneMuted},
 			{Text: q.Last},
 			{Text: q.Change, Tone: tone},

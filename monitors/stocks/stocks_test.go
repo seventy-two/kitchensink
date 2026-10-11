@@ -187,3 +187,25 @@ func TestSummary(t *testing.T) {
 	assert.Equal(t, monitor.ToneBad, res.Summary[1].Tone)
 	assert.Equal(t, "336.64", res.Summary[1].Detail)
 }
+
+func TestHoldings(t *testing.T) {
+	srv := monitortest.Serve(t, "testdata/quotes.json")
+	m := newMonitor(t, srv.URL, map[string]any{"symbols": []string{"AAPL", "TSLA"}, "holdings": []string{".FTSE", "aapl", "NVDA"}})
+	res, err := m.Poll(context.Background(), monitortest.Env(now))
+	require.NoError(t, err)
+
+	var order []string
+	for _, r := range res.Blocks[0].Rows {
+		order = append(order, r[0].Text)
+	}
+	assert.Equal(t, []string{".FTSE", "AAPL", "TSLA", "BTC.CM="}, order, "holdings first, largest first, then the biggest risers")
+	assert.Equal(t, monitor.ToneAccent, res.Blocks[0].Rows[0][0].Tone, "holdings highlighted")
+	assert.Equal(t, monitor.ToneNone, res.Blocks[0].Rows[2][0].Tone)
+
+	var summary []string
+	for _, s := range res.Summary {
+		summary = append(summary, s.Label)
+	}
+	assert.Equal(t, []string{"FTSE 100", "AAPL"}, summary, "the holdings, in order, not the biggest movers")
+	assert.Contains(t, srv.Requests()[0].Query, "NVDA", "holdings are watched even when not in symbols")
+}

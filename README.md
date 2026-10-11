@@ -16,7 +16,7 @@ and a notification for each event.
 
 | Type | Source | Notifies |
 | --- | --- | --- |
-| `stocks` | CNBC quotes | a symbol's daily move passing each multiple of `movePct`; a price crossing a target |
+| `stocks` | CNBC quotes; `holdings` (largest first) lead the table and make up the summary | a symbol's daily move passing each multiple of `movePct`; a price crossing a target |
 | `nfl` | ESPN scoreboard | kick-off, scores and results for followed teams; optionally every result |
 | `weather` | [Open-Meteo](https://open-meteo.com) (no key needed) | rain due within the hour, frost, strong gusts |
 | `autotrader` | AutoTrader UK search | newly listed cars |
