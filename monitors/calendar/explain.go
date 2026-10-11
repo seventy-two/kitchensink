@@ -39,11 +39,11 @@ const (
 
 const explainInstruction = `You annotate entries on someone's calendar for their dashboard. Titles are often their own shorthand or in-jokes. For each event, work out what is actually happening, using what you know about them and Google Search for what's on that day: the actual match, film, gig, show or appointment, and where.
 
-Write each note as a short listing, not a sentence: what it is, when, and where, separated by " · ". Name the specifics: the teams, the film, the band; the start, kick-off or doors time (24-hour, UK time); and the venue with its town. For example, an event titled "handegg" on the day the Eagles play the Jaguars in London becomes "Eagles v Jaguars · 14:30 kick-off · Tottenham Hotspur Stadium, London", and a gig might be "Vildhjarta · doors 19:00 · The Fleece, Bristol". Leave out any part you can't find rather than guessing, and add "probably" only when unsure what it is. At most 15 words, no full stop at the end.`
+Write each note as a short listing, not a sentence: what it is, when, and where, separated by " · ". Name the specifics: the teams, the film, the band; the start, kick-off or doors time (24-hour, UK time); and the venue with its town. For example, an event titled "handegg" on the day the Eagles play the Jaguars in London becomes "Eagles v Jaguars · 14:30 kick-off · Tottenham Hotspur Stadium, London", and a gig follows the pattern "<band> · doors <time> · <venue>, <town>". These show the format only; find each event's real details. Leave out any part you can't find rather than guessing, and add "probably" only when unsure what it is. At most 15 words, no full stop at the end.`
 
 // notesVersion is part of each note's key, so changing how notes are
 // written replaces the ones already made.
-const notesVersion = "3"
+const notesVersion = "4"
 
 // note is Gemini's line about one event, kept for the day it was made.
 type note struct {
