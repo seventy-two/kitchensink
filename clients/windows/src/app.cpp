@@ -579,7 +579,10 @@ void App::compactCards(float width) {
     }
     ImGui::End();
 
-    float minBody = 64 * scale_;  // about three table rows
+    // A panel only takes the space left over if it shows something useful
+    // there: a table's header and four rows. Otherwise it stays a row.
+    const ImGuiStyle& st = ImGui::GetStyle();
+    float minBody = 5 * (ImGui::GetTextLineHeight() + st.CellPadding.y * 2);
     Fit fit = FitPanels(panels, height, gap, minBody);
     for (size_t i = 0; i < snaps.size(); i++) {
         bool clicked = false;
@@ -842,19 +845,20 @@ void App::dragDrop() {
 // summary lays stats out as tiles of label, value and detail, flowing onto
 // more lines when they don't fit in width.
 // chips lays stats out as small blocks filled with their tone's colour,
-// the label above the value, all one width so they line up, flowing onto
-// more lines when they don't fit in width.
+// the label above the value and any detail below, all one width so they
+// line up, flowing onto more lines when they don't fit in width.
 void App::chips(const std::vector<Stat>& stats, float width) {
     const Palette& p = Colours();
     ImDrawList* dl = ImGui::GetWindowDrawList();
     ImVec2 pad(8 * scale_, 4 * scale_);
     float gap = 4 * scale_;
 
-    // One width for all: the widest label or value.
+    // One width for all: the widest label, value or detail.
+    bool details = std::any_of(stats.begin(), stats.end(), [](const Stat& s) { return !s.detail.empty(); });
     float w = 0;
     for (const Stat& s : stats) {
         ImGui::PushFont(fonts_.caption);
-        w = std::max(w, ImGui::CalcTextSize(s.label.c_str()).x);
+        w = std::max({w, ImGui::CalcTextSize(s.label.c_str()).x, ImGui::CalcTextSize(s.detail.c_str()).x});
         ImGui::PopFont();
         ImGui::PushFont(fonts_.heading);
         w = std::max(w, ImGui::CalcTextSize(s.value.c_str()).x);
@@ -867,7 +871,7 @@ void App::chips(const std::vector<Stat>& stats, float width) {
     ImGui::PushFont(fonts_.heading);
     float valueH = ImGui::GetTextLineHeight();
     ImGui::PopFont();
-    float h = pad.y * 2 + labelH + valueH;
+    float h = pad.y * 2 + labelH + valueH + (details ? labelH : 0);
 
     ImVec2 origin = ImGui::GetCursorScreenPos();
     int perRow = std::max(1, int((width + gap) / (w + gap)));
@@ -886,6 +890,12 @@ void App::chips(const std::vector<Stat>& stats, float width) {
         ImGui::PushFont(fonts_.heading);
         ImGui::TextColored(coloured ? tone : p.text, "%s", fit(s.value, w - pad.x * 2).c_str());
         ImGui::PopFont();
+        if (!s.detail.empty()) {
+            ImGui::SetCursorScreenPos(ImVec2(a.x + pad.x, a.y + pad.y + labelH + valueH));
+            ImGui::PushFont(fonts_.caption);
+            ImGui::TextColored(p.muted, "%s", fit(s.detail, w - pad.x * 2).c_str());
+            ImGui::PopFont();
+        }
         // The block itself, for the group's size.
         ImGui::SetCursorScreenPos(a);
         ImGui::Dummy(ImVec2(w, h));
