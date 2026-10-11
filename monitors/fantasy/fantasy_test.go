@@ -280,3 +280,16 @@ func TestConfig(t *testing.T) {
 	_, err = New(json.RawMessage(`{"espn": [{"leagueId": "1"}]}`))
 	assert.Error(t, err, "needs the swid")
 }
+
+func TestPenaltiesDontCount(t *testing.T) {
+	var p play
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"id": "1", "type": {"text": "Penalty"}, "statYardage": 90, "shortText": "Josh Cameron Yd Kickoff Return",
+		"participants": [{"type": "returner", "athlete": {"$ref": ".../athletes/42?lang=en"}}]
+	}`), &p))
+	players := map[string]owned{"42": {Name: "Josh Cameron", Team: "JAX", Leagues: []string{"Work"}}}
+	assert.Empty(t, classify(p, "PHI", players, nil, 20))
+	p.Scoring = true
+	p.Type.Text = "Kickoff Return Touchdown"
+	assert.Len(t, classify(p, "PHI", players, nil, 20), 1, "the same return, standing, counts")
+}

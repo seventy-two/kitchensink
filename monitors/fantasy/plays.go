@@ -82,6 +82,11 @@ type significance struct {
 // A play can matter twice over, e.g. an interception thrown by one of the
 // user's quarterbacks to one of their defences.
 func classify(p play, defence string, players map[string]owned, defences map[string][]string, bigYards int) []significance {
+	// A play called back for a penalty didn't happen, though ESPN keeps
+	// its yards, e.g. a 90-yard return wiped out by a hold.
+	if p.Type.Text == "Penalty" {
+		return nil
+	}
 	var out []significance
 	if s, ok := defensive(p, defence, defences); ok {
 		out = append(out, s)
