@@ -15,7 +15,8 @@
         ],
         "timezone": "Europe/London",
         "days": 7,
-        "remindMinutes": 10
+        "remindMinutes": 10,
+        "explain": { "apiKey": "${GEMINI_API_KEY}", "context": "Lives in London and cycles to work." }
       }
     },
     {

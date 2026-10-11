@@ -48,6 +48,9 @@ type Config struct {
 	RemindMinutes *int `json:"remindMinutes"`
 	// MaxEvents caps the rows shown across all days. It defaults to 40.
 	MaxEvents int `json:"maxEvents"`
+	// Explain, if set, adds a note from Gemini under each of today's
+	// events saying what it probably is.
+	Explain *Explain `json:"explain"`
 }
 
 // Monitor is the calendar monitor.
@@ -86,6 +89,17 @@ func New(raw json.RawMessage) (*Monitor, error) {
 	if c.Days < 1 {
 		return nil, fmt.Errorf("days must be at least 1")
 	}
+	if e := c.Explain; e != nil {
+		if e.APIKey == "" {
+			return nil, fmt.Errorf("explain needs an apiKey")
+		}
+		if e.Model == "" {
+			e.Model = defaultModel
+		}
+		if e.URL == "" {
+			e.URL = defaultExplainURL
+		}
+	}
 	m := &Monitor{cfg: c, loc: loc, remind: 10 * time.Minute}
 	if c.RemindMinutes != nil {
 		m.remind = time.Duration(*c.RemindMinutes) * time.Minute
@@ -95,13 +109,14 @@ func New(raw json.RawMessage) (*Monitor, error) {
 
 // occurrence is one instance of an event.
 type occurrence struct {
-	Cal        int // index into Config.Calendars
-	UID        string
-	Title      string
-	Location   string
-	Link       string // a video call link, if the event has one
-	Start, End time.Time
-	AllDay     bool
+	Cal         int // index into Config.Calendars
+	UID         string
+	Title       string
+	Location    string
+	Description string
+	Link        string // a video call link, if the event has one
+	Start, End  time.Time
+	AllDay      bool
 }
 
 // slack lets a reminder fire when a poll wakes a moment before it's due.
@@ -139,11 +154,22 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		return a.Title < b.Title
 	})
 
+	var notes map[string]string
+	if m.cfg.Explain != nil {
+		var today []occurrence
+		for _, o := range occs {
+			if overlaps(o, midnight(now), midnight(now).AddDate(0, 0, 1)) {
+				today = append(today, o)
+			}
+		}
+		notes = m.explain(ctx, env, today, now)
+	}
+
 	var blocks []monitor.Block
 	for _, f := range failed {
 		blocks = append(blocks, monitor.Block{Type: monitor.BlockText, Text: "Couldn't load " + f})
 	}
-	blocks = append(blocks, m.blocks(occs, now)...)
+	blocks = append(blocks, m.blocks(occs, now, notes)...)
 	return monitor.Result{
 		Blocks:  blocks,
 		Summary: m.summary(occs, now),
@@ -218,8 +244,9 @@ func when(o occurrence, now, today time.Time) string {
 }
 
 // blocks makes a table for each day with something on. Today always gets
-// one, so an empty day says so.
-func (m *Monitor) blocks(occs []occurrence, now time.Time) []monitor.Block {
+// one, so an empty day says so. notes, by noteKey, go on a muted line
+// under today's events.
+func (m *Monitor) blocks(occs []occurrence, now time.Time, notes map[string]string) []monitor.Block {
 	today := midnight(now)
 	// No headings: each day's table is short, and they'd repeat.
 	cols := []monitor.Column{{}, {Fill: true}}
@@ -262,6 +289,13 @@ func (m *Monitor) blocks(occs []occurrence, now time.Time) []monitor.Block {
 				row = append(row, monitor.Cell{Text: cal.Name, Tone: cal.Tone})
 			}
 			b.Rows = append(b.Rows, row)
+			if n := notes[noteKey(o, m.cfg.Calendars[o.Cal].Name)]; n != "" && i == 0 {
+				line := []monitor.Cell{{}, {Text: n, Tone: monitor.ToneMuted}}
+				if many {
+					line = append(line, monitor.Cell{})
+				}
+				b.Rows = append(b.Rows, line)
+			}
 		}
 		switch {
 		case len(b.Rows) > 0:
@@ -453,13 +487,14 @@ func baseOccurrence(e vevent, cal int, loc *time.Location) (occurrence, bool) {
 		title = "(No title)"
 	}
 	o := occurrence{
-		Cal:      cal,
-		UID:      e.text("UID"),
-		Title:    title,
-		Location: strings.TrimSpace(e.text("LOCATION")),
-		Start:    start,
-		End:      end,
-		AllDay:   allDay,
+		Cal:         cal,
+		UID:         e.text("UID"),
+		Title:       title,
+		Location:    strings.TrimSpace(e.text("LOCATION")),
+		Description: e.text("DESCRIPTION"),
+		Start:       start,
+		End:         end,
+		AllDay:      allDay,
 	}
 	for _, field := range []string{"LOCATION", "URL", "X-GOOGLE-CONFERENCE", "DESCRIPTION"} {
 		if link := meetingLink.FindString(e.text(field)); link != "" {
