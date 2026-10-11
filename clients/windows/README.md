@@ -6,14 +6,16 @@ It's written in C++ with Win32, Direct3D 11 and
 [Dear ImGui](https://github.com/ocornut/imgui), and uses WinHTTP, so the
 result is a single `kitchensink.exe` with nothing to install.
 
-- Draws whatever blocks a monitor sends (stats, tables, lists, text), so new
-  monitors appear without client changes.
+- Draws whatever blocks a monitor sends (stats, tables, lists, checklists,
+  text) and its summary (tiles, or chips tinted by tone), so new monitors
+  appear without client changes.
 - In a smaller window (under about 1100 px tall or 900 px wide at 100%
   scale) the layout tightens and each monitor becomes one row of its
-  summary: the next events, biggest movers and so on. Full panels open
-  beneath their rows, in config order, as long as they fit; the first that
-  doesn't takes whatever height is left and scrolls. Click a row to open or
-  close it yourself. Panels have no titles: an open one keeps its controls
+  summary: the next events, your holdings' moves, today's games, the hourly
+  forecast and so on. Full panels open beneath their rows, in panel order,
+  as long as they fit; the first that doesn't takes whatever height is left
+  and scrolls, if that fits a table header and four rows. Click a row to
+  open or close it yourself. Panels have no titles: an open one keeps its controls
   in a slim strip down its right edge. The layout follows the window live
   as it's resized.
 - Adds two panels about the PC it runs on: **This PC** (CPU, memory, GPU
@@ -22,8 +24,7 @@ result is a single `kitchensink.exe` with nothing to install.
   while the window is showing, and work with the server offline.
 - Panels show their controls (grip, refresh, open/close) only while the
   mouse is over them. Drag a panel by the dots in its left margin to
-  reorder; the order also
-  decides which open first in the compact layout.
+  reorder; the order also decides which open first in the compact layout.
 - **Now playing**: what's playing on this PC, from Windows' media
   sessions (the same source as the volume keys' media pop-up), so Spotify,
   browsers and other players all show. Cover, track, progress and

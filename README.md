@@ -1,9 +1,10 @@
 # kitchensink
 
 A small self-hosted service that keeps an eye on things for you (stock
-prices, NFL games, the weather, car adverts, your calendars) and tells your devices when
-something happens. Clients get a live dashboard of everything being watched
-and a notification for each event.
+prices, NFL games, your fantasy football teams, the weather, car adverts,
+your calendars and a to-do list) and tells your devices when something
+happens. Clients get a live dashboard of everything being watched and a
+notification for each event.
 
 - **Server**: Go, one binary, SQLite. Runs the monitors on their intervals,
   keeps an event log and serves an HTTP API with a live
@@ -17,16 +18,32 @@ and a notification for each event.
 | Type | Source | Notifies |
 | --- | --- | --- |
 | `stocks` | CNBC quotes, plus a week's change from CNBC's daily closes (fetched once a day); `holdings` (largest first) lead the table and make up the summary | a symbol's daily move passing each multiple of `movePct`; a price crossing a target |
-| `nfl` | ESPN scoreboard | kick-off, scores and results for followed teams; optionally every result |
-| `weather` | [Open-Meteo](https://open-meteo.com) (no key needed) | rain due within the hour, frost, strong gusts |
+| `nfl` | ESPN scoreboard; the summary is a chip per game today, followed teams' highlighted | kick-off, scores and results for followed teams; optionally every result |
+| `weather` | [Open-Meteo](https://open-meteo.com) (no key needed); the summary is the next twelve hours | rain due within the hour, frost, strong gusts |
 | `autotrader` | AutoTrader UK search | newly listed cars |
 | `todo` | a to-do list kept on the server, changed from clients | nothing; ticked tasks clear after `clearAfter` (default `24h`) |
 | `fantasy` | Sleeper and ESPN fantasy leagues, and ESPN's play-by-play | notable plays by players on any of your teams: touchdowns, big gains, turnovers, long or missed kicks, and your defences' takeaways, sacks and scores |
 | `calendar` | iCalendar (ICS) feeds, e.g. Google or Outlook | each timed event, `remindMinutes` (default 10) before it starts |
 
-Each monitor also returns a dashboard panel, polls on its own interval and
-can ask to be polled sooner (the NFL monitor polls every minute while a
-followed game is on).
+Each monitor also returns a dashboard panel and a short summary (shown when
+space is short), polls on its own interval and can ask to be polled sooner
+(the NFL monitor polls every minute while a followed game is on, the
+fantasy monitor every 30 seconds while your players are playing).
+
+### Fantasy
+
+The `fantasy` monitor reads rosters from Sleeper (`sleeperUser`: every
+league that user is in this season) and ESPN (`espn`: a `leagueId`, plus
+the `espn_s2` and `SWID` cookies from a signed-in browser as `s2` and
+`swid` for private leagues; `SWID` also identifies your team). Sleeper
+players are matched to ESPN athletes by Sleeper's ESPN ID where it has
+one, else by name and team. During games it reads ESPN's play-by-play for
+games involving your players or team defences, and notifies touchdowns,
+gains of `bigPlayYards` (default 20) or more, interceptions thrown,
+fumbles lost, 50+ yard and missed kicks, and your defences' takeaways,
+sacks, safeties and scores. Plays called back for penalties don't count.
+Its summary is a chip per league with your live matchup score; `names`
+gives leagues shorter names by ID. Rosters are read again every six hours.
 
 ### Calendars
 
