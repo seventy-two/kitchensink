@@ -15,8 +15,9 @@ struct Config {
     // Events below this priority don't raise a Windows notification.
     Priority minPriority = Priority::Normal;
     bool notify = true;
-    // Monitors shown in full in the compact layout.
-    std::set<std::string> expanded;
+    // In the compact layout, monitors opened or closed by hand. The rest
+    // open by themselves while there's room.
+    std::set<std::string> expanded, collapsed;
 };
 
 // LoadConfig reads the settings, leaving defaults for anything missing.

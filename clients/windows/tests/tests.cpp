@@ -102,6 +102,34 @@ static void testUseCompact() {
     CHECK(!UseCompact(true, 1600, 1150, 1));
 }
 
+static void testFitPanels() {
+    // Rows of 50, gaps of 10: 300 high holds all four rows (240) with 60 over.
+    std::vector<Panel> p = {{50, 150, 6}, {50, 600, 6}, {50, 80, 6}, {50, 100, 6}};
+    auto shows = [](const Fit& f) {
+        std::string s;
+        for (Show v : f.show) s += v == Show::Full ? 'F' : v == Show::Clipped ? 'C' : 'r';
+        return s;
+    };
+    // Plenty of room: everything opens.
+    CHECK_EQ(shows(FitPanels(p, 2000, 10, 40)), std::string("FFFF"));
+    // The first opens (+100), the second wouldn't fit, the third and
+    // fourth open (+30, +50); the second takes what's left:
+    // 500 - 420 - 6 = 74.
+    Fit f = FitPanels(p, 500, 10, 40);
+    CHECK_EQ(shows(f), std::string("FCFF"));
+    CHECK_EQ(f.body, 74.0f);
+    // At 400 the fourth no longer fits, and 24 is too little left over for
+    // a useful scrolling panel.
+    CHECK_EQ(shows(FitPanels(p, 400, 10, 40)), std::string("FrFr"));
+    // Pins win: a closed one stays closed and an open one opens first,
+    // even when it doesn't fit.
+    p[0].pin = Pin::Closed;
+    p[1].pin = Pin::Open;
+    CHECK_EQ(shows(FitPanels(p, 500, 10, 40)), std::string("rFrr"));
+    // Unmeasured panels stay as rows.
+    CHECK_EQ(shows(FitPanels({{50, 0, 6}, {50, 100, 6}}, 2000, 10, 40)), std::string("rF"));
+}
+
 static void testParseEvent() {
     Event e = ParseEvent(nlohmann::json::parse(
         R"({"id": 42, "monitor": "nfl", "key": "final:1", "time": "2026-10-10T18:07:31Z",
@@ -186,6 +214,7 @@ int main() {
     testAgo();
     testParseSnapshot();
     testUseCompact();
+    testFitPanels();
     testParseEvent();
     testModel();
     testSse();

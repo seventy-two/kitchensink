@@ -77,6 +77,35 @@ void destroyDevice() {
     if (device) device->Release();
 }
 
+// renderFrame draws one frame, after resizing the swap chain if the window
+// has changed size. Without present, it only lays out, so sizes measured
+// this frame are right in the next.
+void renderFrame(bool present) {
+    static bool rendering = false;  // WM_SIZE can arrive while drawing
+    if (rendering || !app) return;
+    rendering = true;
+    if (resizeW != 0) {
+        releaseTarget();
+        swapChain->ResizeBuffers(0, resizeW, resizeH, DXGI_FORMAT_UNKNOWN, 0);
+        resizeW = resizeH = 0;
+        createTarget();
+    }
+    ImGui_ImplDX11_NewFrame();
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
+    app->Frame();
+    ImGui::Render();
+    if (present) {
+        const ImVec4& bg = ks::Colours().bg;
+        const float clear[4] = {bg.x, bg.y, bg.z, 1};
+        context->OMSetRenderTargets(1, &target, nullptr);
+        context->ClearRenderTargetView(target, clear);
+        ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+        swapChain->Present(1, 0);
+    }
+    rendering = false;
+}
+
 void setDarkTitleBar(bool dark) {
     BOOL v = dark;
     DwmSetWindowAttribute(hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &v, sizeof(v));
@@ -202,6 +231,14 @@ LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wParam, LPARAM lParam) {
         if (wParam != SIZE_MINIMIZED) {
             resizeW = LOWORD(lParam);
             resizeH = HIWORD(lParam);
+            // While the window is being dragged to a new size, Windows runs
+            // its own message loop and ours waits, so draw from here; else
+            // the last frame is stretched until the drag ends. Lay out once
+            // first so the new size is measured.
+            if (IsWindowVisible(h)) {
+                renderFrame(false);
+                renderFrame(true);
+            }
         }
         return 0;
     case WM_GETMINMAXINFO: {
@@ -329,24 +366,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR cmdLine, int) {
         app->Pump();
         if (!IsWindowVisible(hwnd) || IsIconic(hwnd)) continue;
 
-        if (resizeW != 0) {
-            releaseTarget();
-            swapChain->ResizeBuffers(0, resizeW, resizeH, DXGI_FORMAT_UNKNOWN, 0);
-            resizeW = resizeH = 0;
-            createTarget();
-        }
-
-        ImGui_ImplDX11_NewFrame();
-        ImGui_ImplWin32_NewFrame();
-        ImGui::NewFrame();
-        app->Frame();
-        ImGui::Render();
-        const ImVec4& bg = ks::Colours().bg;
-        const float clear[4] = {bg.x, bg.y, bg.z, 1};
-        context->OMSetRenderTargets(1, &target, nullptr);
-        context->ClearRenderTargetView(target, clear);
-        ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-        swapChain->Present(1, 0);
+        renderFrame(true);
         if (framesWanted > 0) framesWanted--;
     }
 

@@ -388,12 +388,7 @@ void App::empty(const char* message, bool settingsButton) {
 void App::cards(float width) {
     const auto& snaps = model_.Snapshots();
     if (compact_) {
-        // One row per monitor, full width, so the summaries line up.
-        float gap = 8 * scale_;
-        for (const auto& s : snaps) {
-            compactCard(s, width);
-            ImGui::Dummy(ImVec2(0, gap - ImGui::GetStyle().ItemSpacing.y * 2));
-        }
+        compactCards(width);
         return;
     }
     float gap = 16 * scale_;
@@ -484,11 +479,68 @@ void App::refreshButton(const Snapshot& s) {
     ImGui::PopStyleColor();
 }
 
-// compactCard is one monitor as a row: its name, its summary, and its full
-// panel underneath once clicked open.
-void App::compactCard(const Snapshot& s, float width) {
+// compactCards fills the space with one row per monitor, full width so the
+// summaries line up, opening as many full panels as fit (see FitPanels).
+void App::compactCards(float width) {
+    const auto& snaps = model_.Snapshots();
+    float gap = 8 * scale_;
+    float height = ImGui::GetContentRegionAvail().y;
+
+    // Measure every monitor both ways at this width, in a window off to
+    // the right of the screen where nothing shows or takes input.
+    ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x + 64 * scale_, 0));
+    ImGui::Begin("##measure", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
+                     ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoSavedSettings |
+                     ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_AlwaysAutoResize |
+                     ImGuiWindowFlags_NoBringToFrontOnFocus);
+    std::vector<Panel> panels;
+    for (const auto& s : snaps) {
+        ImGui::PushID(s.monitor.c_str());
+        Panel p;
+        ImGui::PushID("row");
+        p.row = compactCard(s, width, Show::Row, 0, nullptr);
+        ImGui::PopID();
+        ImGui::PushID("full");
+        p.full = compactCard(s, width, Show::Full, 0, nullptr);
+        ImGui::PopID();
+        ImGui::PushID("clipped");
+        p.overhead = compactCard(s, width, Show::Clipped, 1, nullptr) - 1 - p.row;
+        ImGui::PopID();
+        ImGui::PopID();
+        p.pin = config_.expanded.count(s.monitor) ? Pin::Open : config_.collapsed.count(s.monitor) ? Pin::Closed : Pin::Auto;
+        panels.push_back(p);
+    }
+    ImGui::End();
+
+    float minBody = 64 * scale_;  // about three table rows
+    Fit fit = FitPanels(panels, height, gap, minBody);
+    for (size_t i = 0; i < snaps.size(); i++) {
+        bool clicked = false;
+        compactCard(snaps[i], width, fit.show[i], fit.body, &clicked);
+        ImGui::Dummy(ImVec2(0, gap - ImGui::GetStyle().ItemSpacing.y * 2));
+        if (!clicked) continue;
+        // Open or close it, keeping that choice only while it differs from
+        // what would happen by itself, so a pin doesn't outlive its use.
+        const std::string& id = snaps[i].monitor;
+        bool open = fit.show[i] == Show::Row;
+        panels[i].pin = Pin::Auto;
+        bool automatic = FitPanels(panels, height, gap, minBody).show[i] != Show::Row;
+        config_.expanded.erase(id);
+        config_.collapsed.erase(id);
+        if (open != automatic) (open ? config_.expanded : config_.collapsed).insert(id);
+        SaveConfig(config_);
+    }
+}
+
+// compactCard draws one monitor as a row, its name and summary, with its
+// full panel underneath unless show is Row. A clipped panel scrolls within
+// body. It sets *clicked when the row is clicked; with no clicked, it's
+// only being measured and ignores the mouse. It returns the card's height.
+float App::compactCard(const Snapshot& s, float width, Show show, float body, bool* clicked) {
     const Palette& p = Colours();
-    bool expanded = config_.expanded.count(s.monitor) > 0;
+    bool open = show != Show::Row;
     ImGui::PushStyleColor(ImGuiCol_ChildBg, p.card);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12 * scale_, 8 * scale_));
     ImGui::BeginChild(s.monitor.c_str(), ImVec2(width, 0),
@@ -526,10 +578,15 @@ void App::compactCard(const Snapshot& s, float width) {
     float bw = ImGui::CalcTextSize(icon::Refresh).x + st.FramePadding.x * 2;
     float cw = ImGui::CalcTextSize(icon::ChevronDown).x;
     ImGui::SetCursorScreenPos(ImVec2(top.x + avail - bw, top.y));
-    refreshButton(s);
-    bool onButton = ImGui::IsItemHovered();
+    bool onButton = false;
+    if (clicked) {
+        refreshButton(s);
+        onButton = ImGui::IsItemHovered();
+    } else {
+        ImGui::Dummy(ImVec2(bw, ImGui::GetFrameHeight()));
+    }
     ImGui::SetCursorScreenPos(ImVec2(top.x + avail - bw - cw - 6 * scale_, top.y + st.FramePadding.y));
-    mutedText(expanded ? icon::ChevronUp : icon::ChevronDown);
+    mutedText(open ? icon::ChevronUp : icon::ChevronDown);
     ImGui::PopFont();
 
     // The summary between them.
@@ -549,26 +606,23 @@ void App::compactCard(const Snapshot& s, float width) {
     // it.
     ImVec2 winMin = ImGui::GetWindowPos();
     ImVec2 rowMin(winMin.x, winMin.y), rowMax(winMin.x + ImGui::GetWindowWidth(), headMax.y + 8 * scale_);
-    bool hovered = ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect(rowMin, rowMax) && !onButton;
+    bool hovered = clicked && ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect(rowMin, rowMax) && !onButton;
     dl->ChannelsSetCurrent(0);
     if (hovered) {
         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-        ImDrawFlags corners = expanded ? ImDrawFlags_RoundCornersTop : ImDrawFlags_RoundCornersAll;
+        ImDrawFlags corners = open ? ImDrawFlags_RoundCornersTop : ImDrawFlags_RoundCornersAll;
         dl->AddRectFilled(rowMin, rowMax, u32(p.hover), ImGui::GetStyle().ChildRounding, corners);
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-            if (expanded) config_.expanded.erase(s.monitor);
-            else config_.expanded.insert(s.monitor);
-            expanded = !expanded;
-            SaveConfig(config_);
-        }
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) *clicked = true;
     }
     // Merge before the blocks: tables and lists split channels themselves.
     dl->ChannelsMerge();
     ImGui::SetCursorScreenPos(ImVec2(top.x, headMax.y));
     ImGui::Dummy(ImVec2(avail, 0));
 
-    if (expanded) {
+    if (open) {
         ImGui::Dummy(ImVec2(0, 4 * scale_));
+        bool clip = show == Show::Clipped;
+        if (clip) ImGui::BeginChild("##body", ImVec2(avail, body), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
         if (!s.error.empty()) {
             ImGui::PushFont(fonts_.caption);
             wrapped(std::string(icon::Warning) + "  " + s.error, p.warn);
@@ -580,9 +634,11 @@ void App::compactCard(const Snapshot& s, float width) {
             block(s.blocks[i]);
             ImGui::PopID();
         }
+        if (clip) ImGui::EndChild();
     }
     ImGui::EndChild();
     ImGui::PopStyleColor();
+    return ImGui::GetItemRectSize().y;
 }
 
 // summary lays stats out as tiles of label, value and detail, flowing onto

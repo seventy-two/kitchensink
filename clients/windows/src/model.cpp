@@ -94,6 +94,35 @@ Snapshot ParseSnapshot(const json& j) {
     return s;
 }
 
+Fit FitPanels(const std::vector<Panel>& panels, float height, float gap, float minBody) {
+    Fit fit;
+    fit.show.assign(panels.size(), Show::Row);
+    float total = 0;
+    for (size_t i = 0; i < panels.size(); i++) {
+        const Panel& p = panels[i];
+        bool open = p.pin == Pin::Open && p.full > 0;
+        if (open) fit.show[i] = Show::Full;
+        total += (open ? p.full : p.row) + gap;
+    }
+    for (size_t i = 0; i < panels.size(); i++) {
+        const Panel& p = panels[i];
+        if (p.pin != Pin::Auto || p.full <= 0 || total - p.row + p.full > height) continue;
+        fit.show[i] = Show::Full;
+        total += p.full - p.row;
+    }
+    for (size_t i = 0; i < panels.size(); i++) {
+        const Panel& p = panels[i];
+        if (p.pin != Pin::Auto || fit.show[i] != Show::Row || p.full <= 0) continue;
+        float body = height - total - p.overhead;
+        if (body >= minBody) {
+            fit.show[i] = Show::Clipped;
+            fit.body = body;
+        }
+        break;
+    }
+    return fit;
+}
+
 bool UseCompact(bool compact, float width, float height, float scale) {
     // Below these, at 100% scale, the full panels don't fit at a glance.
     constexpr float kHeight = 1100, kWidth = 900, kSlack = 40;

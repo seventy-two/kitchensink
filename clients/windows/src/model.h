@@ -83,6 +83,33 @@ std::string Ago(int64_t then, int64_t now);
 // the current choice so that resizing near the boundary doesn't flicker.
 bool UseCompact(bool compact, float width, float height, float scale);
 
+// Show is how much of a monitor the compact layout shows: its summary row,
+// its full panel, or its panel cut short to fit, scrolling inside.
+enum class Show { Row, Full, Clipped };
+
+// Pin is a choice made by hand in the compact layout.
+enum class Pin { Auto, Open, Closed };
+
+// Panel is one monitor's measured heights in the compact layout.
+struct Panel {
+    float row = 0;   // collapsed to its summary
+    float full = 0;  // with its full panel; 0 if not measured yet
+    // What clipping adds to the row besides the scrolling area itself.
+    float overhead = 0;
+    Pin pin = Pin::Auto;
+};
+
+struct Fit {
+    std::vector<Show> show;
+    float body = 0;  // height of the clipped panel's scrolling area
+};
+
+// FitPanels fills a column of height with panels, gap apart. Pinned ones
+// are open or closed as chosen; the rest open in order while they fit
+// whole. If space is left, the first that didn't fit takes it, scrolling,
+// as long as that gives it at least minBody.
+Fit FitPanels(const std::vector<Panel>& panels, float height, float gap, float minBody);
+
 // Model is the dashboard's state, built from the stream.
 class Model {
 public:

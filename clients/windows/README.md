@@ -10,8 +10,10 @@ result is a single `kitchensink.exe` with nothing to install.
   monitors appear without client changes.
 - In a smaller window (under about 1100 px tall or 900 px wide at 100%
   scale) the layout tightens and each monitor becomes one row of its
-  summary: the next events, biggest movers and so on. Click a row to show
-  its full panel underneath; the app remembers which are open.
+  summary: the next events, biggest movers and so on. Full panels open
+  beneath their rows, in config order, as long as they fit; the first that
+  doesn't takes whatever height is left and scrolls. Click a row to open or
+  close it yourself. The layout follows the window live as it's resized.
 - Keeps the server's event stream open, reconnects with backoff, and
   catches up on events missed while offline. A burst of events becomes one
   notification.

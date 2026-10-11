@@ -60,7 +60,8 @@ private:
     float windowButtons();
     void cards(float width);
     void card(const Snapshot& s, float width);
-    void compactCard(const Snapshot& s, float width);
+    void compactCards(float width);
+    float compactCard(const Snapshot& s, float width, Show show, float body, bool* clicked);
     void summary(const std::vector<Stat>& stats, float width);
     void refreshButton(const Snapshot& s);
     void block(const Block& b);
