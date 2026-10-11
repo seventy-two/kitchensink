@@ -21,6 +21,7 @@ and a notification for each event.
 | `weather` | [Open-Meteo](https://open-meteo.com) (no key needed) | rain due within the hour, frost, strong gusts |
 | `autotrader` | AutoTrader UK search | newly listed cars |
 | `todo` | a to-do list kept on the server, changed from clients | nothing; ticked tasks clear after `clearAfter` (default `24h`) |
+| `fantasy` | Sleeper and ESPN fantasy leagues, and ESPN's play-by-play | notable plays by players on any of your teams: touchdowns, big gains, turnovers, long or missed kicks, and your defences' takeaways, sacks and scores |
 | `calendar` | iCalendar (ICS) feeds, e.g. Google or Outlook | each timed event, `remindMinutes` (default 10) before it starts |
 
 Each monitor also returns a dashboard panel, polls on its own interval and

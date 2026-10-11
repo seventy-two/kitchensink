@@ -42,6 +42,16 @@
       "config": { "teams": ["CHI"], "timezone": "Europe/London" }
     },
     {
+      "type": "fantasy",
+      "title": "Fantasy",
+      "interval": "5m",
+      "config": {
+        "sleeperUser": "your-sleeper-name",
+        "espn": [{ "leagueId": "123456", "s2": "${ESPN_S2}", "swid": "${ESPN_SWID}" }],
+        "names": { "123456": "Work" }
+      }
+    },
+    {
       "type": "weather",
       "title": "Weather",
       "interval": "15m",

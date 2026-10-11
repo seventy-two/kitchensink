@@ -1,0 +1,835 @@
+{
+ "count": 17,
+ "pageIndex": 1,
+ "pageSize": 50,
+ "pageCount": 1,
+ "items": [
+  {
+   "id": "40187298040",
+   "sequenceNumber": "4000",
+   "text": "C.McLaughlin kicks 62 yards from TB 35 to DAL 3. K.Turpin pushed ob at DAL 30 for 27 yards (C.Rozeboom).",
+   "shortText": "Chase McLaughlin 62 Yd Kickoff KaVontae Turpin 27 Yd Kickoff Return",
+   "statYardage": 27,
+   "isTurnover": false,
+   "scoringPlay": false,
+   "type": {
+    "text": "Kickoff"
+   },
+   "period": {
+    "number": 1
+   },
+   "clock": {
+    "displayValue": "15:00"
+   },
+   "start": {
+    "team": {
+     "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/teams/27"
+    }
+   },
+   "participants": [
+    {
+     "type": "kicker",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/3150744"
+     }
+    },
+    {
+     "type": "returner",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/3676833"
+     }
+    },
+    {
+     "type": "tackler",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/3909013"
+     }
+    }
+   ]
+  },
+  {
+   "id": "40187298091",
+   "sequenceNumber": "9100",
+   "text": "(Shotgun) D.Prescott pass short middle to J.Williams to DAL 38 for 8 yards (J.Trotter).",
+   "shortText": "Dak Prescott Pass Complete for 8 Yds to Javonte Williams",
+   "statYardage": 8,
+   "isTurnover": false,
+   "scoringPlay": false,
+   "type": {
+    "text": "Pass Reception"
+   },
+   "period": {
+    "number": 1
+   },
+   "clock": {
+    "displayValue": "14:48"
+   },
+   "start": {
+    "team": {
+     "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/teams/6"
+    }
+   },
+   "participants": [
+    {
+     "type": "passer",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/2577417"
+     }
+    },
+    {
+     "type": "receiver",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4361579"
+     }
+    },
+    {
+     "type": "tackler",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4870998"
+     }
+    },
+    {
+     "type": "other",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/3043107"
+     }
+    }
+   ]
+  },
+  {
+   "id": "401872980163",
+   "sequenceNumber": "16300",
+   "text": "J.Williams up the middle to TB 29 for 21 yards (T.Smith).",
+   "shortText": "Javonte Williams 21 Yd Rush",
+   "statYardage": 21,
+   "isTurnover": false,
+   "scoringPlay": false,
+   "type": {
+    "text": "Rush"
+   },
+   "period": {
+    "number": 1
+   },
+   "clock": {
+    "displayValue": "13:19"
+   },
+   "start": {
+    "team": {
+     "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/teams/6"
+    }
+   },
+   "participants": [
+    {
+     "type": "rusher",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4361579"
+     }
+    },
+    {
+     "type": "tackler",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4428522"
+     }
+    }
+   ]
+  },
+  {
+   "id": "401872980185",
+   "sequenceNumber": "18500",
+   "text": "D.Prescott pass deep middle to G.Pickens to TB 8 for 21 yards (J.Parrish).",
+   "shortText": "Dak Prescott Pass Complete for 21 Yds to George Pickens",
+   "statYardage": 21,
+   "isTurnover": false,
+   "scoringPlay": false,
+   "type": {
+    "text": "Pass Reception"
+   },
+   "period": {
+    "number": 1
+   },
+   "clock": {
+    "displayValue": "12:41"
+   },
+   "start": {
+    "team": {
+     "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/teams/6"
+    }
+   },
+   "participants": [
+    {
+     "type": "passer",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/2577417"
+     }
+    },
+    {
+     "type": "receiver",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4426354"
+     }
+    },
+    {
+     "type": "tackler",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4912847"
+     }
+    }
+   ]
+  },
+  {
+   "id": "401872980322",
+   "sequenceNumber": "32200",
+   "text": "J.Williams up the middle for 1 yard, TOUCHDOWN. B.Aubrey extra point is GOOD, Center-T.Sieg, Holder-B.Anger.",
+   "shortText": "Javonte Williams 1 Yd Rush (Brandon Aubrey Kick)",
+   "statYardage": 1,
+   "isTurnover": false,
+   "scoringPlay": true,
+   "type": {
+    "text": "Rushing Touchdown"
+   },
+   "period": {
+    "number": 1
+   },
+   "clock": {
+    "displayValue": "10:51"
+   },
+   "start": {
+    "team": {
+     "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/teams/6"
+    }
+   },
+   "participants": [
+    {
+     "type": "rusher",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4361579"
+     }
+    },
+    {
+     "type": "scorer",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4361579"
+     }
+    },
+    {
+     "type": "kicker",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/3953687"
+     }
+    },
+    {
+     "type": "patScorer",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/3953687"
+     }
+    }
+   ]
+  },
+  {
+   "id": "401872980360",
+   "sequenceNumber": "36000",
+   "text": "B.Aubrey kicks 55 yards from DAL 35 to TB 10. K.Johnson to TB 27 for 17 yards (J.Thomas; B.Spann-Ford).",
+   "shortText": "Brandon Aubrey 55 Yd Kickoff Kameron Johnson 17 Yd Kickoff Return",
+   "statYardage": 17,
+   "isTurnover": false,
+   "scoringPlay": false,
+   "type": {
+    "text": "Kickoff"
+   },
+   "period": {
+    "number": 1
+   },
+   "clock": {
+    "displayValue": "10:51"
+   },
+   "start": {
+    "team": {
+     "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/teams/6"
+    }
+   },
+   "participants": [
+    {
+     "type": "kicker",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/3953687"
+     }
+    },
+    {
+     "type": "returner",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/5097554"
+     }
+    },
+    {
+     "type": "assistedBy",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4360590"
+     }
+    },
+    {
+     "type": "assistedBy",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4360967"
+     }
+    },
+    {
+     "type": "other",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4870706"
+     }
+    }
+   ]
+  },
+  {
+   "id": "401872980889",
+   "sequenceNumber": "88900",
+   "text": "(Shotgun) J.Daniels pass short right to B.Irving for 5 yards, TOUCHDOWN. C.McLaughlin extra point is GOOD, Center-E.Deckers, Holder-R.Dixon.",
+   "shortText": "Bucky Irving 5 Yd pass from Jalon Daniels (Chase McLaughlin Kick)",
+   "statYardage": 5,
+   "isTurnover": false,
+   "scoringPlay": true,
+   "type": {
+    "text": "Passing Touchdown"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "displayValue": "14:53"
+   },
+   "start": {
+    "team": {
+     "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/teams/27"
+    }
+   },
+   "participants": [
+    {
+     "type": "passer",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4596472"
+     }
+    },
+    {
+     "type": "receiver",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4596448"
+     }
+    },
+    {
+     "type": "scorer",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4596448"
+     }
+    },
+    {
+     "type": "kicker",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/3150744"
+     }
+    },
+    {
+     "type": "patScorer",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/3150744"
+     }
+    }
+   ]
+  },
+  {
+   "id": "4018729801209",
+   "sequenceNumber": "120900",
+   "text": "D.Prescott pass short left to J.Williams to 50 for 9 yards (J.Parrish; J.Trotter).",
+   "shortText": "Dak Prescott Pass Complete for 9 Yds to Javonte Williams",
+   "statYardage": 9,
+   "isTurnover": false,
+   "scoringPlay": false,
+   "type": {
+    "text": "Pass Reception"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "displayValue": "11:00"
+   },
+   "start": {
+    "team": {
+     "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/teams/6"
+    }
+   },
+   "participants": [
+    {
+     "type": "passer",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/2577417"
+     }
+    },
+    {
+     "type": "receiver",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4361579"
+     }
+    },
+    {
+     "type": "assistedBy",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4912847"
+     }
+    },
+    {
+     "type": "assistedBy",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4870998"
+     }
+    }
+   ]
+  },
+  {
+   "id": "4018729801915",
+   "sequenceNumber": "191500",
+   "text": "(Shotgun) D.Prescott pass deep middle to R.Flournoy to TB 39 for 48 yards (A.Anzalone; T.Smith).",
+   "shortText": "Dak Prescott Pass Complete for 48 Yds to Ryan Flournoy",
+   "statYardage": 48,
+   "isTurnover": false,
+   "scoringPlay": false,
+   "type": {
+    "text": "Pass Reception"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "displayValue": "1:52"
+   },
+   "start": {
+    "team": {
+     "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/teams/6"
+    }
+   },
+   "participants": [
+    {
+     "type": "passer",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/2577417"
+     }
+    },
+    {
+     "type": "receiver",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/5083754"
+     }
+    },
+    {
+     "type": "assistedBy",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/3043107"
+     }
+    },
+    {
+     "type": "assistedBy",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4428522"
+     }
+    }
+   ]
+  },
+  {
+   "id": "4018729802060",
+   "sequenceNumber": "206000",
+   "text": "B.Aubrey 41 yard field goal is GOOD, Center-T.Sieg, Holder-B.Anger.",
+   "shortText": "Brandon Aubrey 41 Yd Field Goal",
+   "statYardage": 41,
+   "isTurnover": false,
+   "scoringPlay": true,
+   "type": {
+    "text": "Field Goal Good"
+   },
+   "period": {
+    "number": 2
+   },
+   "clock": {
+    "displayValue": "0:21"
+   },
+   "start": {
+    "team": {
+     "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/teams/6"
+    }
+   },
+   "participants": [
+    {
+     "type": "kicker",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/3953687"
+     }
+    },
+    {
+     "type": "scorer",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/3953687"
+     }
+    },
+    {
+     "type": "snapper",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/3052357"
+     }
+    },
+    {
+     "type": "holder",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/14950"
+     }
+    }
+   ]
+  },
+  {
+   "id": "4018729802242",
+   "sequenceNumber": "224200",
+   "text": "B.Irving left tackle pushed ob at DAL 14 for 72 yards (C.Downs).",
+   "shortText": "Bucky Irving 72 Yd Rush",
+   "statYardage": 72,
+   "isTurnover": false,
+   "scoringPlay": false,
+   "type": {
+    "text": "Rush"
+   },
+   "period": {
+    "number": 3
+   },
+   "clock": {
+    "displayValue": "14:54"
+   },
+   "start": {
+    "team": {
+     "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/teams/27"
+    }
+   },
+   "participants": [
+    {
+     "type": "rusher",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4596448"
+     }
+    },
+    {
+     "type": "tackler",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4870706"
+     }
+    }
+   ]
+  },
+  {
+   "id": "4018729802269",
+   "sequenceNumber": "226900",
+   "text": "E.Egbuka left end for 14 yards, TOUCHDOWN. C.McLaughlin extra point is GOOD, Center-E.Deckers, Holder-R.Dixon.",
+   "shortText": "Emeka Egbuka 14 Yd Rush (Chase McLaughlin Kick)",
+   "statYardage": 14,
+   "isTurnover": false,
+   "scoringPlay": true,
+   "type": {
+    "text": "Rushing Touchdown"
+   },
+   "period": {
+    "number": 3
+   },
+   "clock": {
+    "displayValue": "14:00"
+   },
+   "start": {
+    "team": {
+     "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/teams/27"
+    }
+   },
+   "participants": [
+    {
+     "type": "rusher",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4567750"
+     }
+    },
+    {
+     "type": "scorer",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4567750"
+     }
+    },
+    {
+     "type": "kicker",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/3150744"
+     }
+    },
+    {
+     "type": "patScorer",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/3150744"
+     }
+    }
+   ]
+  },
+  {
+   "id": "4018729802466",
+   "sequenceNumber": "246600",
+   "text": "(Shotgun) D.Prescott pass short middle intended for R.Flournoy INTERCEPTED by Y.Diaby at TB 24. Y.Diaby to TB 25 for 1 yard (C.Beebe; T.Booker).",
+   "shortText": "Yaya Diaby  1 Yd Interception Return",
+   "statYardage": 1,
+   "isTurnover": true,
+   "scoringPlay": false,
+   "type": {
+    "text": "Pass Interception Return"
+   },
+   "period": {
+    "number": 3
+   },
+   "clock": {
+    "displayValue": "10:51"
+   },
+   "start": {
+    "team": {
+     "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/teams/6"
+    }
+   },
+   "participants": [
+    {
+     "type": "passer",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/2577417"
+     }
+    },
+    {
+     "type": "passDefender",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4686334"
+     }
+    },
+    {
+     "type": "returner",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4686334"
+     }
+    },
+    {
+     "type": "assistedBy",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4426663"
+     }
+    },
+    {
+     "type": "assistedBy",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4685263"
+     }
+    },
+    {
+     "type": "other",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4710067"
+     }
+    },
+    {
+     "type": "other",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/5083754"
+     }
+    }
+   ]
+  },
+  {
+   "id": "4018729802713",
+   "sequenceNumber": "271300",
+   "text": "J.Daniels sacked at DAL 48 for -11 yards (M.Lawrence).",
+   "shortText": "Jalon Daniels Sacked by Malachi Lawrence For 11 Yd Loss",
+   "statYardage": -11,
+   "isTurnover": false,
+   "scoringPlay": false,
+   "type": {
+    "text": "Sack"
+   },
+   "period": {
+    "number": 3
+   },
+   "clock": {
+    "displayValue": "7:24"
+   },
+   "start": {
+    "team": {
+     "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/teams/27"
+    }
+   },
+   "participants": [
+    {
+     "type": "passer",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4596472"
+     }
+    },
+    {
+     "type": "sackedBy",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4710067"
+     }
+    },
+    {
+     "type": "tackler",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4710067"
+     }
+    },
+    {
+     "type": "other",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4683848"
+     }
+    }
+   ]
+  },
+  {
+   "id": "4018729802919",
+   "sequenceNumber": "291900",
+   "text": " C.McLaughlin 41 yard field goal is GOOD, Center-E.Deckers, Holder-R.Dixon.",
+   "shortText": "Chase McLaughlin 41 Yd Field Goal ",
+   "statYardage": 41,
+   "isTurnover": false,
+   "scoringPlay": true,
+   "type": {
+    "text": "Field Goal Good"
+   },
+   "period": {
+    "number": 3
+   },
+   "clock": {
+    "displayValue": "2:58"
+   },
+   "start": {
+    "team": {
+     "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/teams/27"
+    }
+   },
+   "participants": [
+    {
+     "type": "kicker",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/3150744"
+     }
+    },
+    {
+     "type": "scorer",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/3150744"
+     }
+    }
+   ]
+  },
+  {
+   "id": "4018729803742",
+   "sequenceNumber": "374200",
+   "text": "(Shotgun) D.Prescott pass deep left to G.Pickens for 18 yards, TOUCHDOWN. TWO-POINT CONVERSION ATTEMPT. D.Prescott pass to R.Flournoy is incomplete. ATTEMPT FAILS.",
+   "shortText": "George Pickens 18 Yd pass from Dak Prescott (Two-Point Pass Conversion Failed)",
+   "statYardage": 18,
+   "isTurnover": false,
+   "scoringPlay": true,
+   "type": {
+    "text": "Passing Touchdown"
+   },
+   "period": {
+    "number": 4
+   },
+   "clock": {
+    "displayValue": "5:26"
+   },
+   "start": {
+    "team": {
+     "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/teams/6"
+    }
+   },
+   "participants": [
+    {
+     "type": "passer",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/2577417"
+     }
+    },
+    {
+     "type": "patPasser",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/2577417"
+     }
+    },
+    {
+     "type": "receiver",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4426354"
+     }
+    },
+    {
+     "type": "scorer",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4426354"
+     }
+    },
+    {
+     "type": "patScorer",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/5083754"
+     }
+    }
+   ]
+  },
+  {
+   "id": "4018729804123",
+   "sequenceNumber": "412300",
+   "text": "(No Huddle, Shotgun) D.Prescott pass short middle intended for J.Ferguson INTERCEPTED by A.Anzalone at TB 12. A.Anzalone to TB 12 for no gain.",
+   "shortText": "Alex Anzalone  Interception Return, No Gain",
+   "statYardage": 0,
+   "isTurnover": true,
+   "scoringPlay": false,
+   "type": {
+    "text": "Pass Interception Return"
+   },
+   "period": {
+    "number": 4
+   },
+   "clock": {
+    "displayValue": "1:22"
+   },
+   "start": {
+    "team": {
+     "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/teams/6"
+    }
+   },
+   "participants": [
+    {
+     "type": "passer",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/2577417"
+     }
+    },
+    {
+     "type": "passDefender",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/3043107"
+     }
+    },
+    {
+     "type": "returner",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/3043107"
+     }
+    },
+    {
+     "type": "other",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/5083754"
+     }
+    },
+    {
+     "type": "other",
+     "athlete": {
+      "$ref": "http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/4242355"
+     }
+    }
+   ]
+  }
+ ]
+}
