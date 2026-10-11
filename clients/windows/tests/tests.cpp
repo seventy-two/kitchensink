@@ -52,7 +52,7 @@ static void testAgo() {
 static void testParseSnapshot() {
     auto j = nlohmann::json::parse(R"({
         "monitor": "weather", "kind": "weather", "title": "Weather",
-        "updated": "2026-10-10T18:07:31Z", "error": "site down",
+        "updated": "2026-10-10T18:07:31Z", "error": "site down", "subtitle": "Mazda3 · Automatic",
         "blocks": [
             {"type": "stats", "title": "Bristol", "stats": [
                 {"label": "Now", "value": "13°C", "detail": "Clear", "tone": "accent", "series": [0, 0.4, 1.5]}
@@ -67,6 +67,7 @@ static void testParseSnapshot() {
     Snapshot s = ParseSnapshot(j);
     CHECK_EQ(s.monitor, std::string("weather"));
     CHECK_EQ(s.error, std::string("site down"));
+    CHECK_EQ(s.subtitle, std::string("Mazda3 · Automatic"));
     CHECK_EQ(s.updated, int64_t(1791655651));
     CHECK_EQ(s.blocks.size(), size_t(4));
     CHECK_EQ(s.blocks[0].stats.size(), size_t(1));

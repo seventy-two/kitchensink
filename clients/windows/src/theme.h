@@ -23,8 +23,8 @@ struct Fonts {
 // Icon code points in Segoe Fluent Icons / Segoe MDL2 Assets, merged into
 // the body and small fonts.
 namespace icon {
-inline constexpr const char* Refresh = "\xEE\x9C\xAC";   // U+E72C
-inline constexpr const char* Settings = "\xEE\x9C\x93";  // U+E713
+inline constexpr const char* Refresh = "\xEE\xA2\x95";   // U+E895 Sync
+inline constexpr const char* Settings = "\xEE\x9C\x80";  // U+E700 GlobalNavButton, three lines
 inline constexpr const char* Warning = "\xEE\x9E\xBA";   // U+E7BA
 inline constexpr const char* Minimise = "\xEE\xA4\xA1";  // U+E921
 inline constexpr const char* Maximise = "\xEE\xA4\xA2";  // U+E922

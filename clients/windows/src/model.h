@@ -54,6 +54,7 @@ struct Block {
 
 struct Snapshot {
     std::string monitor, kind, title, error;
+    std::string subtitle;  // what it's watching, when that isn't obvious
     int64_t updated = 0;  // Unix seconds; 0 if never polled
     std::vector<Block> blocks;
     // The few things most worth seeing at a glance, shown in place of the

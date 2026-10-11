@@ -87,6 +87,7 @@ Snapshot ParseSnapshot(const json& j) {
     s.kind = str(j, "kind");
     s.title = str(j, "title");
     s.error = str(j, "error");
+    s.subtitle = str(j, "subtitle");
     // Go sends its zero time, year 1, for a monitor that hasn't polled yet.
     s.updated = std::max<int64_t>(0, ParseTime(str(j, "updated")));
     for (const auto& b : array(j, "blocks")) s.blocks.push_back(parseBlock(b));

@@ -440,28 +440,27 @@ void App::card(const Snapshot& s, float width) {
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PopStyleVar();
 
-    // Title on the left; when it was updated and a refresh button on the
-    // right.
-    ImGui::PushFont(fonts_.heading);
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(s.title.c_str());
-    ImGui::PopFont();
-
-    bool pending = refreshing_.count(s.monitor) && ImGui::GetTime() - refreshing_[s.monitor] < 15;
+    // What's being watched on the left, if the monitor says; when it was
+    // updated and refresh on the right. Local panels need neither.
     bool local = IsLocal(s);
-    std::string when = local ? "live" : pending ? "refreshing…" : "updated " + Ago(s.updated, now());
-    ImGui::PushFont(fonts_.caption);
-    ImGuiStyle& st = ImGui::GetStyle();
-    float bw = local ? 0 : ImGui::CalcTextSize(icon::Refresh).x + st.FramePadding.x * 2;
-    float ww = ImGui::CalcTextSize(when.c_str()).x;
-    ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - bw - ww - (local ? 0 : st.ItemSpacing.x));
-    ImGui::AlignTextToFramePadding();
-    mutedText(when);
-    if (!local) {
-        ImGui::SameLine();
-        refreshButton(s);
+    if (!local || !s.subtitle.empty()) {
+        ImGui::PushFont(fonts_.caption);
+        ImGui::AlignTextToFramePadding();
+        mutedText(s.subtitle);
+        if (!local) {
+            bool pending = refreshing_.count(s.monitor) && ImGui::GetTime() - refreshing_[s.monitor] < 15;
+            std::string when = pending ? "refreshing…" : "updated " + Ago(s.updated, now());
+            ImGuiStyle& st = ImGui::GetStyle();
+            float bw = ImGui::CalcTextSize(icon::Refresh).x + st.FramePadding.x * 2;
+            float ww = ImGui::CalcTextSize(when.c_str()).x;
+            ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - bw - ww - st.ItemSpacing.x);
+            ImGui::AlignTextToFramePadding();
+            mutedText(when);
+            ImGui::SameLine();
+            refreshButton(s);
+        }
+        ImGui::PopFont();
     }
-    ImGui::PopFont();
 
     if (!s.error.empty()) {
         ImGui::PushFont(fonts_.caption);
@@ -484,16 +483,23 @@ void App::card(const Snapshot& s, float width) {
 
 void App::refreshButton(const Snapshot& s) {
     bool pending = refreshing_.count(s.monitor) && ImGui::GetTime() - refreshing_[s.monitor] < 15;
+    // Dim, flat until hovered: it's rarely needed.
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_Text, Colours().muted);
     ImGui::PushID(s.monitor.c_str());
     ImGui::BeginDisabled(pending);
     if (ImGui::Button(icon::Refresh)) {
         refreshing_[s.monitor] = ImGui::GetTime();
         client_->Refresh(s.monitor);
     }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        std::string tip = pending ? "Checking…" : "Check now";
+        if (!pending && s.updated) tip += " (updated " + Ago(s.updated, now()) + ")";
+        ImGui::SetTooltip("%s", tip.c_str());
+    }
     ImGui::EndDisabled();
     ImGui::PopID();
-    ImGui::PopStyleColor();
+    ImGui::PopStyleColor(2);
 }
 
 // compactCards fills the space with one row per monitor, full width so the
@@ -505,8 +511,9 @@ void App::compactCards(float width) {
 
     // Measure every monitor each way at this width, in a window kept behind
     // the main one, whose opaque background hides it and which takes the
-    // mouse first. (Off screen won't do: ImGui stops laying out child
-    // windows it can't see, so their sizes would go stale.)
+    // mouse first. Each copy is drawn at the top of the screen, on top of
+    // the others: ImGui stops laying out child windows it can't see, so a
+    // copy pushed off the bottom would keep a stale size.
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::Begin("##measure", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
@@ -515,15 +522,19 @@ void App::compactCards(float width) {
                      ImGuiWindowFlags_NoBringToFrontOnFocus);
     ImGui::BringWindowToDisplayBack(ImGui::GetCurrentWindow());
     std::vector<Panel> panels;
+    ImVec2 origin = ImGui::GetCursorScreenPos();
     for (const auto& s : snaps) {
         ImGui::PushID(s.monitor.c_str());
         Panel p;
+        ImGui::SetCursorScreenPos(origin);
         ImGui::PushID("row");
         p.row = compactCard(s, width, Show::Row, 0, nullptr);
         ImGui::PopID();
+        ImGui::SetCursorScreenPos(origin);
         ImGui::PushID("full");
         p.full = compactCard(s, width, Show::Full, 0, nullptr);
         ImGui::PopID();
+        ImGui::SetCursorScreenPos(origin);
         ImGui::PushID("clipped");
         p.overhead = compactCard(s, width, Show::Clipped, 1, nullptr) - 1 - p.row;
         ImGui::PopID();
@@ -553,9 +564,10 @@ void App::compactCards(float width) {
     }
 }
 
-// compactCard draws one monitor as a row, its name and summary, with its
-// full panel underneath unless show is Row. A clipped panel scrolls within
-// body. It sets *clicked when the row is clicked; with no clicked, it's
+// compactCard draws one monitor: collapsed, a row of its summary with its
+// controls on the right; open, its full panel, with the controls in a slim
+// strip down the right edge. A clipped panel scrolls within body. It sets
+// *clicked when the row (or the strip) is clicked; with no clicked, it's
 // only being measured and ignores the mouse. It returns the card's height.
 float App::compactCard(const Snapshot& s, float width, Show show, float body, bool* clicked) {
     const Palette& p = Colours();
@@ -567,92 +579,130 @@ float App::compactCard(const Snapshot& s, float width, Show show, float body, bo
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PopStyleVar();
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->ChannelsSplit(2);
-    dl->ChannelsSetCurrent(1);
 
     ImVec2 top = ImGui::GetCursorScreenPos();
+    ImVec2 winMin = ImGui::GetWindowPos();
+    float winRight = winMin.x + ImGui::GetWindowWidth();
     float avail = ImGui::GetContentRegionAvail().x;
-    float nameW = 112 * scale_;
-
-    // The name, with when it was updated or that it failed below it, or
-    // beside it when open, since the panel then needs no summary.
-    bool pending = refreshing_.count(s.monitor) && ImGui::GetTime() - refreshing_[s.monitor] < 15;
-    ImGui::BeginGroup();
-    ImGui::PushFont(fonts_.heading);
-    ImGui::TextUnformatted(fit(s.title, nameW - 8 * scale_).c_str());
-    ImGui::PopFont();
-    ImGui::PushFont(fonts_.caption);
-    if (open) {
-        ImGui::SameLine(nameW);
-        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2 * scale_);  // sit on the name's baseline
-    }
-    if (!s.error.empty()) {
-        ImGui::TextColored(p.warn, "%s  Failed", icon::Warning);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", s.error.c_str());
-    } else {
-        mutedText(IsLocal(s) ? "live"
-                  : pending ? "refreshing…"
-                  : s.updated ? (open ? "updated " : "") + Ago(s.updated, now())
-                              : "waiting…");
-    }
-    ImGui::PopFont();
-    ImGui::EndGroup();
-    float nameH = ImGui::GetItemRectSize().y;
-
-    // Refresh and the open/closed chevron on the right.
-    ImGui::PushFont(fonts_.caption);
     const ImGuiStyle& st = ImGui::GetStyle();
-    float bw = ImGui::CalcTextSize(icon::Refresh).x + st.FramePadding.x * 2;
+    bool local = IsLocal(s);
+    bool failed = !s.error.empty();
+
+    ImGui::PushFont(fonts_.caption);
+    float lineH = ImGui::GetFrameHeight();
     float cw = ImGui::CalcTextSize(icon::ChevronDown).x;
-    ImGui::SetCursorScreenPos(ImVec2(top.x + avail - bw, top.y));
-    bool onButton = false;
-    if (clicked && !IsLocal(s)) {
-        refreshButton(s);
-        onButton = ImGui::IsItemHovered();
-    } else {
-        ImGui::Dummy(ImVec2(bw, ImGui::GetFrameHeight()));
-    }
-    ImGui::SetCursorScreenPos(ImVec2(top.x + avail - bw - cw - 6 * scale_, top.y + st.FramePadding.y));
-    mutedText(open ? icon::ChevronUp : icon::ChevronDown);
+    float bw = ImGui::CalcTextSize(icon::Refresh).x + st.FramePadding.x * 2;
     ImGui::PopFont();
 
-    // The summary between them, while the panel itself is hidden.
-    float headH = nameH;
+    // The refresh button, or a space its size while measuring.
+    bool onButton = false;
+    auto refresh = [&](ImVec2 at) {
+        ImGui::SetCursorScreenPos(at);
+        if (clicked) {
+            refreshButton(s);
+            onButton = ImGui::IsItemHovered();
+        } else {
+            ImGui::Dummy(ImVec2(bw, lineH));
+        }
+    };
+
+    ImVec2 hitMin, hitMax;  // where a click opens or closes it
     if (!open) {
-        ImGui::SetCursorScreenPos(ImVec2(top.x + nameW, top.y));
-        float sumW = avail - nameW - bw - cw - 16 * scale_;
+        dl->ChannelsSplit(2);
+        dl->ChannelsSetCurrent(1);
+        // On the right: the chevron in the corner, since every panel has
+        // one, then refresh and when it was updated, which only the
+        // server's monitors have.
+        ImGui::PushFont(fonts_.caption);
+        float x = top.x + avail - cw;
+        ImGui::SetCursorScreenPos(ImVec2(x, top.y + st.FramePadding.y));
+        mutedText(icon::ChevronDown);
+        if (!local) {
+            x -= bw + 4 * scale_;
+            refresh(ImVec2(x, top.y));
+            bool pending = refreshing_.count(s.monitor) && ImGui::GetTime() - refreshing_[s.monitor] < 15;
+            std::string when = failed    ? std::string(icon::Warning) + "  Failed"
+                               : pending ? "refreshing…"
+                               : s.updated ? Ago(s.updated, now())
+                                           : "waiting…";
+            x -= ImGui::CalcTextSize(when.c_str()).x + 4 * scale_;
+            ImGui::SetCursorScreenPos(ImVec2(x, top.y + st.FramePadding.y));
+            ImGui::TextColored(failed ? p.warn : p.muted, "%s", when.c_str());
+            if (failed && clicked && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", s.error.c_str());
+        }
+        ImGui::PopFont();
+        float rightW = top.x + avail - x + 16 * scale_;
+        float bottom = top.y + lineH;
+
+        // On the left: what's being watched, if the monitor says, then the
+        // summary, which shares the controls' line when there's no
+        // subtitle above it.
+        float y = top.y;
+        if (!s.subtitle.empty()) {
+            ImGui::SetCursorScreenPos(ImVec2(top.x, top.y + st.FramePadding.y));
+            ImGui::PushFont(fonts_.caption);
+            mutedText(fit(s.subtitle, avail - rightW));
+            ImGui::PopFont();
+            y = bottom;
+        }
+        ImGui::SetCursorScreenPos(ImVec2(top.x, y));
         if (!s.summary.empty()) {
-            summary(s.summary, sumW);
-        } else if (s.blocks.empty() && s.error.empty()) {
+            summary(s.summary, avail - (y == top.y ? rightW : 0));
+        } else if (s.blocks.empty() && !failed) {
             mutedText("Waiting for the first check…");
         } else {
             mutedText("Click for details");
         }
-        headH = std::max(nameH, ImGui::GetItemRectMax().y - top.y);
-    }
-    ImVec2 headMax(top.x + avail, top.y + headH);
+        bottom = std::max(bottom, ImGui::GetItemRectMax().y);
+        hitMin = winMin;
+        hitMax = ImVec2(winRight, bottom + 8 * scale_);
 
-    // Clicking anywhere on the row, bar the refresh button, opens or closes
-    // it.
-    ImVec2 winMin = ImGui::GetWindowPos();
-    ImVec2 rowMin(winMin.x, winMin.y), rowMax(winMin.x + ImGui::GetWindowWidth(), headMax.y + 8 * scale_);
-    bool hovered = clicked && ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect(rowMin, rowMax) && !onButton;
-    dl->ChannelsSetCurrent(0);
-    if (hovered) {
-        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-        dl->AddRectFilled(rowMin, rowMax, u32(p.hover));
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) *clicked = true;
-    }
-    // Merge before the blocks: tables and lists split channels themselves.
-    dl->ChannelsMerge();
-    ImGui::SetCursorScreenPos(ImVec2(top.x, headMax.y));
-    ImGui::Dummy(ImVec2(avail, 0));
+        // Clicking anywhere on the row, bar the refresh button, opens it.
+        dl->ChannelsSetCurrent(0);
+        bool hovered = clicked && ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect(hitMin, hitMax) && !onButton;
+        if (hovered) {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+            dl->AddRectFilled(hitMin, hitMax, u32(p.hover));
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) *clicked = true;
+        }
+        dl->ChannelsMerge();
+        ImGui::SetCursorScreenPos(ImVec2(top.x, bottom));
+        ImGui::Dummy(ImVec2(avail, 0));
+    } else {
+        // The panel takes the width bar a strip on the right holding the
+        // chevron and, below it, refresh. Clicking the strip closes it.
+        float strip = std::max(cw, bw) + 8 * scale_;
+        float mid = top.x + avail - std::max(cw, bw) / 2;
+        hitMin = ImVec2(top.x + avail - strip, winMin.y);
+        bool hovered = clicked && ImGui::IsWindowHovered() &&
+                       ImGui::IsMouseHoveringRect(hitMin, ImVec2(winRight, winMin.y + ImGui::GetWindowHeight()));
 
-    if (open) {
-        ImGui::Dummy(ImVec2(0, 4 * scale_));
+        ImGui::PushFont(fonts_.caption);
+        ImGui::SetCursorScreenPos(ImVec2(mid - cw / 2, top.y + st.FramePadding.y));
+        ImGui::TextColored(hovered ? p.text : p.muted, "%s", icon::ChevronUp);
+        float stripBottom = top.y + lineH;
+        if (!local) {
+            refresh(ImVec2(mid - bw / 2, stripBottom));
+            stripBottom += lineH;
+        }
+        ImGui::PopFont();
+        if (hovered && !onButton) {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) *clicked = true;
+        }
+
+        ImGui::SetCursorScreenPos(top);
         bool clip = show == Show::Clipped;
-        if (clip) ImGui::BeginChild("##body", ImVec2(avail, body), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
-        if (!s.error.empty()) {
+        ImGui::BeginChild("##body", ImVec2(avail - strip, clip ? body : 0),
+                          clip ? ImGuiChildFlags_None : ImGuiChildFlags_AutoResizeY,
+                          ImGuiWindowFlags_NoBackground |
+                              (clip ? 0 : ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse));
+        if (!s.subtitle.empty()) {
+            ImGui::PushFont(fonts_.caption);
+            wrapped(s.subtitle, p.muted);
+            ImGui::PopFont();
+        }
+        if (failed) {
             ImGui::PushFont(fonts_.caption);
             wrapped(std::string(icon::Warning) + "  " + s.error, p.warn);
             ImGui::PopFont();
@@ -663,7 +713,10 @@ float App::compactCard(const Snapshot& s, float width, Show show, float body, bo
             block(s.blocks[i]);
             ImGui::PopID();
         }
-        if (clip) ImGui::EndChild();
+        ImGui::EndChild();
+        float bottom = std::max(ImGui::GetItemRectMax().y, stripBottom);
+        ImGui::SetCursorScreenPos(ImVec2(top.x, bottom));
+        ImGui::Dummy(ImVec2(avail, 0));
     }
     ImGui::EndChild();
     ImGui::PopStyleColor();
