@@ -107,6 +107,8 @@ func TestExplain(t *testing.T) {
 	assert.Contains(t, body["system_instruction"], "About them: Lives in Bristol")
 	assert.Contains(t, body["input"], `"title":"Quarterly review","when":"15:00–16:00","location":"Room 4","calendar":"Work"`)
 	assert.Contains(t, body["input"], `"when":"all day"`)
+	assert.Contains(t, body["input"], "Today is Monday 12 October 2026.")
+	assert.Equal(t, []any{map[string]any{"type": "google_search"}}, body["tools"], "searches for what's on")
 	assert.NotContains(t, body["input"], "Late film", "tomorrow isn't asked about")
 	format := body["response_format"].(map[string]any)
 	assert.Equal(t, "application/json", format["mime_type"])

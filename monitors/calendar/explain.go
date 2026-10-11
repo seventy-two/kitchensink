@@ -37,7 +37,13 @@ const (
 	notesKey = "notes"
 )
 
-const explainInstruction = `You annotate entries on someone's calendar for their dashboard. For each event, write one short line (at most 12 words) saying what it most likely is, using what you know about them. Where the title already says it plainly, add something useful instead, such as where it probably is. Hedge guesses with "probably" rather than inventing details. Write in plain UK English, with no full stop at the end.`
+const explainInstruction = `You annotate entries on someone's calendar for their dashboard. Titles are often their own shorthand or in-jokes. For each event, work out what is actually happening, using what you know about them and Google Search for what's on that day: the actual match, film, gig, show or appointment, and where.
+
+Write one short line (at most 12 words) per event, naming the specifics: teams, film or band, and venue. For example, an event titled "handegg" on the day the Eagles play the Jaguars in London becomes "Going to see the Eagles v Jaguars at Tottenham". Only add "probably" when you can't confirm it. Write in plain UK English, with no full stop at the end.`
+
+// notesVersion is part of each note's key, so changing how notes are
+// written replaces the ones already made.
+const notesVersion = "2"
 
 // note is Gemini's line about one event, kept for the day it was made.
 type note struct {
@@ -48,7 +54,7 @@ type note struct {
 // noteKey identifies an occurrence for its note. A change of title, time
 // or place gets a fresh one.
 func noteKey(o occurrence, calName string) string {
-	h := sha256.Sum256([]byte(strings.Join([]string{calName, o.UID, o.Start.UTC().Format(time.RFC3339), o.Title, o.Location}, "\x00")))
+	h := sha256.Sum256([]byte(strings.Join([]string{notesVersion, calName, o.UID, o.Start.UTC().Format(time.RFC3339), o.Title, o.Location}, "\x00")))
 	return hex.EncodeToString(h[:12])
 }
 
@@ -76,7 +82,7 @@ func (m *Monitor) explain(ctx context.Context, env monitor.Env, today []occurren
 		keys = append(keys, k)
 	}
 	if len(ask) > 0 {
-		lines, err := m.askGemini(ctx, env.HTTP, ask)
+		lines, err := m.askGemini(ctx, env.HTTP, ask, now)
 		if err != nil {
 			env.Log.Warn("explaining events", "err", err)
 		}
@@ -106,7 +112,7 @@ type explainEvent struct {
 
 // askGemini asks for a line about each event, returned in the same order;
 // ones it didn't answer are empty.
-func (m *Monitor) askGemini(ctx context.Context, client *http.Client, events []occurrence) ([]string, error) {
+func (m *Monitor) askGemini(ctx context.Context, client *http.Client, events []occurrence, now time.Time) ([]string, error) {
 	cfg := m.cfg.Explain
 	var list []explainEvent
 	for i, o := range events {
@@ -120,7 +126,7 @@ func (m *Monitor) askGemini(ctx context.Context, client *http.Client, events []o
 		})
 	}
 	eventsJSON, _ := json.Marshal(list)
-	input := "Today's events:\n" + string(eventsJSON)
+	input := "Today is " + now.In(m.loc).Format("Monday 2 January 2006") + ". Today's events:\n" + string(eventsJSON)
 	instruction := explainInstruction
 	if cfg.Context != "" {
 		instruction += "\n\nAbout them: " + cfg.Context
@@ -130,7 +136,9 @@ func (m *Monitor) askGemini(ctx context.Context, client *http.Client, events []o
 		"model":              cfg.Model,
 		"input":              input,
 		"system_instruction": instruction,
-		"generation_config":  map[string]any{"thinking_level": "low", "max_output_tokens": 2000},
+		"generation_config":  map[string]any{"thinking_level": "low", "max_output_tokens": 4000},
+		// Search finds what's actually on: fixtures, films, gigs.
+		"tools": []any{map[string]any{"type": "google_search"}},
 		"response_format": map[string]any{
 			"type":      "text",
 			"mime_type": "application/json",
