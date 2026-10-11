@@ -15,8 +15,7 @@ import (
 	"github.com/seventy-two/kitchensink/monitor"
 )
 
-// Explain configures notes from Gemini on what each of today's events
-// probably is.
+// Explain configures notes from Gemini on what each upcoming event is.
 type Explain struct {
 	// APIKey is a Gemini API key; use "${NAME}" to keep it in the
 	// environment.
@@ -37,15 +36,17 @@ const (
 	notesKey = "notes"
 )
 
-const explainInstruction = `You annotate entries on someone's calendar for their dashboard. Titles are often their own shorthand or in-jokes. For each event, work out what is actually happening, using what you know about them and Google Search for what's on that day: the actual match, film, gig, show or appointment, and where.
+const explainInstruction = `You annotate entries on someone's calendar for their dashboard. Titles are often their own shorthand or in-jokes. For each event, work out what is actually happening on its date, using what you know about them and Google Search for what's on: the actual match, film, gig, show or appointment, and where.
 
-Write each note as a short listing, not a sentence: what it is, when, and where, separated by " · ". Name the specifics: the teams, the film, the band; the start, kick-off or doors time (24-hour, UK time); and the venue with its town. For example, an event titled "handegg" on the day the Eagles play the Jaguars in London becomes "Eagles v Jaguars · 14:30 kick-off · Tottenham Hotspur Stadium, London", and a gig follows the pattern "<band> · doors <time> · <venue>, <town>". These show the format only; find each event's real details. Leave out any part you can't find rather than guessing, and add "probably" only when unsure what it is. At most 15 words, no full stop at the end.`
+Write each note as a short listing, not a sentence: what it is, when, and where, separated by " · ". Name the specifics: the teams, the film, the band; the start, kick-off or doors time (24-hour, UK time); and the venue with its town. For example, an event titled "handegg" on the day the Eagles play the Jaguars in London becomes "Eagles v Jaguars · 14:30 kick-off · Tottenham Hotspur Stadium, London", and a gig follows the pattern "<band> · doors <time> · <venue>, <town>". These show the format only; find each event's real details. Leave out any part you can't find rather than guessing, and add "probably" only when unsure what it is. If you'd only repeat the title and time already shown, as with a private appointment there's nothing to look up for, give an empty note. At most 15 words, no full stop at the end.`
 
 // notesVersion is part of each note's key, so changing how notes are
 // written replaces the ones already made.
-const notesVersion = "4"
+const notesVersion = "6"
 
-// note is Gemini's line about one event, kept for the day it was made.
+// note is Gemini's line about one event. Day is the date it was made: a
+// note for a later day is kept until then, and made again on the day
+// itself, when details such as start times are firmest.
 type note struct {
 	Day  string `json:"day"`
 	Text string `json:"text"`
@@ -58,11 +59,13 @@ func noteKey(o occurrence, calName string) string {
 	return hex.EncodeToString(h[:12])
 }
 
-// explain returns notes for today's occurrences, by noteKey. Notes are
-// kept for the day, so Gemini is asked only about events it hasn't seen;
-// if it fails, those just go without until the next poll.
-func (m *Monitor) explain(ctx context.Context, env monitor.Env, today []occurrence, now time.Time) map[string]string {
-	day := now.Format("2006-01-02")
+// explain returns notes for the occurrences shown, by noteKey. Gemini is
+// asked only about events without a current note (see note); if it fails,
+// those just go without until the next poll. Notes for events no longer
+// shown are dropped.
+func (m *Monitor) explain(ctx context.Context, env monitor.Env, events []occurrence, now time.Time) map[string]string {
+	day := now.In(m.loc).Format("2006-01-02")
+	today := midnight(now.In(m.loc))
 	saved := map[string]note{}
 	if _, err := env.State.Get(notesKey, &saved); err != nil {
 		env.Log.Warn("reading event notes", "err", err)
@@ -71,9 +74,16 @@ func (m *Monitor) explain(ctx context.Context, env monitor.Env, today []occurren
 	kept := map[string]note{}
 	var ask []occurrence
 	var keys []string
-	for _, o := range today {
+	for _, o := range events {
 		k := noteKey(o, m.cfg.Calendars[o.Cal].Name)
-		if n, ok := saved[k]; ok && n.Day == day {
+		if _, done := kept[k]; done {
+			continue // a multi-day event, seen already
+		}
+		onDay := o.Start.In(m.loc)
+		if onDay.Before(today) {
+			onDay = today // started earlier and still on
+		}
+		if n, ok := saved[k]; ok && (n.Day == day || onDay.Format("2006-01-02") > day) {
 			out[k] = n.Text
 			kept[k] = n
 			continue
@@ -86,15 +96,13 @@ func (m *Monitor) explain(ctx context.Context, env monitor.Env, today []occurren
 		if err != nil {
 			env.Log.Warn("explaining events", "err", err)
 		}
+		// Empty notes are kept too, so they aren't asked about again.
 		for i, line := range lines {
-			if line == "" {
-				continue
-			}
 			out[keys[i]] = line
 			kept[keys[i]] = note{Day: day, Text: line}
 		}
 	}
-	// Saving only today's notes drops yesterday's.
+	// Saving only the notes in use drops ones for past events.
 	if err := env.State.Set(notesKey, kept); err != nil {
 		env.Log.Warn("saving event notes", "err", err)
 	}
@@ -110,15 +118,18 @@ type explainEvent struct {
 	Description string `json:"description,omitempty"`
 }
 
-// askGemini asks for a line about each event, returned in the same order;
-// ones it didn't answer are empty.
-func (m *Monitor) askGemini(ctx context.Context, client *http.Client, events []occurrence, now time.Time) ([]string, error) {
+// askGemini asks for a line about each event, returned by its index in
+// events; ones it didn't answer are missing, and may be asked about again.
+func (m *Monitor) askGemini(ctx context.Context, client *http.Client, events []occurrence, now time.Time) (map[int]string, error) {
 	cfg := m.cfg.Explain
 	var list []explainEvent
 	for i, o := range events {
-		when := "all day"
-		if !o.AllDay {
-			when = o.Start.In(m.loc).Format("15:04") + "–" + o.End.In(m.loc).Format("15:04")
+		start := o.Start.In(m.loc)
+		when := start.Format("Mon 2 Jan") + ", all day"
+		if o.AllDay && o.End.Sub(o.Start) > 24*time.Hour {
+			when = start.Format("Mon 2 Jan") + " to " + o.End.AddDate(0, 0, -1).In(m.loc).Format("Mon 2 Jan")
+		} else if !o.AllDay {
+			when = start.Format("Mon 2 Jan, 15:04") + "–" + o.End.In(m.loc).Format("15:04")
 		}
 		list = append(list, explainEvent{
 			ID: i, Title: o.Title, When: when, Location: o.Location,
@@ -126,7 +137,7 @@ func (m *Monitor) askGemini(ctx context.Context, client *http.Client, events []o
 		})
 	}
 	eventsJSON, _ := json.Marshal(list)
-	input := "Today is " + now.In(m.loc).Format("Monday 2 January 2006") + ". Today's events:\n" + string(eventsJSON)
+	input := "Today is " + now.In(m.loc).Format("Monday 2 January 2006") + ". Events:\n" + string(eventsJSON)
 	instruction := explainInstruction
 	if cfg.Context != "" {
 		instruction += "\n\nAbout them: " + cfg.Context
@@ -209,9 +220,9 @@ func (m *Monitor) askGemini(ctx context.Context, client *http.Client, events []o
 	if err := json.Unmarshal([]byte(text.String()), &answer); err != nil {
 		return nil, fmt.Errorf("gemini's reply isn't the JSON asked for: %w", err)
 	}
-	out := make([]string, len(events))
+	out := map[int]string{}
 	for _, n := range answer.Notes {
-		if n.ID >= 0 && n.ID < len(out) {
+		if n.ID >= 0 && n.ID < len(events) {
 			out[n.ID] = strings.TrimSuffix(strings.TrimSpace(n.Note), ".")
 		}
 	}

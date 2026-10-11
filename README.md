@@ -33,10 +33,12 @@ The `calendar` monitor merges any number of ICS feeds into one view of the
 next `days` days, one table per day, and links each event's Teams, Meet or
 Zoom call. Recurring events, exceptions and moved instances are handled.
 With `explain` set (a Gemini API key, and optionally a little `context`
-about you), each of today's events gets a subtitle from Gemini, found with
-Google Search, listing what it is, when and where (e.g. "Eagles v
-Jaguars · 14:30 kick-off · Tottenham Hotspur Stadium, London"). Notes are kept for the day, so each event is asked
-about once; if Gemini is unavailable the calendar shows without them.
+about you), each event shown gets a subtitle from Gemini, found with Google
+Search, listing what it is, when and where (e.g. "Eagles v Jaguars ·
+14:30 kick-off · Tottenham Hotspur Stadium, London"), or none when
+there's nothing to add. A note is made when an event first shows and
+again on its day, for the latest details; if Gemini is unavailable the
+calendar shows without them.
 
 Each feed's address is a secret, so put it in the environment:
 

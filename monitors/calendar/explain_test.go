@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/seventy-two/kitchensink/monitor"
 	"github.com/seventy-two/kitchensink/monitor/monitortest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -46,7 +47,11 @@ func newFakeGemini(t *testing.T) *fakeGemini {
 		json.Unmarshal([]byte(input[strings.Index(input, "["):]), &events)
 		var notes []map[string]any
 		for _, e := range events {
-			notes = append(notes, map[string]any{"id": e.ID, "note": "about " + e.Title + "."})
+			text := "about " + e.Title + "."
+			if e.Title == "Quarterly review" {
+				text = "" // nothing to add
+			}
+			notes = append(notes, map[string]any{"id": e.ID, "note": text})
 		}
 		text, _ := json.Marshal(map[string]any{"notes": notes})
 		json.NewEncoder(w).Encode(map[string]any{
@@ -82,8 +87,15 @@ func TestExplain(t *testing.T) {
 	work, personal := feeds(t)
 	gemini := newFakeGemini(t)
 	m := explainMonitor(t, gemini.URL, work, personal)
-	env := monitortest.Env(now)
+	env := monitortest.Env(now) // Monday 12 October
 
+	details := func(b monitor.Block) []string {
+		var out []string
+		for _, r := range b.Rows {
+			out = append(out, r[1].Text+" -> "+r[1].Detail)
+		}
+		return out
+	}
 	res, err := m.Poll(context.Background(), env)
 	require.NoError(t, err)
 	assert.Equal(t, []string{
@@ -91,17 +103,16 @@ func TestExplain(t *testing.T) {
 		"09:00–09:15 | Standup | Work",
 		"15:00–16:00 | Quarterly review · Room 4 | Work",
 	}, rows(res.Blocks[0]), "the titles stay as they were")
-	var details []string
-	for _, r := range res.Blocks[0].Rows {
-		details = append(details, r[1].Detail)
-	}
-	assert.Equal(t, []string{"about Bins out", "about Standup", "about Quarterly review"}, details,
-		"each note under its title, its full stop dropped")
-	for _, r := range res.Blocks[1].Rows {
-		assert.Empty(t, r[1].Detail, "only today's")
-	}
-	assert.Equal(t, []string{"10:00–10:15 | Standup (moved) | Work", "22:00–… | Late film | Personal"}, rows(res.Blocks[1]),
-		"only today's")
+	assert.Equal(t, []string{
+		"Bins out -> about Bins out",
+		"Standup -> about Standup",
+		"Quarterly review · Room 4 -> ",
+	}, details(res.Blocks[0]), "each note under its title, its full stop dropped")
+	assert.Equal(t, []string{
+		"Standup (moved) -> about Standup (moved)",
+		"Late film -> about Late film",
+	}, details(res.Blocks[1]), "later days get notes too")
+	assert.Equal(t, "Weekend in Cardiff -> about Weekend in Cardiff", details(res.Blocks[6])[0], "on each day of a multi-day event")
 
 	require.Equal(t, 1, gemini.calls(), "one request for all of them")
 	body := gemini.bodies[0]
@@ -109,27 +120,40 @@ func TestExplain(t *testing.T) {
 	assert.Equal(t, defaultModel, body["model"])
 	assert.Equal(t, false, body["store"])
 	assert.Contains(t, body["system_instruction"], "About them: Lives in Bristol")
-	assert.Contains(t, body["input"], `"title":"Quarterly review","when":"15:00–16:00","location":"Room 4","calendar":"Work"`)
-	assert.Contains(t, body["input"], `"when":"all day"`)
-	assert.Contains(t, body["input"], "Today is Monday 12 October 2026.")
+	input := body["input"].(string)
+	assert.Contains(t, input, "Today is Monday 12 October 2026.")
+	assert.Contains(t, input, `"title":"Quarterly review","when":"Mon 12 Oct, 15:00–16:00","location":"Room 4","calendar":"Work"`)
+	assert.Contains(t, input, `"title":"Bins out","when":"Mon 12 Oct, all day"`)
+	assert.Contains(t, input, `"title":"Weekend in Cardiff","when":"Fri 16 Oct to Sun 18 Oct"`)
+	assert.Equal(t, 1, strings.Count(input, "Weekend in Cardiff"), "a multi-day event is asked about once")
 	assert.Equal(t, []any{map[string]any{"type": "google_search"}}, body["tools"], "searches for what's on")
-	assert.NotContains(t, body["input"], "Late film", "tomorrow isn't asked about")
 	format := body["response_format"].(map[string]any)
 	assert.Equal(t, "application/json", format["mime_type"])
 
-	// Kept for the day: no more requests.
+	// Kept, empty ones too: no more requests the same day.
 	_, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
 	assert.Equal(t, 1, gemini.calls())
 
-	// The next day, only the new day's events are asked about.
+	// The next day, that day's events are asked about again, for the
+	// latest details; later ones keep their notes, and past ones go.
 	next := env
 	next.Now = func() time.Time { return now.AddDate(0, 0, 1) }
-	_, err = m.Poll(context.Background(), next)
+	res, err = m.Poll(context.Background(), next)
 	require.NoError(t, err)
 	require.Equal(t, 2, gemini.calls())
-	assert.Contains(t, gemini.bodies[1]["input"], "Standup (moved)")
-	assert.NotContains(t, gemini.bodies[1]["input"], "Bins out")
+	input = gemini.bodies[1]["input"].(string)
+	assert.Contains(t, input, "Standup (moved)")
+	assert.Contains(t, input, "Late film")
+	assert.NotContains(t, input, "Call with Mum", "Wednesday's note is kept")
+	assert.NotContains(t, input, "Bins out")
+	assert.Contains(t, details(res.Blocks[1]), "Call with Mum -> about Call with Mum")
+	var saved map[string]note
+	_, err = next.State.Get(notesKey, &saved)
+	require.NoError(t, err)
+	for _, n := range saved {
+		assert.NotEqual(t, "about Bins out", n.Text, "past events' notes are dropped")
+	}
 }
 
 func TestExplainFailing(t *testing.T) {
@@ -141,6 +165,7 @@ func TestExplainFailing(t *testing.T) {
 
 	res, err := m.Poll(context.Background(), env)
 	require.NoError(t, err, "the calendar still shows")
+	assert.Empty(t, res.Blocks[0].Rows[0][1].Detail)
 	assert.Equal(t, []string{"09:00–09:15 | Standup", "15:00–16:00 | Quarterly review · Room 4"}, rows(res.Blocks[0]))
 
 	// It tries again on the next poll, and the notes appear.

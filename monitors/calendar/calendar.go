@@ -48,8 +48,8 @@ type Config struct {
 	RemindMinutes *int `json:"remindMinutes"`
 	// MaxEvents caps the rows shown across all days. It defaults to 40.
 	MaxEvents int `json:"maxEvents"`
-	// Explain, if set, adds a note from Gemini under each of today's
-	// events saying what it probably is.
+	// Explain, if set, adds a note from Gemini under each event shown
+	// saying what it is, when and where.
 	Explain *Explain `json:"explain"`
 }
 
@@ -156,13 +156,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 
 	var notes map[string]string
 	if m.cfg.Explain != nil {
-		var today []occurrence
-		for _, o := range occs {
-			if overlaps(o, midnight(now), midnight(now).AddDate(0, 0, 1)) {
-				today = append(today, o)
-			}
-		}
-		notes = m.explain(ctx, env, today, now)
+		notes = m.explain(ctx, env, occs, now)
 	}
 
 	var blocks []monitor.Block
@@ -244,8 +238,8 @@ func when(o occurrence, now, today time.Time) string {
 }
 
 // blocks makes a table for each day with something on. Today always gets
-// one, so an empty day says so. notes, by noteKey, go under today's
-// events' titles.
+// one, so an empty day says so. notes, by noteKey, go under the events'
+// titles.
 func (m *Monitor) blocks(occs []occurrence, now time.Time, notes map[string]string) []monitor.Block {
 	today := midnight(now)
 	// No headings: each day's table is short, and they'd repeat.
@@ -288,9 +282,7 @@ func (m *Monitor) blocks(occs []occurrence, now time.Time, notes map[string]stri
 				cal := m.cfg.Calendars[o.Cal]
 				row = append(row, monitor.Cell{Text: cal.Name, Tone: cal.Tone})
 			}
-			if i == 0 {
-				row[1].Detail = notes[noteKey(o, m.cfg.Calendars[o.Cal].Name)]
-			}
+			row[1].Detail = notes[noteKey(o, m.cfg.Calendars[o.Cal].Name)]
 			b.Rows = append(b.Rows, row)
 		}
 		switch {
