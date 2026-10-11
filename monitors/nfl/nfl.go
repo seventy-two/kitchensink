@@ -335,7 +335,7 @@ var newYork = func() *time.Location {
 }()
 
 // today is a chip for each of today's games, in kick-off order: the teams
-// stacked ("PHI", "@", "JAX") to keep chips narrow, then the kick-off time
+// stacked, away above home, to keep chips narrow, then the kick-off time
 // and channel until it starts, the score and clock while it's on, and the
 // final score. Followed teams' games are highlighted, and live ones
 // marked. It's nil on a day without games.
@@ -353,7 +353,7 @@ func (m *Monitor) today(games []game, now time.Time) ([]monitor.Stat, monitor.Su
 	sort.SliceStable(todays, func(i, j int) bool { return todays[i].kickoff.Before(todays[j].kickoff) })
 	var out []monitor.Stat
 	for _, g := range todays {
-		s := monitor.Stat{Label: g.away + "\n@\n" + g.home, Value: g.awayScore + "–" + g.homeScore}
+		s := monitor.Stat{Label: g.away + "\n" + g.home, Value: g.awayScore + "–" + g.homeScore}
 		switch g.state {
 		case "pre":
 			s.Value = g.kickoff.In(m.zone).Format("15:04")
