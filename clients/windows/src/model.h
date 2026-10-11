@@ -97,6 +97,17 @@ int64_t ParseTime(const std::string& s);
 // "2h ago", "3d ago".
 std::string Ago(int64_t then, int64_t now);
 
+// Arrange orders panel IDs by a saved order. Panels in saved come in that
+// order; ones it doesn't mention (e.g. added since) keep their place after
+// the panel they follow by default. IDs in saved that no longer exist are
+// ignored.
+std::vector<std::string> Arrange(const std::vector<std::string>& defaults, const std::vector<std::string>& saved);
+
+// Move returns order with id moved to just before target, or just after it
+// when after is set. Unknown IDs leave it unchanged.
+std::vector<std::string> Move(std::vector<std::string> order, const std::string& id, const std::string& target,
+                              bool after);
+
 // UseCompact decides whether a window of this size, in pixels at this DPI
 // scale, shows each monitor's summary rather than its full panel. It takes
 // the current choice so that resizing near the boundary doesn't flicker.

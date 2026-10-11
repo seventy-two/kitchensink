@@ -229,6 +229,26 @@ static void testMedia() {
     CHECK_EQ(MediaSnapshot(np, 1000).summary[0].label, std::string("Paused"));
 }
 
+static void testArrange() {
+    using V = std::vector<std::string>;
+    V defaults = {"pc", "calendar", "todo", "stocks", "drives"};
+    CHECK(Arrange(defaults, {}) == defaults);
+    CHECK(Arrange(defaults, {"stocks", "pc", "drives", "calendar", "todo"}) == V({"stocks", "pc", "drives", "calendar", "todo"}));
+    // A new panel (media, after pc by default) slots in after pc; a removed
+    // one (gone) is dropped.
+    defaults = {"pc", "media", "calendar", "todo", "stocks", "drives"};
+    CHECK(Arrange(defaults, {"stocks", "pc", "gone", "drives", "calendar", "todo"}) ==
+          V({"stocks", "pc", "media", "drives", "calendar", "todo"}));
+    // A new first panel goes first.
+    CHECK(Arrange({"new", "a", "b"}, {"b", "a"}) == V({"new", "b", "a"}));
+
+    V order = {"a", "b", "c", "d"};
+    CHECK(Move(order, "d", "b", false) == V({"a", "d", "b", "c"}));
+    CHECK(Move(order, "a", "c", true) == V({"b", "c", "a", "d"}));
+    CHECK(Move(order, "b", "b", true) == order);
+    CHECK(Move(order, "x", "b", true) == order);
+}
+
 static void testParseEvent() {
     Event e = ParseEvent(nlohmann::json::parse(
         R"({"id": 42, "monitor": "nfl", "key": "final:1", "time": "2026-10-10T18:07:31Z",
@@ -317,6 +337,7 @@ int main() {
     testGpuUtilisation();
     testLocalPanels();
     testMedia();
+    testArrange();
     testParseEvent();
     testModel();
     testSse();

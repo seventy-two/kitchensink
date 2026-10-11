@@ -61,8 +61,9 @@ public:
 private:
     void header();
     float windowButtons();
-    // panels lists everything to draw: This PC, Now playing (while
-    // something is), the server's monitors in config order, then Drives.
+    // panels lists everything to draw, in the order the user dragged them
+    // into; by default This PC, Now playing (while something is), the
+    // server's monitors in config order, then Drives.
     std::vector<Snapshot> panels() const;
     void cards(float width);
     void card(const Snapshot& s, float width);
@@ -70,6 +71,8 @@ private:
     float compactCard(const Snapshot& s, float width, Show show, float body, bool* clicked);
     void summary(const std::vector<Stat>& stats, float width);
     void refreshButton(const Snapshot& s);
+    bool grip(const Snapshot& s, float y, bool interactive);
+    void dragDrop();
     // block draws one block of a monitor's panel; monitor is where a
     // checklist sends its actions.
     void block(const std::string& monitor, const Block& b);
@@ -118,6 +121,11 @@ private:
     // "monitor/item", with when they were made; a snapshot replaces them.
     std::unordered_map<std::string, std::pair<bool, double>> ticked_;
     std::unordered_map<std::string, std::array<char, 512>> newItem_;  // add boxes, by monitor
+
+    // Dragging panels into a new order: the one being dragged, and where
+    // each card was drawn this frame.
+    std::string dragging_;
+    std::vector<std::pair<std::string, ImRect>> cardRects_;
 
     bool settingsOpen_ = false;
     char urlBuf_[512] = {};

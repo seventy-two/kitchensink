@@ -20,6 +20,8 @@ result is a single `kitchensink.exe` with nothing to install.
   and video memory, each with a minute's history) and **Drives** (each
   fixed drive's use). They read Windows' own counters once a second, only
   while the window is showing, and work with the server offline.
+- Drag a panel by the dots in its left margin to reorder; the order also
+  decides which open first in the compact layout.
 - **Now playing**: what's playing on this PC, from Windows' media
   sessions (the same source as the volume keys' media pop-up), so Spotify,
   browsers and other players all show. Cover, track, progress and

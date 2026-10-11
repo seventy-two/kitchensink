@@ -81,6 +81,9 @@ Config LoadConfig() {
     };
     ids("expanded", c.expanded);
     ids("collapsed", c.collapsed);
+    if (auto it = j.find("order"); it != j.end() && it->is_array())
+        for (const auto& id : *it)
+            if (id.is_string()) c.order.push_back(id.get<std::string>());
     return c;
 }
 
@@ -92,6 +95,7 @@ bool SaveConfig(const Config& c) {
         {"notify", c.notify},
         {"expanded", c.expanded},
         {"collapsed", c.collapsed},
+        {"order", c.order},
     };
     std::wstring path = configPath(true);
     std::wstring tmp = path + L".tmp";

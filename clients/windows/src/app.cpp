@@ -4,6 +4,7 @@
 #include <shellapi.h>
 
 #include <algorithm>
+#include <cfloat>
 #include <chrono>
 #include <cmath>
 #include <ctime>
@@ -245,7 +246,13 @@ std::vector<Snapshot> App::panels() const {
     if (!mediaPanel_.blocks.empty()) out.push_back(mediaPanel_);
     out.insert(out.end(), model_.Snapshots().begin(), model_.Snapshots().end());
     if (localPanels_.size() > 1) out.push_back(localPanels_.back());
-    return out;
+    if (config_.order.empty()) return out;
+    std::vector<std::string> ids;
+    for (const auto& p : out) ids.push_back(p.monitor);
+    std::vector<Snapshot> arranged;
+    for (const auto& id : Arrange(ids, config_.order))
+        arranged.push_back(*std::find_if(out.begin(), out.end(), [&](const Snapshot& p) { return p.monitor == id; }));
+    return arranged;
 }
 
 bool App::InCaption(float x, float y) const {
@@ -411,8 +418,10 @@ void App::empty(const char* message, bool settingsButton) {
 
 void App::cards(float width) {
     const std::vector<Snapshot> snaps = panels();
+    cardRects_.clear();
     if (compact_) {
         compactCards(width);
+        dragDrop();
         return;
     }
     float gap = 16 * scale_;
@@ -439,6 +448,7 @@ void App::cards(float width) {
         }
         ImGui::EndGroup();
     }
+    dragDrop();
 }
 
 void App::card(const Snapshot& s, float width) {
@@ -449,6 +459,9 @@ void App::card(const Snapshot& s, float width) {
                       ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysUseWindowPadding,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PopStyleVar();
+    ImGui::PushFont(fonts_.caption);
+    grip(s, ImGui::GetCursorScreenPos().y + ImGui::GetFrameHeight() / 2, true);
+    ImGui::PopFont();
 
     // What's being watched on the left, if the monitor says; when it was
     // updated and refresh on the right. Local panels need neither.
@@ -489,6 +502,7 @@ void App::card(const Snapshot& s, float width) {
     ImGui::EndChild();
     ImGui::PopStyleColor();
     heights_[s.monitor] = ImGui::GetItemRectSize().y;
+    cardRects_.push_back({s.monitor, ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax())});
 }
 
 void App::refreshButton(const Snapshot& s) {
@@ -574,16 +588,19 @@ void App::compactCards(float width) {
     }
 }
 
-// compactCard draws one monitor: collapsed, a row of its summary with its
-// controls on the right; open, its full panel, with the controls in a slim
-// strip down the right edge. A clipped panel scrolls within body. It sets
-// *clicked when the row (or the strip) is clicked; with no clicked, it's
-// only being measured and ignores the mouse. It returns the card's height.
+// compactCard draws one monitor: collapsed, a row of its summary; open,
+// its full panel. Either way the top line ends in the same two slots,
+// refresh then the chevron in the corner, so they line up down the column;
+// an open panel keeps that corner to itself. A clipped panel scrolls
+// within body. It sets *clicked when the row (or an open panel's corner
+// strip) is clicked; with no clicked, it's only being measured and ignores
+// the mouse. It returns the card's height.
 float App::compactCard(const Snapshot& s, float width, Show show, float body, bool* clicked) {
     const Palette& p = Colours();
     bool open = show != Show::Row;
     ImGui::PushStyleColor(ImGuiCol_ChildBg, p.card);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12 * scale_, 8 * scale_));
+    // Wide enough at the sides for the grip in the left margin.
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18 * scale_, 8 * scale_));
     ImGui::BeginChild(s.monitor.c_str(), ImVec2(width, 0),
                       ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysUseWindowPadding,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -598,49 +615,53 @@ float App::compactCard(const Snapshot& s, float width, Show show, float body, bo
     bool local = IsLocal(s);
     bool failed = !s.error.empty();
 
+    // The two slots at the right of the top line, each a button wide.
     ImGui::PushFont(fonts_.caption);
     float lineH = ImGui::GetFrameHeight();
+    float slot = ImGui::CalcTextSize(icon::Refresh).x + st.FramePadding.x * 2;
     float cw = ImGui::CalcTextSize(icon::ChevronDown).x;
-    float bw = ImGui::CalcTextSize(icon::Refresh).x + st.FramePadding.x * 2;
     ImGui::PopFont();
+    float chevronX = top.x + avail - slot;
+    float refreshX = chevronX - 2 * scale_ - slot;
+    float controlsX = local ? chevronX : refreshX;
 
-    // The refresh button, or a space its size while measuring.
-    bool onButton = false;
-    auto refresh = [&](ImVec2 at) {
-        ImGui::SetCursorScreenPos(at);
-        if (clicked) {
-            refreshButton(s);
-            onButton = ImGui::IsItemHovered();
-        } else {
-            ImGui::Dummy(ImVec2(bw, lineH));
+    bool onButton = grip(s, top.y + lineH / 2, clicked != nullptr);
+    auto controls = [&](bool lit) {
+        ImGui::PushFont(fonts_.caption);
+        ImGui::SetCursorScreenPos(ImVec2(chevronX + (slot - cw) / 2, top.y + st.FramePadding.y));
+        ImGui::TextColored(lit ? p.text : p.muted, "%s", open ? icon::ChevronUp : icon::ChevronDown);
+        if (!local) {
+            ImGui::SetCursorScreenPos(ImVec2(refreshX, top.y));
+            if (clicked) {
+                refreshButton(s);
+                onButton = onButton || ImGui::IsItemHovered();
+            } else {
+                ImGui::Dummy(ImVec2(slot, lineH));
+            }
         }
+        ImGui::PopFont();
     };
 
-    ImVec2 hitMin, hitMax;  // where a click opens or closes it
     if (!open) {
         dl->ChannelsSplit(2);
         dl->ChannelsSetCurrent(1);
-        // On the right: the chevron in the corner, since every panel has
-        // one, then refresh and when it was updated, which only the
-        // server's monitors have.
-        ImGui::PushFont(fonts_.caption);
-        float x = top.x + avail - cw;
-        ImGui::SetCursorScreenPos(ImVec2(x, top.y + st.FramePadding.y));
-        mutedText(icon::ChevronDown);
+        controls(false);
+        // When it was updated, left of the slots; only the server's
+        // monitors have one.
+        float x = controlsX;
         if (!local) {
-            x -= bw + 4 * scale_;
-            refresh(ImVec2(x, top.y));
             bool pending = refreshing_.count(s.monitor) && ImGui::GetTime() - refreshing_[s.monitor] < 15;
             std::string when = failed    ? std::string(icon::Warning) + "  Failed"
                                : pending ? "refreshing…"
                                : s.updated ? Ago(s.updated, now())
                                            : "waiting…";
+            ImGui::PushFont(fonts_.caption);
             x -= ImGui::CalcTextSize(when.c_str()).x + 4 * scale_;
             ImGui::SetCursorScreenPos(ImVec2(x, top.y + st.FramePadding.y));
             ImGui::TextColored(failed ? p.warn : p.muted, "%s", when.c_str());
             if (failed && clicked && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", s.error.c_str());
+            ImGui::PopFont();
         }
-        ImGui::PopFont();
         float rightW = top.x + avail - x + 16 * scale_;
         float bottom = top.y + lineH;
 
@@ -664,12 +685,12 @@ float App::compactCard(const Snapshot& s, float width, Show show, float body, bo
             mutedText("Click for details");
         }
         bottom = std::max(bottom, ImGui::GetItemRectMax().y);
-        hitMin = winMin;
-        hitMax = ImVec2(winRight, bottom + 8 * scale_);
 
-        // Clicking anywhere on the row, bar the refresh button, opens it.
+        // Clicking anywhere on the row, bar the buttons and grip, opens it.
+        ImVec2 hitMin = winMin, hitMax(winRight, bottom + 8 * scale_);
         dl->ChannelsSetCurrent(0);
-        bool hovered = clicked && ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect(hitMin, hitMax) && !onButton;
+        bool hovered = clicked && dragging_.empty() && ImGui::IsWindowHovered() &&
+                       ImGui::IsMouseHoveringRect(hitMin, hitMax) && !onButton;
         if (hovered) {
             ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
             dl->AddRectFilled(hitMin, hitMax, u32(p.hover));
@@ -679,24 +700,14 @@ float App::compactCard(const Snapshot& s, float width, Show show, float body, bo
         ImGui::SetCursorScreenPos(ImVec2(top.x, bottom));
         ImGui::Dummy(ImVec2(avail, 0));
     } else {
-        // The panel takes the width bar a strip on the right holding the
-        // chevron and, below it, refresh. Clicking the strip closes it.
-        float strip = std::max(cw, bw) + 8 * scale_;
-        float mid = top.x + avail - std::max(cw, bw) / 2;
-        hitMin = ImVec2(top.x + avail - strip, winMin.y);
-        bool hovered = clicked && ImGui::IsWindowHovered() &&
-                       ImGui::IsMouseHoveringRect(hitMin, ImVec2(winRight, winMin.y + ImGui::GetWindowHeight()));
-
-        ImGui::PushFont(fonts_.caption);
-        ImGui::SetCursorScreenPos(ImVec2(mid - cw / 2, top.y + st.FramePadding.y));
-        ImGui::TextColored(hovered ? p.text : p.muted, "%s", icon::ChevronUp);
-        float stripBottom = top.y + lineH;
-        if (!local) {
-            refresh(ImVec2(mid - bw / 2, stripBottom));
-            stripBottom += lineH;
-        }
-        ImGui::PopFont();
-        if (hovered && !onButton) {
+        // The panel takes the width bar a strip down the right holding the
+        // slots; clicking the strip closes it.
+        float strip = top.x + avail - controlsX + 8 * scale_;
+        ImVec2 hitMin(controlsX - 4 * scale_, winMin.y), hitMax(winRight, winMin.y + ImGui::GetWindowHeight());
+        bool inStrip = clicked && dragging_.empty() && ImGui::IsWindowHovered() &&
+                       ImGui::IsMouseHoveringRect(hitMin, hitMax);
+        controls(inStrip && !onButton);
+        if (inStrip && !onButton) {
             ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
             if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) *clicked = true;
         }
@@ -724,13 +735,89 @@ float App::compactCard(const Snapshot& s, float width, Show show, float body, bo
             ImGui::PopID();
         }
         ImGui::EndChild();
-        float bottom = std::max(ImGui::GetItemRectMax().y, stripBottom);
+        float bottom = std::max(ImGui::GetItemRectMax().y, top.y + lineH);
         ImGui::SetCursorScreenPos(ImVec2(top.x, bottom));
         ImGui::Dummy(ImVec2(avail, 0));
     }
     ImGui::EndChild();
     ImGui::PopStyleColor();
+    if (clicked) cardRects_.push_back({s.monitor, ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax())});
     return ImGui::GetItemRectSize().y;
+}
+
+// grip draws the six dots that drag a panel, in the card's left margin,
+// centred on y, and starts a drag from them. It reports whether the mouse
+// is over them.
+bool App::grip(const Snapshot& s, float y, bool interactive) {
+    const Palette& p = Colours();
+    ImVec2 winMin = ImGui::GetWindowPos();
+    float dot = std::max(2.0f, std::round(2 * scale_)), step = dot * 2;
+    float x = winMin.x + std::round(6 * scale_), h = step * 2 + dot;
+    ImRect hit(ImVec2(winMin.x, y - h / 2 - 4 * scale_), ImVec2(x + step + dot + 3 * scale_, y + h / 2 + 4 * scale_));
+
+    // The margin is outside the window's clip rect, so widen it.
+    ImGui::PushClipRect(winMin, ImVec2(winMin.x + ImGui::GetWindowWidth(), winMin.y + ImGui::GetWindowHeight()), false);
+    bool hovered = false;
+    bool dragging = dragging_ == s.monitor;
+    if (interactive) {
+        ImVec2 saved = ImGui::GetCursorScreenPos();
+        ImGui::SetCursorScreenPos(hit.Min);
+        ImGui::PushID("##grip");
+        ImGui::InvisibleButton("##grip", hit.GetSize());
+        ImGui::PopID();
+        hovered = ImGui::IsItemHovered();
+        if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 3)) dragging_ = s.monitor;
+        if (hovered && !dragging) ImGui::SetTooltip("Drag to move");
+        if (hovered || dragging) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+        ImGui::SetCursorScreenPos(saved);
+    }
+    ImVec4 colour = hovered || dragging ? p.text : fade(p.muted, 0.6f);
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    for (int row = 0; row < 3; row++)
+        for (int col = 0; col < 2; col++) {
+            ImVec2 a(x + col * step, std::round(y - h / 2 + row * step));
+            dl->AddRectFilled(a, ImVec2(a.x + dot, a.y + dot), u32(colour));
+        }
+    ImGui::PopClipRect();
+    return hovered;
+}
+
+// dragDrop shows where a dragged panel will land, before or after the card
+// nearest the mouse, and moves it there on release.
+void App::dragDrop() {
+    if (dragging_.empty()) return;
+    const Palette& p = Colours();
+    ImVec2 m = ImGui::GetMousePos();
+    const std::pair<std::string, ImRect>* target = nullptr;
+    const ImRect* dragged = nullptr;
+    float best = FLT_MAX;
+    for (const auto& c : cardRects_) {
+        if (c.first == dragging_) dragged = &c.second;
+        float dx = std::max({c.second.Min.x - m.x, 0.0f, m.x - c.second.Max.x});
+        float dy = std::max({c.second.Min.y - m.y, 0.0f, m.y - c.second.Max.y});
+        if (dx * dx + dy * dy < best) best = dx * dx + dy * dy, target = &c;
+    }
+    ImDrawList* fg = ImGui::GetForegroundDrawList();
+    if (dragged) fg->AddRectFilled(dragged->Min, dragged->Max, u32(fade(p.bg, 0.6f)));
+    bool after = false;
+    if (target) {
+        const ImRect& r = target->second;
+        after = m.y > (r.Min.y + r.Max.y) / 2;
+        float y = after ? r.Max.y + 4 * scale_ : r.Min.y - 4 * scale_;
+        float t = std::max(2.0f, std::round(2 * scale_));
+        fg->AddRectFilled(ImVec2(r.Min.x, y - t / 2), ImVec2(r.Max.x, y + t / 2), u32(p.accent));
+    }
+    ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+    if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) return;
+
+    // Dropped.
+    if (target) {
+        std::vector<std::string> order;
+        for (const auto& s : panels()) order.push_back(s.monitor);
+        config_.order = Move(order, dragging_, target->first, after);
+        SaveConfig(config_);
+    }
+    dragging_.clear();
 }
 
 // summary lays stats out as tiles of label, value and detail, flowing onto

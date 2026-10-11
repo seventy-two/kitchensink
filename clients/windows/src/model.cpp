@@ -128,6 +128,37 @@ Fit FitPanels(const std::vector<Panel>& panels, float height, float gap, float m
     return fit;
 }
 
+std::vector<std::string> Arrange(const std::vector<std::string>& defaults, const std::vector<std::string>& saved) {
+    auto has = [](const std::vector<std::string>& v, const std::string& id) {
+        return std::find(v.begin(), v.end(), id) != v.end();
+    };
+    std::vector<std::string> out;
+    for (const auto& id : saved)
+        if (has(defaults, id) && !has(out, id)) out.push_back(id);
+    for (size_t i = 0; i < defaults.size(); i++) {
+        if (has(out, defaults[i])) continue;
+        // After the panel it follows by default, or first if none.
+        auto pos = out.begin();
+        if (i > 0) {
+            auto prev = std::find(out.begin(), out.end(), defaults[i - 1]);
+            if (prev != out.end()) pos = prev + 1;
+        }
+        out.insert(pos, defaults[i]);
+    }
+    return out;
+}
+
+std::vector<std::string> Move(std::vector<std::string> order, const std::string& id, const std::string& target,
+                              bool after) {
+    if (id == target) return order;
+    auto from = std::find(order.begin(), order.end(), id);
+    if (from == order.end() || std::find(order.begin(), order.end(), target) == order.end()) return order;
+    order.erase(from);
+    auto to = std::find(order.begin(), order.end(), target);
+    order.insert(after ? to + 1 : to, id);
+    return order;
+}
+
 bool UseCompact(bool compact, float width, float height, float scale) {
     // Below these, at 100% scale, the full panels don't fit at a glance.
     constexpr float kHeight = 1100, kWidth = 900, kSlack = 40;

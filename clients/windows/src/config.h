@@ -4,6 +4,7 @@
 
 #include <set>
 #include <string>
+#include <vector>
 
 #include "model.h"
 
@@ -18,6 +19,8 @@ struct Config {
     // In the compact layout, monitors opened or closed by hand. The rest
     // open by themselves while there's room.
     std::set<std::string> expanded, collapsed;
+    // Panel order, as dragged; empty for the server's config order.
+    std::vector<std::string> order;
 };
 
 // LoadConfig reads the settings, leaving defaults for anything missing.
