@@ -4,6 +4,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -71,6 +72,8 @@ type Engine struct {
 type runner struct {
 	spec    Spec
 	refresh chan struct{}
+	// busy keeps Poll and Act from running at once.
+	busy sync.Mutex
 
 	mu   sync.Mutex
 	snap monitor.Snapshot
@@ -145,12 +148,9 @@ func (e *Engine) poll(ctx context.Context, r *runner) time.Duration {
 	log := e.opts.Log.With("monitor", r.spec.ID)
 	pctx, cancel := context.WithTimeout(ctx, e.opts.PollTimeout)
 	defer cancel()
-	res, err := r.spec.Monitor.Poll(pctx, monitor.Env{
-		State: e.store.State(r.spec.ID),
-		HTTP:  e.opts.HTTP,
-		Now:   e.opts.Now,
-		Log:   log,
-	})
+	r.busy.Lock()
+	res, err := r.spec.Monitor.Poll(pctx, e.env(r, log))
+	r.busy.Unlock()
 	if ctx.Err() != nil {
 		return r.spec.Interval
 	}
@@ -228,6 +228,38 @@ func (e *Engine) Snapshots() []monitor.Snapshot {
 		r.mu.Unlock()
 	}
 	return out
+}
+
+func (e *Engine) env(r *runner, log *slog.Logger) monitor.Env {
+	return monitor.Env{State: e.store.State(r.spec.ID), HTTP: e.opts.HTTP, Now: e.opts.Now, Log: log}
+}
+
+// Errors from Act.
+var (
+	ErrNoMonitor = errors.New("no such monitor")
+	ErrNoActions = errors.New("monitor takes no actions")
+)
+
+// Act applies a client's change to a monitor, then has it poll so the
+// change shows. Errors wrapping monitor.ErrBadAction are the client's.
+func (e *Engine) Act(ctx context.Context, id string, a monitor.Action) error {
+	r, ok := e.byID[id]
+	if !ok {
+		return ErrNoMonitor
+	}
+	actor, ok := r.spec.Monitor.(monitor.Actor)
+	if !ok {
+		return ErrNoActions
+	}
+	log := e.opts.Log.With("monitor", id)
+	r.busy.Lock()
+	err := actor.Act(ctx, e.env(r, log), a)
+	r.busy.Unlock()
+	if err != nil {
+		return err
+	}
+	e.Refresh(id)
+	return nil
 }
 
 // Refresh asks a monitor to poll now. It reports false if there's no

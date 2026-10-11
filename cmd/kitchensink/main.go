@@ -28,6 +28,7 @@ import (
 	_ "github.com/seventy-two/kitchensink/monitors/calendar"
 	_ "github.com/seventy-two/kitchensink/monitors/nfl"
 	_ "github.com/seventy-two/kitchensink/monitors/stocks"
+	_ "github.com/seventy-two/kitchensink/monitors/todo"
 	_ "github.com/seventy-two/kitchensink/monitors/weather"
 )
 

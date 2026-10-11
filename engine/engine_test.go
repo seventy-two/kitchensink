@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -174,4 +175,38 @@ func titles(events []monitor.Event) []string {
 		out = append(out, e.Title)
 	}
 	return out
+}
+
+// acting is a monitor that takes actions, recording them in its state.
+type acting struct{ scripted }
+
+func (a *acting) Act(ctx context.Context, env monitor.Env, act monitor.Action) error {
+	if act.Type != "add" {
+		return fmt.Errorf("%w: %s", monitor.ErrBadAction, act.Type)
+	}
+	return env.State.Set("last", act.Text)
+}
+
+func TestAct(t *testing.T) {
+	m := &acting{scripted{results: []monitor.Result{{}}, errs: []error{nil}}}
+	e, st := newEngine(t, m, &recorder{})
+	ctx := context.Background()
+
+	require.NoError(t, e.Act(ctx, "m", monitor.Action{Type: "add", Text: "Bins"}))
+	var last string
+	ok, err := st.State("m").Get("last", &last)
+	require.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, "Bins", last, "the monitor got its state")
+	select {
+	case <-e.runners[0].refresh:
+	default:
+		t.Fatal("no poll was asked for after the action")
+	}
+
+	assert.ErrorIs(t, e.Act(ctx, "m", monitor.Action{Type: "fly"}), monitor.ErrBadAction)
+	assert.ErrorIs(t, e.Act(ctx, "nope", monitor.Action{Type: "add"}), ErrNoMonitor)
+
+	plain, _ := newEngine(t, &scripted{results: []monitor.Result{{}}, errs: []error{nil}}, &recorder{})
+	assert.ErrorIs(t, plain.Act(ctx, "m", monitor.Action{Type: "add"}), ErrNoActions)
 }

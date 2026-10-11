@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -24,6 +25,25 @@ import (
 type Monitor interface {
 	Poll(ctx context.Context, env Env) (Result, error)
 }
+
+// Actor is a monitor that clients can change, such as a todo list. The
+// engine never calls Act at the same time as Poll, and polls straight
+// after, so the change shows at once.
+type Actor interface {
+	Act(ctx context.Context, env Env, a Action) error
+}
+
+// Action is a change a client asks for. Type says what, e.g. "add",
+// "toggle" or "delete"; ID names the item and Text carries new text.
+type Action struct {
+	Type string `json:"type"`
+	ID   string `json:"id,omitempty"`
+	Text string `json:"text,omitempty"`
+}
+
+// ErrBadAction wraps the error for an action a monitor can't do, such as
+// an unknown type or an item that doesn't exist; the API answers 400.
+var ErrBadAction = errors.New("bad action")
 
 // Env is what the engine gives a monitor on each poll.
 type Env struct {
@@ -119,6 +139,10 @@ const (
 	BlockList BlockType = "list"
 	// BlockText is a paragraph of plain text.
 	BlockText BlockType = "text"
+	// BlockChecklist is a list of Items with checkboxes. Ticking one sends
+	// a "toggle" action with its ID, and clients offer "delete"; if AddHint
+	// is set, they also offer a box for "add" actions.
+	BlockChecklist BlockType = "checklist"
 )
 
 // Tone colours a value: good and bad are green and red, and so on. The empty
@@ -144,6 +168,8 @@ type Block struct {
 	Rows    [][]Cell  `json:"rows,omitempty"`
 	Items   []Item    `json:"items,omitempty"`
 	Text    string    `json:"text,omitempty"`
+	// AddHint is the placeholder for a checklist's box for new items.
+	AddHint string `json:"addHint,omitempty"`
 }
 
 // Stat is a labelled value in a stats block.
@@ -181,8 +207,11 @@ type Cell struct {
 	URL  string `json:"url,omitempty"`
 }
 
-// Item is an entry in a list block.
+// Item is an entry in a list or checklist block.
 type Item struct {
+	// ID and Done are for checklists.
+	ID       string `json:"id,omitempty"`
+	Done     bool   `json:"done,omitempty"`
 	Title    string `json:"title"`
 	Subtitle string `json:"subtitle,omitempty"`
 	Detail   string `json:"detail,omitempty"`

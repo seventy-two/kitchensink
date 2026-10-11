@@ -20,6 +20,7 @@ and a notification for each event.
 | `nfl` | ESPN scoreboard | kick-off, scores and results for followed teams; optionally every result |
 | `weather` | [Open-Meteo](https://open-meteo.com) (no key needed) | rain due within the hour, frost, strong gusts |
 | `autotrader` | AutoTrader UK search | newly listed cars |
+| `todo` | a to-do list kept on the server, changed from clients | nothing; ticked tasks clear after `clearAfter` (default `24h`) |
 | `calendar` | iCalendar (ICS) feeds, e.g. Google or Outlook | each timed event, `remindMinutes` (default 10) before it starts |
 
 Each monitor also returns a dashboard panel, polls on its own interval and
@@ -82,6 +83,7 @@ Every `/api` request needs `Authorization: Bearer <token>`.
 | `GET /api/events?since=ID&limit=N` | `{"events": [Event...]}` after `since`, or the latest `limit` (default 100) |
 | `GET /api/stream?since=ID&heartbeat=S` | a server-sent events stream (below) |
 | `POST /api/monitors/{id}/refresh` | 202; the monitor polls now |
+| `POST /api/monitors/{id}/actions` | 204; applies a JSON action such as `{"type":"add","text":"Bins"}`, `{"type":"toggle","id":"…"}` or `{"type":"delete","id":"…"}`, then polls. 400 for an action the monitor refuses, 405 for a monitor that takes none |
 | `GET /healthz` | `ok`, no token needed |
 
 The stream sends:
@@ -111,6 +113,7 @@ drawn from the same few block types, so clients need no per-monitor code:
 | `stats` | `stats`: `label`, `value`, `detail`, `tone`, `series` (a sparkline) |
 | `table` | `columns` (`title`, `align`, `fill` for the column that takes spare width) and `rows` of cells (`text`, `tone`, `url`) |
 | `list` | `items`: `title`, `subtitle`, `detail`, `url`, `image`, `tone` |
+| `checklist` | `items` (`id`, `title`, `done`) with checkboxes that send `toggle` and `delete` actions; `addHint` adds a box for `add` |
 | `text` | `text` |
 
 Tones are `good`, `bad`, `warn`, `muted`, `accent`, or empty for plain text.
@@ -145,6 +148,10 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 
 Then import it from `cmd/kitchensink/main.go` and add it to the config.
 
+- A monitor that clients can change (like `todo`) also implements
+  `monitor.Actor`. The engine never runs `Act` alongside `Poll`, and polls
+  straight after, so changes show at once. Wrap `monitor.ErrBadAction` for
+  actions it can't do.
 - Event keys only need to be unique within the monitor. The engine drops
   any key it has seen before, so a monitor can report the current state on
   every poll without repeating notifications.

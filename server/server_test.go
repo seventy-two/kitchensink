@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -23,7 +25,23 @@ import (
 type fakeEngine struct {
 	snaps     []monitor.Snapshot
 	refreshed []string
+	actions   []monitor.Action
 	msgs      chan engine.Message
+}
+
+func (f *fakeEngine) Act(ctx context.Context, id string, a monitor.Action) error {
+	f.actions = append(f.actions, a)
+	switch {
+	case id == "stocks":
+		return engine.ErrNoActions
+	case id != "todo":
+		return engine.ErrNoMonitor
+	case a.Type == "explode":
+		return errors.New("disk full")
+	case a.Type != "add":
+		return fmt.Errorf("%w: unknown type", monitor.ErrBadAction)
+	}
+	return nil
 }
 
 func (f *fakeEngine) Snapshots() []monitor.Snapshot { return f.snaps }
@@ -53,8 +71,12 @@ func setup(t *testing.T) (*httptest.Server, *fakeEngine, *store.Store) {
 }
 
 func do(t *testing.T, method, url, token string) *http.Response {
+	return doBody(t, method, url, token, "")
+}
+
+func doBody(t *testing.T, method, url, token, body string) *http.Response {
 	t.Helper()
-	req, err := http.NewRequest(method, url, nil)
+	req, err := http.NewRequest(method, url, strings.NewReader(body))
 	require.NoError(t, err)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -184,4 +206,20 @@ func TestStreamLastEventID(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, "3", sse{bufio.NewReader(resp.Body)}.next(t).id)
+}
+
+func TestActions(t *testing.T) {
+	srv, eng, _ := setup(t)
+	post := func(id, body string) int {
+		return doBody(t, "POST", srv.URL+"/api/monitors/"+id+"/actions", "secret", body).StatusCode
+	}
+	assert.Equal(t, http.StatusNoContent, post("todo", `{"type":"add","text":"Bins"}`))
+	assert.Equal(t, monitor.Action{Type: "add", Text: "Bins"}, eng.actions[0])
+	assert.Equal(t, http.StatusBadRequest, post("todo", `{"type":"fly"}`), "the monitor refuses it")
+	assert.Equal(t, http.StatusBadRequest, post("todo", `{"type":"add","colour":"red"}`), "unknown fields")
+	assert.Equal(t, http.StatusBadRequest, post("todo", `not json`))
+	assert.Equal(t, http.StatusNotFound, post("nope", `{"type":"add"}`))
+	assert.Equal(t, http.StatusMethodNotAllowed, post("stocks", `{"type":"add"}`), "takes no actions")
+	assert.Equal(t, http.StatusInternalServerError, post("todo", `{"type":"explode"}`))
+	assert.Equal(t, http.StatusUnauthorized, doBody(t, "POST", srv.URL+"/api/monitors/todo/actions", "", `{"type":"add"}`).StatusCode)
 }

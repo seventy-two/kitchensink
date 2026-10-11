@@ -19,6 +19,11 @@
       }
     },
     {
+      "type": "todo",
+      "title": "To do",
+      "interval": "1h"
+    },
+    {
       "type": "stocks",
       "title": "Watchlist",
       "interval": "5m",

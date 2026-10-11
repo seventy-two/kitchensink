@@ -3,8 +3,10 @@
 package server
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -21,6 +23,7 @@ import (
 type Engine interface {
 	Snapshots() []monitor.Snapshot
 	Refresh(id string) bool
+	Act(ctx context.Context, id string, a monitor.Action) error
 	Subscribe() (<-chan engine.Message, func())
 }
 
@@ -44,6 +47,7 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.Handle("GET /api/monitors", s.auth(s.monitors))
 	mux.Handle("POST /api/monitors/{id}/refresh", s.auth(s.refresh))
+	mux.Handle("POST /api/monitors/{id}/actions", s.auth(s.act))
 	mux.Handle("GET /api/events", s.auth(s.events))
 	mux.Handle("GET /api/stream", s.auth(s.stream))
 	return mux
@@ -71,6 +75,31 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// act applies a JSON monitor.Action to a monitor, such as ticking a todo.
+func (s *Server) act(w http.ResponseWriter, r *http.Request) {
+	var a monitor.Action
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&a); err != nil {
+		http.Error(w, "bad action: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	err := s.Engine.Act(r.Context(), r.PathValue("id"), a)
+	switch {
+	case err == nil:
+		w.WriteHeader(http.StatusNoContent)
+	case errors.Is(err, engine.ErrNoMonitor):
+		http.Error(w, err.Error(), http.StatusNotFound)
+	case errors.Is(err, engine.ErrNoActions):
+		http.Error(w, err.Error(), http.StatusMethodNotAllowed)
+	case errors.Is(err, monitor.ErrBadAction):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	default:
+		s.Log.Error("action failed", "monitor", r.PathValue("id"), "err", err)
+		http.Error(w, "action failed", http.StatusInternalServerError)
+	}
 }
 
 // events returns events after ?since=ID, or the latest ones if since isn't
