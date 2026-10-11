@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,7 +21,8 @@ var now = time.Date(2026, 10, 10, 19, 0, 0, 0, time.UTC)
 
 func newMonitor(t *testing.T, srv string, extra map[string]any) *Monitor {
 	t.Helper()
-	cfg := map[string]any{"symbols": []string{"AAPL", ".FTSE", "TSLA", "BTC.CM=", "BADSYM"}, "quoteURL": srv}
+	chart := monitortest.Serve(t, "testdata/chart.json")
+	cfg := map[string]any{"symbols": []string{"AAPL", ".FTSE", "TSLA", "BTC.CM=", "BADSYM"}, "quoteURL": srv, "chartURL": chart.URL}
 	for k, v := range extra {
 		cfg[k] = v
 	}
@@ -51,8 +54,8 @@ func TestPollTable(t *testing.T) {
 	aapl := rows[3]
 	assert.Equal(t, "336.64", aapl[2].Text)
 	assert.Equal(t, monitor.ToneBad, aapl[4].Tone)
-	assert.Equal(t, "336.08 -0.17%", aapl[5].Text, "after-hours price shown outside the regular session")
-	assert.Equal(t, "", rows[1][5].Text, "no extended price for the FTSE")
+	assert.Equal(t, "336.08 -0.17%", aapl[6].Text, "after-hours price shown outside the regular session")
+	assert.Equal(t, "", rows[1][6].Text, "no extended price for the FTSE")
 	assert.Empty(t, res.Events, "no move reaches the default 5%")
 }
 
@@ -208,4 +211,92 @@ func TestHoldings(t *testing.T) {
 	}
 	assert.Equal(t, []string{"FTSE 100", "AAPL"}, summary, "the holdings, in order, not the biggest movers")
 	assert.Contains(t, srv.Requests()[0].Query, "NVDA", "holdings are watched even when not in symbols")
+}
+
+func TestWeekChange(t *testing.T) {
+	quotes := monitortest.Serve(t, "testdata/quotes.json")
+	chart := monitortest.Serve(t, "testdata/chart.json")
+	m := newMonitor(t, quotes.URL, map[string]any{"chartURL": chart.URL})
+	env := monitortest.Env(now) // Saturday 10 October
+
+	res, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	b := res.Blocks[0]
+	assert.Equal(t, "1w", b.Columns[5].Title)
+	var aapl []monitor.Cell
+	for _, r := range b.Rows {
+		if r[0].Text == "AAPL" {
+			aapl = r
+		}
+	}
+	require.NotNil(t, aapl)
+	// Against Friday 2 October's close of 200, the last on or before a
+	// week ago; the out-of-order bar for 1 October doesn't count.
+	assert.Equal(t, "+68.32%", aapl[5].Text)
+	assert.Equal(t, monitor.ToneGood, aapl[5].Tone)
+	fetched := len(chart.Requests())
+	assert.Equal(t, 4, fetched, "one fetch per quoted symbol")
+	assert.Contains(t, chart.Requests()[0].Query, "getQuoteChartData")
+
+	// The closes are kept for the day.
+	_, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Len(t, chart.Requests(), fetched, "no refetch the same day")
+	next := env
+	next.Now = func() time.Time { return now.Add(24 * time.Hour) }
+	_, err = m.Poll(context.Background(), next)
+	require.NoError(t, err)
+	assert.Len(t, chart.Requests(), 2*fetched, "fetched again the next day")
+}
+
+func TestWeekChangeUnavailable(t *testing.T) {
+	quotes := monitortest.Serve(t, "testdata/quotes.json")
+	chart := monitortest.Serve(t, "testdata/chart.json")
+	chart.Reply(http.StatusForbidden, []byte("Access Denied"))
+	m := newMonitor(t, quotes.URL, map[string]any{"chartURL": chart.URL})
+	env := monitortest.Env(now)
+	res, err := m.Poll(context.Background(), env)
+	require.NoError(t, err, "the quotes still show")
+	for _, r := range res.Blocks[0].Rows {
+		assert.Empty(t, r[5].Text)
+	}
+	// Each range was tried, and nothing was kept, so the next poll tries
+	// again.
+	tries := len(chart.Requests())
+	assert.Equal(t, 4*len(chartRanges), tries)
+	_, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Len(t, chart.Requests(), 2*tries)
+}
+
+func TestWeekChangeFallsBack(t *testing.T) {
+	// The first range comes back empty, as CNBC's sometimes does; the next
+	// has the closes.
+	quotes := monitortest.Serve(t, "testdata/quotes.json")
+	full, _ := os.ReadFile("testdata/chart.json")
+	chart := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Query().Get("variables"), `"1M"`) {
+			w.Write([]byte(`{"data":{"chartData":{"priceBars":[]}}}`))
+			return
+		}
+		w.Write(full)
+	}))
+	t.Cleanup(chart.Close)
+	m := newMonitor(t, quotes.URL, map[string]any{"chartURL": chart.URL})
+	res, err := m.Poll(context.Background(), monitortest.Env(now))
+	require.NoError(t, err)
+	for _, r := range res.Blocks[0].Rows {
+		if r[0].Text == "AAPL" {
+			assert.Equal(t, "+68.32%", r[5].Text)
+		}
+	}
+}
+
+func TestCloseOnOrBefore(t *testing.T) {
+	closes := []dailyClose{{"20261005", 3}, {"20261001", 1}, {"20261002", 2}}
+	c, ok := closeOnOrBefore(closes, "20261004")
+	assert.True(t, ok)
+	assert.Equal(t, 2.0, c)
+	_, ok = closeOnOrBefore(closes, "20260930")
+	assert.False(t, ok, "nothing that early")
 }

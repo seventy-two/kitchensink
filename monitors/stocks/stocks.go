@@ -38,8 +38,9 @@ type Config struct {
 	MovePct *float64 `json:"movePct"`
 	// Targets notify when a symbol's price crosses above or below a level.
 	Targets map[string]Target `json:"targets"`
-	// QuoteURL replaces CNBC's endpoint, for tests.
+	// QuoteURL and ChartURL replace CNBC's endpoints, for tests.
 	QuoteURL string `json:"quoteURL"`
+	ChartURL string `json:"chartURL"`
 }
 
 // Target is a price level to watch for.
@@ -77,6 +78,9 @@ func New(raw json.RawMessage) (*Monitor, error) {
 	}
 	if c.QuoteURL == "" {
 		c.QuoteURL = defaultQuoteURL
+	}
+	if c.ChartURL == "" {
+		c.ChartURL = defaultChartURL
 	}
 	m := &Monitor{cfg: c, movePct: 5, rank: rank}
 	if c.MovePct != nil {
@@ -172,7 +176,12 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		return monitor.Result{}, err
 	}
 
-	return monitor.Result{Blocks: []monitor.Block{m.table(quotes)}, Summary: m.summary(quotes), Events: events}, nil
+	var symbols []string
+	for _, q := range quotes {
+		symbols = append(symbols, q.Symbol)
+	}
+	weekAgo := m.weekAgo(ctx, env, symbols)
+	return monitor.Result{Blocks: []monitor.Block{m.table(quotes, weekAgo)}, Summary: m.summary(quotes), Events: events}, nil
 }
 
 // moversLen is how many symbols the summary shows.
@@ -285,8 +294,9 @@ func (m *Monitor) targetEvents(q quote, crossed map[string]bool, now int64) []mo
 }
 
 // table lists your holdings, largest first, then the other quotes,
-// biggest risers first.
-func (m *Monitor) table(quotes []quote) monitor.Block {
+// biggest risers first. weekAgo holds closes from a week before, by
+// symbol, for the 1w column.
+func (m *Monitor) table(quotes []quote, weekAgo map[string]float64) monitor.Block {
 	sorted := append([]quote(nil), quotes...)
 	sort.SliceStable(sorted, func(i, j int) bool {
 		hi, hj := m.held(sorted[i]), m.held(sorted[j])
@@ -308,6 +318,7 @@ func (m *Monitor) table(quotes []quote) monitor.Block {
 			{Title: "Last", Align: monitor.AlignRight},
 			{Title: "Change", Align: monitor.AlignRight},
 			{Title: "%", Align: monitor.AlignRight},
+			{Title: "1w", Align: monitor.AlignRight},
 			{Title: "Extended", Align: monitor.AlignRight},
 		},
 		Rows: [][]monitor.Cell{},
@@ -328,10 +339,22 @@ func (m *Monitor) table(quotes []quote) monitor.Block {
 			{Text: q.Last},
 			{Text: q.Change, Tone: tone},
 			{Text: formatPct(q.ChangePct), Tone: tone},
+			weekCell(q, weekAgo),
 			ext,
 		})
 	}
 	return b
+}
+
+// weekCell is the change since a week ago, blank when that's unknown.
+func weekCell(q quote, weekAgo map[string]float64) monitor.Cell {
+	ref, ok := weekAgo[q.Symbol]
+	last, okLast := parseNumber(q.Last)
+	if !ok || !okLast || ref <= 0 {
+		return monitor.Cell{}
+	}
+	pct := fmt.Sprintf("%+.2f%%", (last/ref-1)*100)
+	return monitor.Cell{Text: pct, Tone: toneOf(pct)}
 }
 
 func displayName(q quote) string {
