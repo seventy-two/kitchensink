@@ -255,6 +255,15 @@ std::vector<Snapshot> App::panels() const {
     return arranged;
 }
 
+// hoveringCard reports whether the mouse is over the card being drawn,
+// including the panels inside it, even while one of its items is held.
+bool App::hoveringCard() const {
+    ImVec2 min = ImGui::GetWindowPos();
+    ImVec2 max(min.x + ImGui::GetWindowWidth(), min.y + ImGui::GetWindowHeight());
+    return ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) &&
+           ImGui::IsMouseHoveringRect(min, max);
+}
+
 bool App::InCaption(float x, float y) const {
     if (y >= captionH_) return false;
     for (const ImRect& r : noDrag_)
@@ -459,8 +468,9 @@ void App::card(const Snapshot& s, float width) {
                       ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysUseWindowPadding,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PopStyleVar();
+    bool show = dragging_ == s.monitor || (dragging_.empty() && hoveringCard());
     ImGui::PushFont(fonts_.caption);
-    grip(s, ImGui::GetCursorScreenPos().y + ImGui::GetFrameHeight() / 2, true);
+    grip(s, ImGui::GetCursorScreenPos().y + ImGui::GetFrameHeight() / 2, show);
     ImGui::PopFont();
 
     // What's being watched on the left, if the monitor says; when it was
@@ -480,7 +490,8 @@ void App::card(const Snapshot& s, float width) {
             ImGui::AlignTextToFramePadding();
             mutedText(when);
             ImGui::SameLine();
-            refreshButton(s);
+            if (show) refreshButton(s);
+            else ImGui::Dummy(ImVec2(bw, ImGui::GetFrameHeight()));
         }
         ImGui::PopFont();
     }
@@ -625,14 +636,19 @@ float App::compactCard(const Snapshot& s, float width, Show show, float body, bo
     float refreshX = chevronX - 2 * scale_ - slot;
     float controlsX = local ? chevronX : refreshX;
 
-    bool onButton = grip(s, top.y + lineH / 2, clicked != nullptr);
+    // The grip and buttons only show while the mouse is over the panel (or
+    // it's being dragged); their places stay kept so nothing moves.
+    bool shown = clicked && (dragging_ == s.monitor || (dragging_.empty() && hoveringCard()));
+    bool onButton = grip(s, top.y + lineH / 2, shown);
     auto controls = [&](bool lit) {
         ImGui::PushFont(fonts_.caption);
-        ImGui::SetCursorScreenPos(ImVec2(chevronX + (slot - cw) / 2, top.y + st.FramePadding.y));
-        ImGui::TextColored(lit ? p.text : p.muted, "%s", open ? icon::ChevronUp : icon::ChevronDown);
+        if (shown) {
+            ImGui::SetCursorScreenPos(ImVec2(chevronX + (slot - cw) / 2, top.y + st.FramePadding.y));
+            ImGui::TextColored(lit ? p.text : p.muted, "%s", open ? icon::ChevronUp : icon::ChevronDown);
+        }
         if (!local) {
             ImGui::SetCursorScreenPos(ImVec2(refreshX, top.y));
-            if (clicked) {
+            if (shown) {
                 refreshButton(s);
                 onButton = onButton || ImGui::IsItemHovered();
             } else {
@@ -746,9 +762,10 @@ float App::compactCard(const Snapshot& s, float width, Show show, float body, bo
 }
 
 // grip draws the six dots that drag a panel, in the card's left margin,
-// centred on y, and starts a drag from them. It reports whether the mouse
-// is over them.
-bool App::grip(const Snapshot& s, float y, bool interactive) {
+// centred on y, and starts a drag from them; when not shown it does
+// nothing. It reports whether the mouse is over them.
+bool App::grip(const Snapshot& s, float y, bool shown) {
+    if (!shown) return false;
     const Palette& p = Colours();
     ImVec2 winMin = ImGui::GetWindowPos();
     float dot = std::max(2.0f, std::round(2 * scale_)), step = dot * 2;
@@ -759,7 +776,7 @@ bool App::grip(const Snapshot& s, float y, bool interactive) {
     ImGui::PushClipRect(winMin, ImVec2(winMin.x + ImGui::GetWindowWidth(), winMin.y + ImGui::GetWindowHeight()), false);
     bool hovered = false;
     bool dragging = dragging_ == s.monitor;
-    if (interactive) {
+    {
         ImVec2 saved = ImGui::GetCursorScreenPos();
         ImGui::SetCursorScreenPos(hit.Min);
         ImGui::PushID("##grip");

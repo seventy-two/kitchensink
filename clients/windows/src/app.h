@@ -71,7 +71,8 @@ private:
     float compactCard(const Snapshot& s, float width, Show show, float body, bool* clicked);
     void summary(const std::vector<Stat>& stats, float width);
     void refreshButton(const Snapshot& s);
-    bool grip(const Snapshot& s, float y, bool interactive);
+    bool grip(const Snapshot& s, float y, bool shown);
+    bool hoveringCard() const;
     void dragDrop();
     // block draws one block of a monitor's panel; monitor is where a
     // checklist sends its actions.
