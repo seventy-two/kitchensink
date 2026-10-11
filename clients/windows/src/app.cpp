@@ -9,6 +9,7 @@
 
 #include "imgui.h"
 #include "imgui_internal.h"
+#include "local.h"
 
 namespace ks {
 
@@ -69,13 +70,14 @@ void wrapped(const std::string& s, const ImVec4& colour) {
     ImGui::PopStyleColor();
 }
 
-// sparkline draws a series as a filled line chart.
-void sparkline(const std::vector<float>& v, ImVec2 size, const ImVec4& colour) {
+// sparkline draws a series as a filled line chart, from 0 (or below) to
+// top, or to the series' highest point when top is 0.
+void sparkline(const std::vector<float>& v, ImVec2 size, const ImVec4& colour, float top) {
     ImVec2 p = ImGui::GetCursorScreenPos();
     ImGui::Dummy(size);
     if (v.size() < 2) return;
     auto [lo, hi] = std::minmax_element(v.begin(), v.end());
-    float min = std::min(*lo, 0.0f), range = std::max(*hi - min, 1e-6f);
+    float min = std::min(*lo, 0.0f), range = std::max((top > 0 ? std::max(top, *hi) : *hi) - min, 1e-6f);
     ImDrawList* dl = ImGui::GetWindowDrawList();
     std::vector<ImVec2> pts;
     for (size_t i = 0; i < v.size(); i++)
@@ -101,12 +103,14 @@ App::App(HWND hwnd, ID3D11Device* device, std::function<void()> wake,
       config_(LoadConfig()),
       client_(std::make_unique<Client>(wake)),
       images_(std::make_unique<ImageCache>(device, wake)),
+      local_(std::make_unique<LocalStats>(wake)),
       notify_(std::move(notify)) {
     client_->Start(config_.url, config_.token);
     if (config_.url.empty() || config_.token.empty()) openSettings();
 }
 
 App::~App() {
+    local_.reset();
     client_.reset();
     images_.reset();
 }
@@ -145,6 +149,7 @@ void App::Pump() {
         }
     }
     images_->Upload();
+    local_->Take(localPanels_);
 
     if (pending_.empty()) return;
     if (pendingSince_ == 0) pendingSince_ = GetTickCount64();
@@ -196,6 +201,7 @@ void App::Frame() {
                      ImGuiWindowFlags_NoScrollWithMouse);
 
     header();
+    local_->Want();
 
     float gap = (compact_ ? 8 : 16) * scale_;
     float avail = ImGui::GetContentRegionAvail().x;
@@ -205,7 +211,7 @@ void App::Frame() {
     ConnState state = client_->State();
     if (state == ConnState::NotConfigured) {
         empty("Add your server's address and token to get started.", true);
-    } else if (model_.Snapshots().empty()) {
+    } else if (model_.Snapshots().empty() && localPanels_.empty()) {
         empty(state == ConnState::Offline ? "Can't reach the server." : "Connecting…", state == ConnState::Offline);
     } else {
         ImGui::BeginChild("##cards", ImVec2(cardsW, 0), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
@@ -222,6 +228,14 @@ void App::Frame() {
     settings();
     busy_ = ImGui::IsAnyItemActive() || ImGui::GetIO().WantTextInput || settingsOpen_;
     ImGui::End();
+}
+
+std::vector<Snapshot> App::panels() const {
+    std::vector<Snapshot> out;
+    if (!localPanels_.empty()) out.push_back(localPanels_.front());
+    out.insert(out.end(), model_.Snapshots().begin(), model_.Snapshots().end());
+    if (localPanels_.size() > 1) out.push_back(localPanels_.back());
+    return out;
 }
 
 bool App::InCaption(float x, float y) const {
@@ -386,7 +400,7 @@ void App::empty(const char* message, bool settingsButton) {
 }
 
 void App::cards(float width) {
-    const auto& snaps = model_.Snapshots();
+    const std::vector<Snapshot> snaps = panels();
     if (compact_) {
         compactCards(width);
         return;
@@ -434,16 +448,19 @@ void App::card(const Snapshot& s, float width) {
     ImGui::PopFont();
 
     bool pending = refreshing_.count(s.monitor) && ImGui::GetTime() - refreshing_[s.monitor] < 15;
-    std::string when = pending ? "refreshing…" : "updated " + Ago(s.updated, now());
+    bool local = IsLocal(s);
+    std::string when = local ? "live" : pending ? "refreshing…" : "updated " + Ago(s.updated, now());
     ImGui::PushFont(fonts_.caption);
     ImGuiStyle& st = ImGui::GetStyle();
-    float bw = ImGui::CalcTextSize(icon::Refresh).x + st.FramePadding.x * 2;
+    float bw = local ? 0 : ImGui::CalcTextSize(icon::Refresh).x + st.FramePadding.x * 2;
     float ww = ImGui::CalcTextSize(when.c_str()).x;
-    ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - bw - ww - st.ItemSpacing.x);
+    ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - bw - ww - (local ? 0 : st.ItemSpacing.x));
     ImGui::AlignTextToFramePadding();
     mutedText(when);
-    ImGui::SameLine();
-    refreshButton(s);
+    if (!local) {
+        ImGui::SameLine();
+        refreshButton(s);
+    }
     ImGui::PopFont();
 
     if (!s.error.empty()) {
@@ -482,19 +499,21 @@ void App::refreshButton(const Snapshot& s) {
 // compactCards fills the space with one row per monitor, full width so the
 // summaries line up, opening as many full panels as fit (see FitPanels).
 void App::compactCards(float width) {
-    const auto& snaps = model_.Snapshots();
+    const std::vector<Snapshot> snaps = panels();
     float gap = 8 * scale_;
     float height = ImGui::GetContentRegionAvail().y;
 
-    // Measure every monitor both ways at this width, in a window off to
-    // the right of the screen where nothing shows or takes input.
-    ImGuiIO& io = ImGui::GetIO();
-    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x + 64 * scale_, 0));
+    // Measure every monitor each way at this width, in a window kept behind
+    // the main one, whose opaque background hides it and which takes the
+    // mouse first. (Off screen won't do: ImGui stops laying out child
+    // windows it can't see, so their sizes would go stale.)
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::Begin("##measure", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
                      ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoSavedSettings |
                      ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_AlwaysAutoResize |
                      ImGuiWindowFlags_NoBringToFrontOnFocus);
+    ImGui::BringWindowToDisplayBack(ImGui::GetCurrentWindow());
     std::vector<Panel> panels;
     for (const auto& s : snaps) {
         ImGui::PushID(s.monitor.c_str());
@@ -571,7 +590,10 @@ float App::compactCard(const Snapshot& s, float width, Show show, float body, bo
         ImGui::TextColored(p.warn, "%s  Failed", icon::Warning);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", s.error.c_str());
     } else {
-        mutedText(pending ? "refreshing…" : s.updated ? (open ? "updated " : "") + Ago(s.updated, now()) : "waiting…");
+        mutedText(IsLocal(s) ? "live"
+                  : pending ? "refreshing…"
+                  : s.updated ? (open ? "updated " : "") + Ago(s.updated, now())
+                              : "waiting…");
     }
     ImGui::PopFont();
     ImGui::EndGroup();
@@ -584,7 +606,7 @@ float App::compactCard(const Snapshot& s, float width, Show show, float body, bo
     float cw = ImGui::CalcTextSize(icon::ChevronDown).x;
     ImGui::SetCursorScreenPos(ImVec2(top.x + avail - bw, top.y));
     bool onButton = false;
-    if (clicked) {
+    if (clicked && !IsLocal(s)) {
         refreshButton(s);
         onButton = ImGui::IsItemHovered();
     } else {
@@ -723,11 +745,13 @@ void App::stats(const Block& b) {
         ImGui::PushFont(fonts_.big);
         ImGui::TextColored(ToneColour(s.tone), "%s", s.value.c_str());
         ImGui::PopFont();
-        // A flat series, e.g. no rain at all, says nothing worth a chart.
+        // A flat series, e.g. no rain at all, says nothing worth a chart,
+        // unless its scale is fixed: memory steady at 50% still shows.
         bool flat = s.series.empty() ||
                     *std::max_element(s.series.begin(), s.series.end()) == *std::min_element(s.series.begin(), s.series.end());
-        if (!flat) {
-            sparkline(s.series, ImVec2(tileW, 22 * scale_), s.tone == Tone::None ? Colours().accent : ToneColour(s.tone));
+        if (!flat || (s.top > 0 && !s.series.empty())) {
+            sparkline(s.series, ImVec2(tileW, 22 * scale_), s.tone == Tone::None ? Colours().accent : ToneColour(s.tone),
+                      s.top);
         }
         ImGui::PushFont(fonts_.caption);
         mutedText(s.detail.empty() ? " " : s.detail);

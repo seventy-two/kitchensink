@@ -1,8 +1,9 @@
 // Tests for the dashboard's portable code. Build and run with build.bat, or
-// on Linux: g++ -std=c++17 -I src -I third_party tests/tests.cpp src/model.cpp src/sse.cpp
+// on Linux: g++ -std=c++17 -I src -I third_party tests/tests.cpp src/model.cpp src/sse.cpp src/local.cpp
 #include <cstdio>
 #include <string>
 
+#include "../src/local.h"
 #include "../src/model.h"
 #include "../src/sse.h"
 
@@ -130,6 +131,61 @@ static void testFitPanels() {
     CHECK_EQ(shows(FitPanels({{50, 0, 6}, {50, 100, 6}}, 2000, 10, 40)), std::string("rF"));
 }
 
+static void testGpuUtilisation() {
+    // Two processes on the 3D engine add up; the video engine is separate;
+    // the busiest engine wins. Junk names are ignored.
+    std::vector<std::pair<std::string, double>> in = {
+        {"pid_100_luid_0x00000000_0x0000D1A5_phys_0_eng_0_engtype_3D", 30},
+        {"pid_200_luid_0x00000000_0x0000D1A5_phys_0_eng_0_engtype_3D", 15},
+        {"pid_300_luid_0x00000000_0x0000D1A5_phys_0_eng_3_engtype_VideoDecode", 40},
+        {"something else", 99},
+    };
+    CHECK_EQ(GpuUtilisation(in), 45.0f);
+    in.push_back({"pid_400_luid_0x00000000_0x0000D1A5_phys_0_eng_0_engtype_3D", 90});
+    CHECK_EQ(GpuUtilisation(in), 100.0f);  // capped
+    CHECK_EQ(GpuUtilisation({}), 0.0f);
+}
+
+static void testLocalPanels() {
+    constexpr uint64_t GB = 1024ull * 1024 * 1024;
+    CHECK_EQ(FormatBytes(512ull * 1024 * 1024), std::string("512 MB"));
+    CHECK_EQ(FormatBytes(14 * GB + GB / 5), std::string("14.2 GB"));
+    CHECK_EQ(FormatBytes(2048 * GB), std::string("2.0 TB"));
+    CHECK(LoadTone(84) == Tone::None);
+    CHECK(LoadTone(85) == Tone::Warn);
+    CHECK(LoadTone(95) == Tone::Bad);
+
+    PcHistory h;
+    for (int i = 0; i < 70; i++) h.Add({float(i), 50, 8 * GB, 32 * GB, 0, 0, "RTX"});
+    Snapshot pc = h.Build(1000);
+    CHECK(IsLocal(pc));
+    CHECK_EQ(pc.title, std::string("This PC"));
+    CHECK_EQ(pc.blocks.size(), size_t(1));
+    const auto& st = pc.blocks[0].stats;
+    CHECK_EQ(st.size(), size_t(4));
+    CHECK_EQ(st[0].value, std::string("69%"));
+    CHECK_EQ(st[0].series.size(), PcHistory::kLength);  // a minute kept
+    CHECK_EQ(st[0].top, 100.0f);                        // percentages on a fixed scale
+    CHECK_EQ(st[1].value, std::string("25%"));
+    CHECK_EQ(st[1].detail, std::string("8.0 GB / 32.0 GB"));
+    CHECK_EQ(st[2].detail, std::string("RTX"));
+    CHECK_EQ(st[3].value, std::string("–"));  // no VRAM reading
+    CHECK(st[3].tone == Tone::Muted);
+    CHECK_EQ(pc.summary.size(), size_t(4));
+
+    Snapshot d = DrivesSnapshot({{"C:\\", "", 1000 * GB, 40 * GB}, {"D:\\", "Games", 2000 * GB, 1000 * GB}, {"E:\\", "", 0, 0}}, 1000);
+    CHECK_EQ(d.blocks[0].rows.size(), size_t(2));  // the empty drive is skipped
+    CHECK_EQ(d.blocks[0].rows[0][0].text, std::string("C:"));
+    CHECK_EQ(d.blocks[0].rows[0][1].text, std::string("Local Disk"));
+    CHECK_EQ(d.blocks[0].rows[0][2].text, std::string("96%"));
+    CHECK(d.blocks[0].rows[0][2].tone == Tone::Bad);
+    CHECK_EQ(d.blocks[0].rows[1][2].text, std::string("50%"));
+    CHECK(d.blocks[0].columns[1].fill);
+    CHECK_EQ(d.summary.size(), size_t(2));
+    CHECK_EQ(d.summary[1].detail, std::string("1000.0 GB free"));
+    CHECK_EQ(DrivesSnapshot({}, 0).blocks[0].type, std::string("text"));
+}
+
 static void testParseEvent() {
     Event e = ParseEvent(nlohmann::json::parse(
         R"({"id": 42, "monitor": "nfl", "key": "final:1", "time": "2026-10-10T18:07:31Z",
@@ -215,6 +271,8 @@ int main() {
     testParseSnapshot();
     testUseCompact();
     testFitPanels();
+    testGpuUtilisation();
+    testLocalPanels();
     testParseEvent();
     testModel();
     testSse();

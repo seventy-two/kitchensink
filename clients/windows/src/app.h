@@ -15,6 +15,7 @@
 #include "imgui_internal.h"
 #include "model.h"
 #include "net.h"
+#include "sysinfo.h"
 #include "theme.h"
 
 namespace ks {
@@ -58,6 +59,9 @@ public:
 private:
     void header();
     float windowButtons();
+    // panels lists everything to draw: This PC, the server's monitors in
+    // config order, then Drives.
+    std::vector<Snapshot> panels() const;
     void cards(float width);
     void card(const Snapshot& s, float width);
     void compactCards(float width);
@@ -91,6 +95,8 @@ private:
     Model model_;
     std::unique_ptr<Client> client_;
     std::unique_ptr<ImageCache> images_;
+    std::unique_ptr<LocalStats> local_;
+    std::vector<Snapshot> localPanels_;  // This PC, then Drives
     std::function<void(const std::string&, const std::string&)> notify_;
     std::string lastNotifyURL_;
     // Notifications are held briefly so a burst becomes one notification.

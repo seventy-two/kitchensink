@@ -21,6 +21,9 @@ struct Stat {
     std::string label, value, detail;
     Tone tone = Tone::None;
     std::vector<float> series;
+    // top fixes the sparkline's scale, e.g. 100 for a percentage; 0 fits
+    // it to the series.
+    float top = 0;
 };
 
 struct Column {

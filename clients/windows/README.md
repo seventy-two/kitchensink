@@ -14,6 +14,10 @@ result is a single `kitchensink.exe` with nothing to install.
   beneath their rows, in config order, as long as they fit; the first that
   doesn't takes whatever height is left and scrolls. Click a row to open or
   close it yourself. The layout follows the window live as it's resized.
+- Adds two panels about the PC it runs on: **This PC** (CPU, memory, GPU
+  and video memory, each with a minute's history) and **Drives** (each
+  fixed drive's use). They read Windows' own counters once a second, only
+  while the window is showing, and work with the server offline.
 - Keeps the server's event stream open, reconnects with backoff, and
   catches up on events missed while offline. A burst of events becomes one
   notification.
@@ -39,7 +43,7 @@ parts (the data model and the server-sent events parser) also build and
 test on Linux:
 
 ```sh
-g++ -std=c++17 -I src -I third_party tests/tests.cpp src/model.cpp src/sse.cpp && ./a.out
+g++ -std=c++17 -I src -I third_party tests/tests.cpp src/model.cpp src/sse.cpp src/local.cpp && ./a.out
 ```
 
 ## Layout
@@ -51,6 +55,8 @@ g++ -std=c++17 -I src -I third_party tests/tests.cpp src/model.cpp src/sse.cpp &
 | `src/model.cpp` | snapshots and events parsed from JSON, and the dashboard's state |
 | `src/sse.cpp` | server-sent events parser |
 | `src/net.cpp` | WinHTTP requests and the stream client |
+| `src/sysinfo.cpp` | reads CPU, memory, GPU and drive use (performance counters, DXGI) |
+| `src/local.cpp` | turns those readings into the This PC and Drives panels |
 | `src/images.cpp` | thumbnail download, WIC decoding and textures |
 | `src/config.cpp` | settings and start-with-Windows |
 | `src/theme.cpp` | palettes, fonts and ImGui style |
