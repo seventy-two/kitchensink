@@ -318,8 +318,8 @@ func (m *Monitor) table(quotes []quote, weekAgo map[string]float64) monitor.Bloc
 			{Title: "Last", Align: monitor.AlignRight},
 			{Title: "Change", Align: monitor.AlignRight},
 			{Title: "%", Align: monitor.AlignRight},
-			{Title: "1w", Align: monitor.AlignRight},
 			{Title: "Extended", Align: monitor.AlignRight},
+			{Title: "1w", Align: monitor.AlignRight},
 		},
 		Rows: [][]monitor.Cell{},
 	}
@@ -339,8 +339,8 @@ func (m *Monitor) table(quotes []quote, weekAgo map[string]float64) monitor.Bloc
 			{Text: q.Last},
 			{Text: q.Change, Tone: tone},
 			{Text: formatPct(q.ChangePct), Tone: tone},
-			weekCell(q, weekAgo),
 			ext,
+			weekCell(q, weekAgo),
 		})
 	}
 	return b

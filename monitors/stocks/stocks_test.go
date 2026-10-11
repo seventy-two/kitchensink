@@ -54,8 +54,8 @@ func TestPollTable(t *testing.T) {
 	aapl := rows[3]
 	assert.Equal(t, "336.64", aapl[2].Text)
 	assert.Equal(t, monitor.ToneBad, aapl[4].Tone)
-	assert.Equal(t, "336.08 -0.17%", aapl[6].Text, "after-hours price shown outside the regular session")
-	assert.Equal(t, "", rows[1][6].Text, "no extended price for the FTSE")
+	assert.Equal(t, "336.08 -0.17%", aapl[5].Text, "after-hours price shown outside the regular session")
+	assert.Equal(t, "", rows[1][5].Text, "no extended price for the FTSE")
 	assert.Empty(t, res.Events, "no move reaches the default 5%")
 }
 
@@ -222,7 +222,7 @@ func TestWeekChange(t *testing.T) {
 	res, err := m.Poll(context.Background(), env)
 	require.NoError(t, err)
 	b := res.Blocks[0]
-	assert.Equal(t, "1w", b.Columns[5].Title)
+	assert.Equal(t, "1w", b.Columns[6].Title, "on the far right")
 	var aapl []monitor.Cell
 	for _, r := range b.Rows {
 		if r[0].Text == "AAPL" {
@@ -232,8 +232,8 @@ func TestWeekChange(t *testing.T) {
 	require.NotNil(t, aapl)
 	// Against Friday 2 October's close of 200, the last on or before a
 	// week ago; the out-of-order bar for 1 October doesn't count.
-	assert.Equal(t, "+68.32%", aapl[5].Text)
-	assert.Equal(t, monitor.ToneGood, aapl[5].Tone)
+	assert.Equal(t, "+68.32%", aapl[6].Text)
+	assert.Equal(t, monitor.ToneGood, aapl[6].Tone)
 	fetched := len(chart.Requests())
 	assert.Equal(t, 4, fetched, "one fetch per quoted symbol")
 	assert.Contains(t, chart.Requests()[0].Query, "getQuoteChartData")
@@ -258,7 +258,7 @@ func TestWeekChangeUnavailable(t *testing.T) {
 	res, err := m.Poll(context.Background(), env)
 	require.NoError(t, err, "the quotes still show")
 	for _, r := range res.Blocks[0].Rows {
-		assert.Empty(t, r[5].Text)
+		assert.Empty(t, r[6].Text)
 	}
 	// Each range was tried, and nothing was kept, so the next poll tries
 	// again.
@@ -287,7 +287,7 @@ func TestWeekChangeFallsBack(t *testing.T) {
 	require.NoError(t, err)
 	for _, r := range res.Blocks[0].Rows {
 		if r[0].Text == "AAPL" {
-			assert.Equal(t, "+68.32%", r[5].Text)
+			assert.Equal(t, "+68.32%", r[6].Text)
 		}
 	}
 }
