@@ -47,6 +47,9 @@ type State interface {
 type Result struct {
 	// Blocks make up the monitor's dashboard panel.
 	Blocks []Block
+	// Subtitle says what the monitor is watching when that isn't obvious,
+	// e.g. a car search's filters. Clients show it above the panel.
+	Subtitle string
 	// Summary is the few things most worth seeing at a glance, e.g. the
 	// next meeting or the biggest movers. Clients show it in place of the
 	// blocks when space is short.
@@ -97,9 +100,10 @@ type Snapshot struct {
 	Updated time.Time `json:"updated"`
 	// Error is the last poll's error, if it failed. Blocks then still hold
 	// the last good data.
-	Error   string  `json:"error,omitempty"`
-	Blocks  []Block `json:"blocks"`
-	Summary []Stat  `json:"summary,omitempty"`
+	Error    string  `json:"error,omitempty"`
+	Subtitle string  `json:"subtitle,omitempty"`
+	Blocks   []Block `json:"blocks"`
+	Summary  []Stat  `json:"summary,omitempty"`
 }
 
 // BlockType says how a Block is drawn. Clients draw every monitor with the

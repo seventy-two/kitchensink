@@ -157,3 +157,16 @@ func TestPrice(t *testing.T) {
 	_, ok = price("POA")
 	assert.False(t, ok)
 }
+
+func TestDescribe(t *testing.T) {
+	for raw, want := range map[string]string{
+		testSearchURL: "Mazda3 · Automatic · up to £14,000 · 2021 on",
+		"https://www.autotrader.co.uk/car-search?make=Ford&model=Focus&price-from=5000&price-to=12500&year-from=2018&year-to=2020": "Ford Focus · £5,000–£12,500 · 2018–2020",
+		"https://www.autotrader.co.uk/car-search?make=Honda&postcode=SW1A%201AA":                                                   "Honda",
+	} {
+		s, err := parseSearch(raw)
+		require.NoError(t, err)
+		assert.Equal(t, want, s.describe(), raw)
+		assert.NotContains(t, s.describe(), "SW1A", "no postcode")
+	}
+}

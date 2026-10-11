@@ -100,7 +100,8 @@ Each `event` message carries the event's ID as its SSE `id`.
 history but shouldn't raise a notification.
 
 **Snapshot**: `monitor`, `kind`, `title`, `updated`, `error` (the last
-poll's, with the last good blocks kept), `blocks` and `summary`: a few
+poll's, with the last good blocks kept), `subtitle` (what it's watching, when that isn't obvious, e.g. a car
+search's filters), `blocks` and `summary`: a few
 stats (as in a `stats` block) worth seeing at a glance, which clients show
 instead of the blocks when space is short. Every monitor is
 drawn from the same few block types, so clients need no per-monitor code:

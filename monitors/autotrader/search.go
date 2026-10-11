@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"net/url"
 	"sort"
+	"strconv"
+	"strings"
 )
 
 // filterNames maps search page URL parameters to the API's filter names.
@@ -39,6 +41,7 @@ type search struct {
 	make    string
 	model   string
 	filters []filter
+	query   url.Values
 }
 
 // parseSearch turns an AutoTrader search page URL into API filters.
@@ -55,6 +58,7 @@ func parseSearch(raw string) (*search, error) {
 		model:   q.Get("model"),
 		// The API requires this; "total" means prices aren't monthly.
 		filters: []filter{{Filter: "price_search_type", Selected: []string{"total"}}},
+		query:   q,
 	}
 	if s.channel == "" {
 		s.channel = "cars"
@@ -79,6 +83,64 @@ func parseSearch(raw string) (*search, error) {
 		return nil, fmt.Errorf("search URL has no make")
 	}
 	return s, nil
+}
+
+// describe sums up the search's filters, e.g. "Mazda3 · Automatic · up to
+// £14,000 · 2021 on". The postcode is left out.
+func (s *search) describe() string {
+	get := func(keys ...string) string {
+		for _, k := range keys {
+			if v := s.query.Get(k); v != "" {
+				return v
+			}
+		}
+		return ""
+	}
+	parts := []string{s.name()}
+	if s.model != "" && !strings.Contains(strings.ToLower(s.model), strings.ToLower(s.make)) {
+		parts[0] = s.make + " " + s.model
+	}
+	if t := get("transmission"); t != "" {
+		parts = append(parts, t)
+	}
+	if r := span(pounds(get("minPrice", "price-from")), pounds(get("maxPrice", "price-to"))); r != "" {
+		parts = append(parts, r)
+	}
+	if r := span(get("year-from"), get("year-to")); r != "" {
+		parts = append(parts, r)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// span describes a range with either end open: "2021 on", "up to £14,000",
+// "2019–2022".
+func span(from, to string) string {
+	switch {
+	case from != "" && to != "":
+		return from + "–" + to
+	case from != "":
+		return from + " on"
+	case to != "":
+		return "up to " + to
+	}
+	return ""
+}
+
+// pounds writes a whole-pound price with thousands separators.
+func pounds(s string) string {
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 {
+		return ""
+	}
+	digits := strconv.Itoa(n)
+	var b strings.Builder
+	for i, d := range digits {
+		if i > 0 && (len(digits)-i)%3 == 0 {
+			b.WriteByte(',')
+		}
+		b.WriteRune(d)
+	}
+	return "£" + b.String()
 }
 
 // name describes what's being searched for, e.g. "Mazda3".
