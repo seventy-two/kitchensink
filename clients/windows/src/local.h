@@ -48,6 +48,30 @@ private:
 // DrivesSnapshot is the "Drives" panel.
 Snapshot DrivesSnapshot(const std::vector<DriveInfo>& drives, int64_t now);
 
+// NowPlaying is what Windows says is playing, from whichever app it
+// considers current. active is false when nothing is.
+struct NowPlaying {
+    bool active = false;
+    std::string title, artist, album, app;
+    std::string image;  // image cache key for the cover, or empty
+    Media media;
+};
+
+// MediaSnapshot is the "Now playing" panel. It has no blocks when nothing
+// is playing, and isn't shown then.
+Snapshot MediaSnapshot(const NowPlaying& np, int64_t now);
+
+// AppName turns the app ID Windows reports for a media session into a
+// name: "Spotify.exe" is "Spotify", "msedge" is "Edge" and so on.
+std::string AppName(const std::string& appID);
+
+// StripEmoji removes emoji, which the dashboard's fonts can't draw, from
+// text such as a video's title, and tidies the spaces left behind.
+std::string StripEmoji(const std::string& s);
+
+// FormatTime writes a position in a track: "3:05", or "1:02:03".
+std::string FormatTime(double seconds);
+
 // GpuUtilisation turns the "GPU Engine" performance counters, one per
 // process and engine, into a percentage as Task Manager shows it: each
 // engine's processes added up, then the busiest engine. Instances are

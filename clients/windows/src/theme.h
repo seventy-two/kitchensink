@@ -30,6 +30,10 @@ inline constexpr const char* Minimise = "\xEE\xA4\xA1";  // U+E921
 inline constexpr const char* Maximise = "\xEE\xA4\xA2";  // U+E922
 inline constexpr const char* Restore = "\xEE\xA4\xA3";   // U+E923
 inline constexpr const char* Close = "\xEE\xA2\xBB";     // U+E8BB
+inline constexpr const char* Previous = "\xEE\xA2\x92";  // U+E892
+inline constexpr const char* Next = "\xEE\xA2\x93";      // U+E893
+inline constexpr const char* Play = "\xEE\x9D\xA8";      // U+E768
+inline constexpr const char* Pause = "\xEE\x9D\xA9";     // U+E769
 inline constexpr const char* ChevronDown = "\xEE\x9C\x8D";  // U+E70D
 inline constexpr const char* ChevronUp = "\xEE\x9C\x8E";    // U+E70E
 }  // namespace icon

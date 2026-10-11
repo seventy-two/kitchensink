@@ -33,6 +33,11 @@ public:
     // Upload turns decoded images into textures. Call it on the UI thread.
     void Upload();
 
+    // Provide supplies an image's bytes for a key that isn't a URL, such as
+    // album art read from Windows. Any thread may call it; call it before
+    // the first Get of that key.
+    void Provide(const std::string& key, std::string bytes);
+
 private:
     struct Decoded {
         std::string url;
@@ -56,6 +61,7 @@ private:
     std::mutex mu_;
     std::condition_variable cv_;
     std::deque<std::string> queue_;
+    std::unordered_map<std::string, std::string> provided_;  // bytes by key, until decoded
     std::vector<Decoded> decoded_;
     bool stop_ = false;
     std::thread thread_;

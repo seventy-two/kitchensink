@@ -93,6 +93,11 @@ void ImageCache::evict() {
     }
 }
 
+void ImageCache::Provide(const std::string& key, std::string bytes) {
+    std::lock_guard<std::mutex> lock(mu_);
+    provided_[key] = std::move(bytes);
+}
+
 void ImageCache::Upload() {
     std::vector<Decoded> ready;
     {
@@ -131,15 +136,22 @@ void ImageCache::run() {
         Http http;
         for (;;) {
             std::string url;
+            HttpResult r;
             {
                 std::unique_lock<std::mutex> lock(mu_);
                 cv_.wait(lock, [&] { return stop_ || !queue_.empty(); });
                 if (stop_) break;
                 url = std::move(queue_.front());
                 queue_.pop_front();
+                // Bytes supplied by Provide stand in for a download.
+                if (auto it = provided_.find(url); it != provided_.end()) {
+                    r.status = 200;
+                    r.body = std::move(it->second);
+                    provided_.erase(it);
+                }
             }
             Decoded d{url};
-            HttpResult r = http.Request("GET", url, "", 8 << 20);
+            if (r.status == 0 && url.rfind("http", 0) == 0) r = http.Request("GET", url, "", 8 << 20);
             UINT w = 0, h = 0;
             if (wic && r.ok() && decode(wic.Get(), r.body, w, h, d.rgba)) {
                 d.width = int(w);

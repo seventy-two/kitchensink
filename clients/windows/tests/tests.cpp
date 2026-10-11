@@ -192,6 +192,43 @@ static void testLocalPanels() {
     CHECK_EQ(DrivesSnapshot({}, 0).blocks[0].type, std::string("text"));
 }
 
+static void testMedia() {
+    CHECK_EQ(AppName("Spotify.exe"), std::string("Spotify"));
+    CHECK_EQ(AppName("MSEdge"), std::string("Edge"));
+    CHECK_EQ(AppName("308046B0AF4A39CB"), std::string("Firefox"));
+    CHECK_EQ(AppName("Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic"), std::string("Media Player"));
+    CHECK_EQ(AppName("Tidal.exe"), std::string("Tidal"));
+    CHECK_EQ(AppName("Some.App_abc!App"), std::string("Some.App_abc"));
+    CHECK_EQ(StripEmoji("Big win \xF0\x9F\x98\x82\xF0\x9F\x94\xA5 tonight \xE2\x9D\xA4\xEF\xB8\x8F"),
+             std::string("Big win tonight"));
+    CHECK_EQ(StripEmoji("Café – Σίγουρα, Привет"), std::string("Café – Σίγουρα, Привет"));  // kept
+    CHECK_EQ(FormatTime(185), std::string("3:05"));
+    CHECK_EQ(FormatTime(3723), std::string("1:02:03"));
+    CHECK_EQ(FormatTime(-4), std::string("0:00"));
+
+    CHECK(MediaSnapshot({}, 0).blocks.empty());  // nothing playing: no panel
+    NowPlaying np;
+    np.active = true;
+    np.title = "Song";
+    np.artist = "Band";
+    np.album = "Record";
+    np.app = "Spotify";
+    np.image = "media:1";
+    np.media.playing = true;
+    np.media.duration = 200;
+    Snapshot s = MediaSnapshot(np, 1000);
+    CHECK(IsLocal(s));
+    CHECK_EQ(s.blocks[0].type, std::string("media"));
+    CHECK_EQ(s.blocks[0].items[0].subtitle, std::string("Band"));
+    CHECK_EQ(s.blocks[0].items[0].detail, std::string("Record · Spotify"));
+    CHECK_EQ(s.blocks[0].items[0].image, std::string("media:1"));
+    CHECK_EQ(s.blocks[0].media.duration, 200.0);
+    CHECK_EQ(s.summary[0].label, std::string("Now playing"));
+    CHECK_EQ(s.summary[0].detail, std::string("Band · Spotify"));
+    np.media.playing = false;
+    CHECK_EQ(MediaSnapshot(np, 1000).summary[0].label, std::string("Paused"));
+}
+
 static void testParseEvent() {
     Event e = ParseEvent(nlohmann::json::parse(
         R"({"id": 42, "monitor": "nfl", "key": "final:1", "time": "2026-10-10T18:07:31Z",
@@ -279,6 +316,7 @@ int main() {
     testFitPanels();
     testGpuUtilisation();
     testLocalPanels();
+    testMedia();
     testParseEvent();
     testModel();
     testSse();

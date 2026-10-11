@@ -45,11 +45,22 @@ struct Item {
     bool done = false;
 };
 
+// Media is what a "media" block is playing. Only local panels make these.
+struct Media {
+    bool playing = false;
+    bool canPrevious = false, canToggle = false, canNext = false;
+    double position = 0;  // seconds, as of asOf
+    double duration = 0;  // seconds; 0 if unknown
+    double asOf = 0;      // Unix seconds
+};
+
 // Block is one part of a monitor's panel. Only the fields for its type are
-// set: "stats", "table", "list", "checklist" or "text".
+// set: "stats", "table", "list", "checklist", "media" (items[0] and media)
+// or "text".
 struct Block {
     std::string type, title, text;
     std::string addHint;  // a checklist takes new items when set
+    Media media;
     std::vector<Stat> stats;
     std::vector<Column> columns;
     std::vector<std::vector<Cell>> rows;

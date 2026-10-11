@@ -20,6 +20,11 @@ result is a single `kitchensink.exe` with nothing to install.
   and video memory, each with a minute's history) and **Drives** (each
   fixed drive's use). They read Windows' own counters once a second, only
   while the window is showing, and work with the server offline.
+- **Now playing**: what's playing on this PC, from Windows' media
+  sessions (the same source as the volume keys' media pop-up), so Spotify,
+  browsers and other players all show. Cover, track, progress and
+  previous / play-pause / next. A playing app wins over a paused one, and
+  a paused track hides ten minutes after it last played.
 - Checklists (the `todo` monitor) can be ticked, added to and deleted
   from; a tick shows at once, ahead of the server's update.
 - Keeps the server's event stream open, reconnects with backoff, and
@@ -59,6 +64,7 @@ g++ -std=c++17 -I src -I third_party tests/tests.cpp src/model.cpp src/sse.cpp s
 | `src/model.cpp` | snapshots and events parsed from JSON, and the dashboard's state |
 | `src/sse.cpp` | server-sent events parser |
 | `src/net.cpp` | WinHTTP requests and the stream client |
+| `src/media.cpp` | reads and controls Windows' media sessions (C++/WinRT) |
 | `src/sysinfo.cpp` | reads CPU, memory, GPU and drive use (performance counters, DXGI) |
 | `src/local.cpp` | turns those readings into the This PC and Drives panels |
 | `src/images.cpp` | thumbnail download, WIC decoding and textures |

@@ -4,6 +4,7 @@
 #include <shellapi.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <ctime>
 
@@ -104,12 +105,14 @@ App::App(HWND hwnd, ID3D11Device* device, std::function<void()> wake,
       client_(std::make_unique<Client>(wake)),
       images_(std::make_unique<ImageCache>(device, wake)),
       local_(std::make_unique<LocalStats>(wake)),
+      media_(std::make_unique<MediaWatcher>(wake, images_.get())),
       notify_(std::move(notify)) {
     client_->Start(config_.url, config_.token);
     if (config_.url.empty() || config_.token.empty()) openSettings();
 }
 
 App::~App() {
+    media_.reset();  // before images_, which it feeds
     local_.reset();
     client_.reset();
     images_.reset();
@@ -154,6 +157,7 @@ void App::Pump() {
     }
     images_->Upload();
     local_->Take(localPanels_);
+    media_->Take(mediaPanel_);
 
     if (pending_.empty()) return;
     if (pendingSince_ == 0) pendingSince_ = GetTickCount64();
@@ -206,6 +210,7 @@ void App::Frame() {
 
     header();
     local_->Want();
+    media_->Want();
 
     float gap = (compact_ ? 8 : 16) * scale_;
     float avail = ImGui::GetContentRegionAvail().x;
@@ -237,6 +242,7 @@ void App::Frame() {
 std::vector<Snapshot> App::panels() const {
     std::vector<Snapshot> out;
     if (!localPanels_.empty()) out.push_back(localPanels_.front());
+    if (!mediaPanel_.blocks.empty()) out.push_back(mediaPanel_);
     out.insert(out.end(), model_.Snapshots().begin(), model_.Snapshots().end());
     if (localPanels_.size() > 1) out.push_back(localPanels_.back());
     return out;
@@ -777,7 +783,80 @@ void App::block(const std::string& monitor, const Block& b) {
     else if (b.type == "table") table(b);
     else if (b.type == "list") list(b);
     else if (b.type == "checklist") checklist(monitor, b);
+    else if (b.type == "media") mediaBlock(b);
     else if (!b.text.empty()) wrapped(b.text, Colours().text);
+}
+
+// mediaBlock draws what's playing: the cover, the track, a progress bar
+// that moves on between readings, and previous, play/pause and next.
+void App::mediaBlock(const Block& b) {
+    if (b.items.empty()) return;
+    const Item& it = b.items[0];
+    const Media& m = b.media;
+    const Palette& p = Colours();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    float art = 76 * scale_, gap = 12 * scale_;
+
+    ImVec2 at = ImGui::GetCursorScreenPos();
+    float avail = ImGui::GetContentRegionAvail().x;
+    ImVec2 to(at.x + art, at.y + art);
+    if (const Texture* t = images_->Get(it.image)) {
+        // Crop to a square rather than squash.
+        float ta = float(t->width) / float(t->height);
+        ImVec2 uv0(0, 0), uv1(1, 1);
+        if (ta > 1) uv0.x = (1 - 1 / ta) / 2, uv1.x = 1 - uv0.x;
+        else uv0.y = (1 - ta) / 2, uv1.y = 1 - uv0.y;
+        dl->AddImage((ImTextureID)(intptr_t)t->srv, at, to, uv0, uv1);
+    } else {
+        dl->AddRectFilled(at, to, u32(p.frame));
+    }
+    ImGui::Dummy(ImVec2(art, art));
+    ImGui::SameLine(0, gap);
+
+    float w = avail - art - gap;
+    ImGui::BeginGroup();
+    ImGui::PushFont(fonts_.heading);
+    ImGui::TextUnformatted(fit(it.title, w).c_str());
+    ImGui::PopFont();
+    if (!it.subtitle.empty()) ImGui::TextUnformatted(fit(it.subtitle, w).c_str());
+    ImGui::PushFont(fonts_.caption);
+    if (!it.detail.empty()) mutedText(fit(it.detail, w));
+
+    // Progress, moved on by the time since Windows last said where it was.
+    if (m.duration > 0) {
+        double now = std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
+        double pos = std::clamp(m.position + (m.playing ? now - m.asOf : 0), 0.0, m.duration);
+        std::string times = FormatTime(pos) + " / " + FormatTime(m.duration);
+        float tw = ImGui::CalcTextSize(times.c_str()).x;
+        float barW = std::max(w - tw - gap, 20 * scale_);
+        ImVec2 bar = ImGui::GetCursorScreenPos();
+        float y = std::round(bar.y + ImGui::GetTextLineHeight() / 2);
+        float h = std::max(2.0f, std::round(3 * scale_));
+        dl->AddRectFilled(ImVec2(bar.x, y - h / 2), ImVec2(bar.x + barW, y + h / 2), u32(p.frame));
+        dl->AddRectFilled(ImVec2(bar.x, y - h / 2), ImVec2(bar.x + barW * float(pos / m.duration), y + h / 2),
+                          u32(m.playing ? p.accent : p.muted));
+        ImGui::Dummy(ImVec2(barW, ImGui::GetTextLineHeight()));
+        ImGui::SameLine(0, gap);
+        mutedText(times);
+    }
+    ImGui::PopFont();
+
+    // Controls, flat and dim until hovered, like refresh.
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
+    auto control = [&](const char* glyph, bool enabled, MediaCommand c, const char* tip) {
+        ImGui::BeginDisabled(!enabled);
+        if (ImGui::Button(glyph)) media_->Command(c);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tip);
+        ImGui::EndDisabled();
+    };
+    control(icon::Previous, m.canPrevious, MediaCommand::Previous, "Previous");
+    ImGui::SameLine(0, 2 * scale_);
+    control(m.playing ? icon::Pause : icon::Play, m.canToggle, MediaCommand::TogglePlay, m.playing ? "Pause" : "Play");
+    ImGui::SameLine(0, 2 * scale_);
+    control(icon::Next, m.canNext, MediaCommand::Next, "Next");
+    ImGui::PopStyleColor(2);
+    ImGui::EndGroup();
 }
 
 // checklist draws items with checkboxes, a delete button on the one under

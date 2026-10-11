@@ -123,9 +123,10 @@ Fonts LoadFonts(float scale) {
     ImGuiIO& io = ImGui::GetIO();
     io.Fonts->Clear();
 
-    // Latin, general punctuation (– · …), currency, arrows and shapes.
-    static const ImWchar text[] = {0x0020, 0x017F, 0x2000, 0x206F, 0x20A0, 0x20CF, 0x2190,
-                                   0x21FF, 0x2212, 0x2212, 0x25A0, 0x25FF, 0};
+    // Latin, Greek, Cyrillic, general punctuation (– · …), currency, arrows
+    // and shapes.
+    static const ImWchar text[] = {0x0020, 0x024F, 0x0370, 0x03FF, 0x0400, 0x04FF, 0x2000, 0x206F,
+                                   0x20A0, 0x20CF, 0x2190, 0x21FF, 0x2212, 0x2212, 0x25A0, 0x25FF, 0};
     static const ImWchar icons[] = {0xE700, 0xF8FF, 0};
 
     std::string regular = fontPath("segoeui.ttf"), semibold = fontPath("seguisb.ttf");
