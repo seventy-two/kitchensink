@@ -33,7 +33,7 @@ type Config struct {
 	// server's.
 	Timezone string `json:"timezone"`
 	// LiveInterval is how often to poll while a game is on. It defaults to
-	// one minute.
+	// 30 seconds.
 	LiveInterval monitor.Duration `json:"liveInterval"`
 	// ScoreboardURL replaces ESPN's endpoint, for tests.
 	ScoreboardURL string `json:"scoreboardURL"`
@@ -54,7 +54,7 @@ func New(raw json.RawMessage) (*Monitor, error) {
 	if err := monitor.Decode(raw, &c); err != nil {
 		return nil, err
 	}
-	m := &Monitor{cfg: c, teams: map[string]bool{}, scores: true, zone: time.Local, live: time.Minute}
+	m := &Monitor{cfg: c, teams: map[string]bool{}, scores: true, zone: time.Local, live: 30 * time.Second}
 	for _, t := range c.Teams {
 		m.teams[strings.ToUpper(t)] = true
 	}
@@ -192,9 +192,13 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	if err != nil {
 		return monitor.Result{}, err
 	}
+	held, err := m.holdTries(games, env)
+	if err != nil {
+		return monitor.Result{}, err
+	}
 	var events []monitor.Event
 	for _, g := range games {
-		events = append(events, m.gameEvents(g)...)
+		events = append(events, m.gameEvents(g, held[g.id])...)
 	}
 	summary, style := m.today(games, env.Now())
 	if summary == nil {
@@ -213,9 +217,62 @@ func (m *Monitor) followed(g game) bool {
 	return m.teams[g.away] || m.teams[g.home]
 }
 
+// scoresKey is the state key for the last score seen in each game.
+const scoresKey = "scores"
+
+// tryWait is the longest a touchdown's score is held back waiting for the
+// extra point or two-point try. ESPN usually shows the try within a minute.
+const tryWait = 2 * time.Minute
+
+// seenScore is a game's score at the last poll, and when it was first seen
+// if it's being held back.
+type seenScore struct {
+	Away, Home int
+	Held       time.Time `json:",omitzero"`
+}
+
+// holdTries says which followed games' scores to hold back for now: a
+// touchdown that ESPN shows before its try, so a score is notified once
+// with the try in rather than twice. It's held until the score changes
+// again or tryWait passes.
+func (m *Monitor) holdTries(games []game, env monitor.Env) (map[string]bool, error) {
+	var seen map[string]seenScore
+	if _, err := env.State.Get(scoresKey, &seen); err != nil {
+		return nil, err
+	}
+	now := env.Now()
+	held := map[string]bool{}
+	next := map[string]seenScore{}
+	for _, g := range games {
+		if g.state != "in" || !m.followed(g) {
+			continue
+		}
+		cur := seenScore{Away: n(g.awayScore), Home: n(g.homeScore)}
+		prev, ok := seen[g.id]
+		switch {
+		case ok && cur.Away == prev.Away && cur.Home == prev.Home:
+			cur.Held = prev.Held
+		case ok && touchdown(prev, cur):
+			cur.Held = now
+		}
+		if !cur.Held.IsZero() && now.Sub(cur.Held) < tryWait {
+			held[g.id] = true
+		}
+		next[g.id] = cur
+	}
+	return held, env.State.Set(scoresKey, next)
+}
+
+// touchdown is whether one side's score went up by exactly six.
+func touchdown(prev, cur seenScore) bool {
+	return cur.Away-prev.Away == 6 && cur.Home == prev.Home ||
+		cur.Home-prev.Home == 6 && cur.Away == prev.Away
+}
+
 // gameEvents describes the state of a game as events. Keys are stable for
-// each state and score, so the engine only passes on what's changed.
-func (m *Monitor) gameEvents(g game) []monitor.Event {
+// each state and score, so the engine only passes on what's changed. held
+// leaves out a score that's waiting for its try.
+func (m *Monitor) gameEvents(g game, held bool) []monitor.Event {
 	url := "https://www.espn.com/nfl/game/_/gameId/" + g.id
 	followed := m.followed(g)
 	switch g.state {
@@ -229,7 +286,7 @@ func (m *Monitor) gameEvents(g game) []monitor.Event {
 			Body:  g.broadcast,
 			URL:   url,
 		}}
-		if m.scores && (g.awayScore != "0" || g.homeScore != "0") {
+		if m.scores && !held && (g.awayScore != "0" || g.homeScore != "0") {
 			events = append(events, monitor.Event{
 				Key:   fmt.Sprintf("score:%s:%s-%s", g.id, g.awayScore, g.homeScore),
 				Title: g.score(),

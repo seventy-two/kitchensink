@@ -18,7 +18,7 @@ notification for each event.
 | Type | Source | Notifies |
 | --- | --- | --- |
 | `stocks` | CNBC quotes, plus a week's change from CNBC's daily closes (fetched once a day); `holdings` (largest first) lead the table and make up the summary | a symbol's daily move passing each multiple of `movePct`; a price crossing a target |
-| `nfl` | ESPN scoreboard; the summary is a chip per game today, followed teams' highlighted | kick-off, scores and results for followed teams; optionally every result |
+| `nfl` | ESPN scoreboard; the summary is a chip per game today, followed teams' highlighted | kick-off, scores and results for followed teams (a touchdown's score waits up to two minutes for the try, so it's notified once); optionally every result |
 | `weather` | [Open-Meteo](https://open-meteo.com) (no key needed); the summary is the next twelve hours | rain due within the hour, frost, strong gusts |
 | `autotrader` | AutoTrader UK search | newly listed cars |
 | `todo` | a to-do list kept on the server, changed from clients | nothing; ticked tasks clear after `clearAfter` (default `24h`) |
@@ -27,8 +27,8 @@ notification for each event.
 
 Each monitor also returns a dashboard panel and a short summary (shown when
 space is short), polls on its own interval and can ask to be polled sooner
-(the NFL monitor polls every minute while a followed game is on, the
-fantasy monitor every 30 seconds while your players are playing).
+(the NFL monitor polls every 30 seconds while a game is on, the fantasy
+monitor every 30 seconds while your players are playing).
 
 ### Fantasy
 

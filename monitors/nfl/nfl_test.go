@@ -84,6 +84,7 @@ func TestNext(t *testing.T) {
 	pre := game{state: "pre", kickoff: kickoff}
 
 	assert.Equal(t, 2*time.Minute, m.next([]game{pre, {state: "in"}}, now), "live game")
+	assert.Equal(t, 30*time.Second, newMonitor(t, "http://unused", nil).live, "default live interval")
 	assert.Equal(t, 90*time.Minute, m.next([]game{{state: "post"}, pre}, now), "wake for kick-off")
 	assert.Equal(t, 2*time.Minute, m.next([]game{pre}, kickoff.Add(time.Minute)), "kick-off passed but ESPN still says pre")
 	assert.Zero(t, m.next([]game{{state: "post"}}, now), "nothing coming: keep the interval")
@@ -127,4 +128,40 @@ func TestClock(t *testing.T) {
 	assert.Equal(t, "2nd 7:42", clock("7:42 - 2nd · 2nd & 6 at GB 41"))
 	assert.Equal(t, "4th 0:12", clock("0:12 - 4th"))
 	assert.Equal(t, "Halftime", clock("Halftime"))
+}
+
+func TestTouchdownHeldForTry(t *testing.T) {
+	m := newMonitor(t, "http://unused", map[string]any{"teams": []string{"IND"}})
+	clock := now
+	env := monitortest.Env(now)
+	env.Now = func() time.Time { return clock }
+	// poll is the score keys a poll would give, the score being away–home.
+	poll := func(away, home string) []string {
+		g := game{id: "1", state: "in", away: "IND", home: "PIT", awayScore: away, homeScore: home}
+		held, err := m.holdTries([]game{g}, env)
+		require.NoError(t, err)
+		var keys []string
+		for _, k := range monitortest.Keys(m.gameEvents(g, held[g.id])) {
+			if strings.HasPrefix(k, "score:") {
+				keys = append(keys, k)
+			}
+		}
+		return keys
+	}
+
+	assert.Equal(t, []string{"score:1:6-7"}, poll("6", "7"), "first sight of a game isn't held")
+	assert.Empty(t, poll("6", "13"), "touchdown held for the try")
+	clock = clock.Add(30 * time.Second)
+	assert.Equal(t, []string{"score:1:6-14"}, poll("6", "14"), "the try is in")
+
+	clock = clock.Add(time.Minute)
+	assert.Equal(t, []string{"score:1:9-14"}, poll("9", "14"), "a field goal isn't held")
+
+	assert.Empty(t, poll("15", "14"))
+	clock = clock.Add(time.Minute)
+	assert.Empty(t, poll("15", "14"), "still waiting for the try")
+	clock = clock.Add(time.Minute)
+	assert.Equal(t, []string{"score:1:15-14"}, poll("15", "14"), "no try seen in time: the score goes out")
+	clock = clock.Add(30 * time.Second)
+	assert.Equal(t, []string{"score:1:15-14"}, poll("15", "14"), "and stays out")
 }
