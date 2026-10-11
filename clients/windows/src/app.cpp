@@ -555,18 +555,23 @@ float App::compactCard(const Snapshot& s, float width, Show show, float body, bo
     float avail = ImGui::GetContentRegionAvail().x;
     float nameW = 112 * scale_;
 
-    // The name, and below it when it was updated or that it failed.
+    // The name, with when it was updated or that it failed below it, or
+    // beside it when open, since the panel then needs no summary.
     bool pending = refreshing_.count(s.monitor) && ImGui::GetTime() - refreshing_[s.monitor] < 15;
     ImGui::BeginGroup();
     ImGui::PushFont(fonts_.heading);
     ImGui::TextUnformatted(fit(s.title, nameW - 8 * scale_).c_str());
     ImGui::PopFont();
     ImGui::PushFont(fonts_.caption);
+    if (open) {
+        ImGui::SameLine(nameW);
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2 * scale_);  // sit on the name's baseline
+    }
     if (!s.error.empty()) {
         ImGui::TextColored(p.warn, "%s  Failed", icon::Warning);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", s.error.c_str());
     } else {
-        mutedText(pending ? "refreshing…" : s.updated ? Ago(s.updated, now()) : "waiting…");
+        mutedText(pending ? "refreshing…" : s.updated ? (open ? "updated " : "") + Ago(s.updated, now()) : "waiting…");
     }
     ImGui::PopFont();
     ImGui::EndGroup();
@@ -589,17 +594,20 @@ float App::compactCard(const Snapshot& s, float width, Show show, float body, bo
     mutedText(open ? icon::ChevronUp : icon::ChevronDown);
     ImGui::PopFont();
 
-    // The summary between them.
-    ImGui::SetCursorScreenPos(ImVec2(top.x + nameW, top.y));
-    float sumW = avail - nameW - bw - cw - 16 * scale_;
-    if (!s.summary.empty()) {
-        summary(s.summary, sumW);
-    } else if (s.blocks.empty() && s.error.empty()) {
-        mutedText("Waiting for the first check…");
-    } else {
-        mutedText("Click for details");
+    // The summary between them, while the panel itself is hidden.
+    float headH = nameH;
+    if (!open) {
+        ImGui::SetCursorScreenPos(ImVec2(top.x + nameW, top.y));
+        float sumW = avail - nameW - bw - cw - 16 * scale_;
+        if (!s.summary.empty()) {
+            summary(s.summary, sumW);
+        } else if (s.blocks.empty() && s.error.empty()) {
+            mutedText("Waiting for the first check…");
+        } else {
+            mutedText("Click for details");
+        }
+        headH = std::max(nameH, ImGui::GetItemRectMax().y - top.y);
     }
-    float headH = std::max(nameH, ImGui::GetItemRectMax().y - top.y);
     ImVec2 headMax(top.x + avail, top.y + headH);
 
     // Clicking anywhere on the row, bar the refresh button, opens or closes
