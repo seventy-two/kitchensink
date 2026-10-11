@@ -114,8 +114,9 @@ poll's, with the last good blocks kept), `subtitle` (what it's watching, when th
 search's filters), `blocks` and `summary`: a few
 stats (as in a `stats` block) worth seeing at a glance, which clients show
 instead of the blocks when space is short, and `summaryStyle`: empty for
-label/value/detail tiles, or `chips` for small blocks filled with each
-stat's tone (the watchlist's daily moves). Every monitor is
+label/value/detail tiles, or `chips` for small blocks of the same, filled
+with each stat's tone (the watchlist's daily moves, the hourly forecast,
+today's NFL games). Every monitor is
 drawn from the same few block types, so clients need no per-monitor code:
 
 | Block `type` | Fields |

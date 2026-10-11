@@ -138,8 +138,9 @@ const (
 	// detail.
 	SummaryTiles SummaryStyle = ""
 	// SummaryChips draws each stat as a small block filled with its
-	// tone's colour, with the label above the value; details are left out.
-	// It suits many short values, like a watchlist's daily moves.
+	// tone's colour: the label, the value, and the detail if any. It suits
+	// many short values, like a watchlist's daily moves or an hourly
+	// forecast.
 	SummaryChips SummaryStyle = "chips"
 )
 

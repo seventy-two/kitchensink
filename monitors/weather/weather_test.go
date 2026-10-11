@@ -47,14 +47,26 @@ func TestPoll(t *testing.T) {
 	assert.Equal(t, "Frost tomorrow in London", res.Events[2].Title)
 	assert.Equal(t, "Low of -2°C", res.Events[2].Body)
 
-	require.Len(t, res.Blocks, 2)
+	assert.Equal(t, "12", q.Get("forecast_hours"))
+	assert.Contains(t, q.Get("hourly"), "precipitation_probability")
+
+	require.Len(t, res.Blocks, 3)
 	now := res.Blocks[0]
 	assert.Equal(t, monitor.BlockStats, now.Type)
 	assert.Equal(t, "13°C", now.Stats[0].Value)
 	assert.Equal(t, "1.5 mm", now.Stats[3].Value)
 	assert.Len(t, now.Stats[3].Series, 8)
 
-	days := res.Blocks[1]
+	hourly := res.Blocks[1]
+	require.Len(t, hourly.Columns, 13, "a label column, then twelve hours")
+	assert.Equal(t, "Now", hourly.Columns[1].Title)
+	assert.Equal(t, "20:00", hourly.Columns[3].Title)
+	require.Len(t, hourly.Rows, 3)
+	assert.Equal(t, "Rain", hourly.Rows[1][3].Text, "the sky, even when rain's likely")
+	assert.Equal(t, "60%", hourly.Rows[2][3].Text)
+	assert.Equal(t, monitor.ToneAccent, hourly.Rows[2][3].Tone)
+
+	days := res.Blocks[2]
 	require.Len(t, days.Rows, 5)
 	assert.Equal(t, "Today", days.Rows[0][0].Text)
 	assert.Equal(t, monitor.ToneWarn, days.Rows[0][5].Tone, "gusts over the threshold")
@@ -91,8 +103,12 @@ func TestSummary(t *testing.T) {
 	srv := monitortest.Serve(t, "testdata/forecast.json")
 	res, err := newMonitor(t, srv.URL, nil).Poll(context.Background(), monitortest.Env(now))
 	require.NoError(t, err)
-	require.Len(t, res.Summary, 3)
-	assert.Equal(t, monitor.Stat{Label: "Now", Value: "13°C", Detail: "Mostly clear"}, res.Summary[0])
-	assert.Equal(t, "1.5 mm", res.Summary[1].Value)
-	assert.Equal(t, monitor.Stat{Label: "Today", Value: "15° / 11°", Detail: "0% rain · gusts 55", Tone: monitor.ToneWarn}, res.Summary[2])
+	assert.Equal(t, monitor.SummaryChips, res.SummaryStyle)
+	require.Len(t, res.Summary, 12, "an hour to a chip")
+	assert.Equal(t, monitor.Stat{Label: "Now", Value: "13°", Detail: "Clear"}, res.Summary[0], "now is the current temperature")
+	assert.Equal(t, monitor.Stat{Label: "19:00", Value: "13°", Detail: "Part cloud"}, res.Summary[1])
+	assert.Equal(t, monitor.Stat{Label: "20:00", Value: "12°", Detail: "60% rain", Tone: monitor.ToneAccent}, res.Summary[2],
+		"likely rain is marked, with its chance")
+	assert.Equal(t, monitor.ToneWarn, res.Summary[3].Tone, "strong gusts outrank rain")
+	assert.Equal(t, "Fog", res.Summary[10].Detail)
 }

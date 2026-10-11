@@ -92,6 +92,14 @@ type forecast struct {
 		Time []string  `json:"time"`
 		Rain []float64 `json:"precipitation"`
 	} `json:"minutely_15"`
+	Hourly struct {
+		Time        []string  `json:"time"`
+		Temperature []float64 `json:"temperature_2m"`
+		RainProb    []float64 `json:"precipitation_probability"`
+		Code        []int     `json:"weather_code"`
+		Gusts       []float64 `json:"wind_gusts_10m"`
+		IsDay       []int     `json:"is_day"`
+	} `json:"hourly"`
 	Daily struct {
 		Time     []string  `json:"time"`
 		Code     []int     `json:"weather_code"`
@@ -110,6 +118,8 @@ func (m *Monitor) fetch(ctx context.Context, client *http.Client) (*forecast, er
 		"current":              {"temperature_2m,apparent_temperature,weather_code,wind_speed_10m,wind_gusts_10m,precipitation,is_day"},
 		"minutely_15":          {"precipitation"},
 		"forecast_minutely_15": {"8"},
+		"hourly":               {"temperature_2m,precipitation_probability,weather_code,wind_gusts_10m,is_day"},
+		"forecast_hours":       {strconv.Itoa(hours)},
 		"daily":                {"weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_gusts_10m_max"},
 		"forecast_days":        {"5"},
 		"wind_speed_unit":      {"mph"},
@@ -138,25 +148,57 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	if err != nil {
 		return monitor.Result{}, err
 	}
-	return monitor.Result{Blocks: m.blocks(f), Summary: m.summary(f), Events: m.events(f)}, nil
+	return monitor.Result{Blocks: m.blocks(f), Summary: m.summary(f), SummaryStyle: monitor.SummaryChips, Events: m.events(f)}, nil
 }
 
-// summary is the current weather, rain in the next two hours and today's
-// range.
-func (m *Monitor) summary(f *forecast) []monitor.Stat {
-	c := f.Current
-	out := []monitor.Stat{
-		{Label: "Now", Value: fmt.Sprintf("%.0f°C", c.Temperature), Detail: describe(c.Code, c.IsDay == 1)},
-		rainStat(f.Minutely15.Rain),
+// hours is how far ahead the hourly forecast goes, from this hour.
+const hours = 12
+
+// hour is one hour of the forecast.
+type hour struct {
+	label, temp string
+	sky         string // e.g. "Cloudy"
+	// conditions is the sky, or the chance of rain when it's likely.
+	conditions string
+	rainProb   float64
+	tone       monitor.Tone
+}
+
+// hourly reads the hourly forecast: the first hour is now, at the current
+// temperature. Hours likely to rain are marked, and strong gusts more so.
+func (m *Monitor) hourly(f *forecast) []hour {
+	h := f.Hourly
+	var out []hour
+	for i, t := range h.Time {
+		if i >= hours || i >= len(h.Temperature) || i >= len(h.RainProb) || i >= len(h.Code) || i >= len(h.Gusts) {
+			break
+		}
+		day := i < len(h.IsDay) && h.IsDay[i] == 1
+		sky := brief(h.Code[i], day)
+		x := hour{label: clock(t), temp: fmt.Sprintf("%.0f°", h.Temperature[i]), sky: sky, conditions: sky, rainProb: h.RainProb[i]}
+		if i == 0 {
+			x.label = "Now"
+			x.temp = fmt.Sprintf("%.0f°", f.Current.Temperature)
+		}
+		if h.RainProb[i] >= 30 {
+			x.conditions = fmt.Sprintf("%.0f%% rain", h.RainProb[i])
+		}
+		switch {
+		case m.gustMPH > 0 && h.Gusts[i] >= m.gustMPH:
+			x.tone = monitor.ToneWarn
+		case h.RainProb[i] >= 50:
+			x.tone = monitor.ToneAccent
+		}
+		out = append(out, x)
 	}
-	d := f.Daily
-	if len(d.High) > 0 && len(d.Low) > 0 && len(d.RainProb) > 0 && len(d.Gusts) > 0 {
-		out = append(out, monitor.Stat{
-			Label:  "Today",
-			Value:  fmt.Sprintf("%.0f° / %.0f°", d.High[0], d.Low[0]),
-			Detail: fmt.Sprintf("%.0f%% rain · gusts %.0f", d.RainProb[0], d.Gusts[0]),
-			Tone:   m.windTone(d.Gusts[0]),
-		})
+	return out
+}
+
+// summary is the hourly forecast, an hour to a chip.
+func (m *Monitor) summary(f *forecast) []monitor.Stat {
+	var out []monitor.Stat
+	for _, h := range m.hourly(f) {
+		out = append(out, monitor.Stat{Label: h.label, Value: h.temp, Detail: h.conditions, Tone: h.tone})
 	}
 	return out
 }
@@ -265,7 +307,48 @@ func (m *Monitor) blocks(f *forecast) []monitor.Block {
 			{Text: fmt.Sprintf("%.0f mph", d.Gusts[i]), Tone: m.windTone(d.Gusts[i])},
 		})
 	}
-	return []monitor.Block{now, days}
+	// The hours across, then the days down.
+	hourly := monitor.Block{Type: monitor.BlockTable, Columns: []monitor.Column{{}}, Rows: [][]monitor.Cell{}}
+	temps := []monitor.Cell{{Text: "Temp", Tone: monitor.ToneMuted}}
+	conds := []monitor.Cell{{Text: "Weather", Tone: monitor.ToneMuted}}
+	rains := []monitor.Cell{{Text: "Rain", Tone: monitor.ToneMuted}}
+	for _, h := range m.hourly(f) {
+		hourly.Columns = append(hourly.Columns, monitor.Column{Title: h.label, Align: monitor.AlignRight})
+		temps = append(temps, monitor.Cell{Text: h.temp, Tone: h.tone})
+		conds = append(conds, monitor.Cell{Text: h.sky, Tone: monitor.ToneMuted})
+		rains = append(rains, monitor.Cell{Text: fmt.Sprintf("%.0f%%", h.rainProb), Tone: h.tone})
+	}
+	hourly.Rows = append(hourly.Rows, temps, conds, rains)
+	return []monitor.Block{now, hourly, days}
+}
+
+// brief names a WMO weather code in a word or two, for the hourly
+// forecast.
+func brief(code int, day bool) string {
+	switch {
+	case code <= 1:
+		if day {
+			return "Sunny"
+		}
+		return "Clear"
+	case code == 2:
+		return "Part cloud"
+	case code == 3:
+		return "Cloudy"
+	case code == 45 || code == 48:
+		return "Fog"
+	case code >= 51 && code <= 57:
+		return "Drizzle"
+	case code >= 61 && code <= 67:
+		return "Rain"
+	case code >= 71 && code <= 77, code == 85, code == 86:
+		return "Snow"
+	case code >= 80 && code <= 82:
+		return "Showers"
+	case code >= 95:
+		return "Storms"
+	}
+	return describe(code, day)
 }
 
 func (m *Monitor) windTone(gust float64) monitor.Tone {

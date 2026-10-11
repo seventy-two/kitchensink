@@ -3,6 +3,9 @@ package nfl
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,15 +91,34 @@ func TestNext(t *testing.T) {
 
 func TestSummary(t *testing.T) {
 	srv := monitortest.Serve(t, "testdata/scoreboard.json")
-	res, err := newMonitor(t, srv.URL, map[string]any{"teams": []string{"CHI", "DAL", "PHI"}}).Poll(context.Background(), monitortest.Env(now))
-	require.NoError(t, err)
-	require.Len(t, res.Summary, 3)
-	assert.Equal(t, monitor.Stat{Label: "TB @ DAL", Value: "24–16", Detail: "Final", Tone: monitor.ToneBad}, res.Summary[0], "a followed team's loss")
-	assert.Equal(t, monitor.ToneWarn, res.Summary[1].Tone, "live")
-	assert.Equal(t, "7–3", res.Summary[1].Value)
-	assert.Equal(t, "Sun 14:30", res.Summary[2].Value, "kick-off in UK time")
 
+	// On a game day: a chip for each of the day's games, in kick-off
+	// order, with followed teams' highlighted. Thursday's game isn't today.
+	res, err := newMonitor(t, srv.URL, map[string]any{"teams": []string{"CHI"}}).Poll(context.Background(), monitortest.Env(now))
+	require.NoError(t, err)
+	assert.Equal(t, monitor.SummaryChips, res.SummaryStyle)
+	assert.Equal(t, []monitor.Stat{
+		{Label: "PHI @ JAX", Value: "14:30"},
+		{Label: "CHI @ GB", Value: "7–3", Tone: monitor.ToneAccent},
+	}, res.Summary)
 	res, err = newMonitor(t, srv.URL, nil).Poll(context.Background(), monitortest.Env(now))
 	require.NoError(t, err)
-	assert.Equal(t, []monitor.Stat{{Label: "Week 5", Value: "1 live", Tone: monitor.ToneWarn}}, res.Summary, "no followed teams")
+	assert.Equal(t, monitor.ToneWarn, res.Summary[1].Tone, "live, not followed")
+
+	// A live game makes it a game day, whatever the date.
+	tuesday := time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC)
+	res, err = newMonitor(t, srv.URL, nil).Poll(context.Background(), monitortest.Env(tuesday))
+	require.NoError(t, err)
+	assert.Equal(t, monitor.SummaryChips, res.SummaryStyle)
+	assert.Equal(t, []string{"CHI @ GB"}, []string{res.Summary[0].Label})
+
+	// Without games today: the followed teams' games this week.
+	body, err := os.ReadFile("testdata/scoreboard.json")
+	require.NoError(t, err)
+	srv.Reply(http.StatusOK, []byte(strings.ReplaceAll(string(body), `"state": "in"`, `"state": "post"`)))
+	res, err = newMonitor(t, srv.URL, map[string]any{"teams": []string{"CHI", "DAL", "PHI"}}).Poll(context.Background(), monitortest.Env(tuesday))
+	require.NoError(t, err)
+	assert.Equal(t, monitor.SummaryTiles, res.SummaryStyle)
+	require.Len(t, res.Summary, 3)
+	assert.Equal(t, monitor.Stat{Label: "TB @ DAL", Value: "24–16", Detail: "Final", Tone: monitor.ToneBad}, res.Summary[0], "a followed team's loss")
 }

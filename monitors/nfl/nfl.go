@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -195,11 +196,16 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	for _, g := range games {
 		events = append(events, m.gameEvents(g)...)
 	}
+	summary, style := m.today(games, env.Now())
+	if summary == nil {
+		summary, style = m.summary(week, games), monitor.SummaryTiles
+	}
 	return monitor.Result{
-		Blocks:  []monitor.Block{m.table(week, games)},
-		Summary: m.summary(week, games),
-		Events:  events,
-		Next:    m.next(games, env.Now()),
+		Blocks:       []monitor.Block{m.table(week, games)},
+		Summary:      summary,
+		SummaryStyle: style,
+		Events:       events,
+		Next:         m.next(games, env.Now()),
 	}, nil
 }
 
@@ -316,6 +322,50 @@ func (m *Monitor) table(week int, games []game) monitor.Block {
 		})
 	}
 	return b
+}
+
+// newYork is where the NFL's day is reckoned: a Sunday night game that
+// kicks off after midnight in the UK is still Sunday's.
+var newYork = func() *time.Location {
+	l, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		return time.UTC
+	}
+	return l
+}()
+
+// today is a chip for each of today's games, in kick-off order: the
+// kick-off time until it starts, then the score. Followed teams' games are
+// highlighted, and live ones marked. It's nil on a day without games.
+func (m *Monitor) today(games []game, now time.Time) ([]monitor.Stat, monitor.SummaryStyle) {
+	day := now.In(newYork).Format("2006-01-02")
+	var todays []game
+	for _, g := range games {
+		if g.kickoff.In(newYork).Format("2006-01-02") == day || g.state == "in" {
+			todays = append(todays, g)
+		}
+	}
+	if len(todays) == 0 {
+		return nil, ""
+	}
+	sort.SliceStable(todays, func(i, j int) bool { return todays[i].kickoff.Before(todays[j].kickoff) })
+	var out []monitor.Stat
+	for _, g := range todays {
+		s := monitor.Stat{Label: g.away + " @ " + g.home, Value: g.awayScore + "–" + g.homeScore}
+		switch g.state {
+		case "pre":
+			s.Value = g.kickoff.In(m.zone).Format("15:04")
+		case "in":
+			s.Tone = monitor.ToneWarn
+		case "post":
+			s.Tone = monitor.ToneMuted
+		}
+		if m.followed(g) {
+			s.Tone = monitor.ToneAccent
+		}
+		out = append(out, s)
+	}
+	return out, monitor.SummaryChips
 }
 
 // summary is the followed teams' games this week: the score once they've
