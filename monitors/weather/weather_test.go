@@ -86,3 +86,13 @@ func TestNewNeedsPlace(t *testing.T) {
 	_, err := New(json.RawMessage(`{"place":"Nowhere"}`))
 	assert.Error(t, err)
 }
+
+func TestSummary(t *testing.T) {
+	srv := monitortest.Serve(t, "testdata/forecast.json")
+	res, err := newMonitor(t, srv.URL, nil).Poll(context.Background(), monitortest.Env(now))
+	require.NoError(t, err)
+	require.Len(t, res.Summary, 3)
+	assert.Equal(t, monitor.Stat{Label: "Now", Value: "13°C", Detail: "Mostly clear"}, res.Summary[0])
+	assert.Equal(t, "1.5 mm", res.Summary[1].Value)
+	assert.Equal(t, monitor.Stat{Label: "Today", Value: "15° / 11°", Detail: "0% rain · gusts 55", Tone: monitor.ToneWarn}, res.Summary[2])
+}

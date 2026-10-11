@@ -126,3 +126,34 @@ func TestNewSearchID(t *testing.T) {
 	assert.Regexp(t, `^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`, id)
 	assert.NotEqual(t, id, newSearchID())
 }
+
+func TestSummary(t *testing.T) {
+	car := func(price, year string) listing {
+		l := listing{Price: price}
+		l.Badges = append(l.Badges, struct {
+			Type        string `json:"type"`
+			DisplayText string `json:"displayText"`
+		}{"REGISTERED_YEAR", year})
+		return l
+	}
+	got := summary([]listing{car("£13,871", "2024"), car("£12,000", "2022"), car("£12,700", "2023")})
+	assert.Equal(t, []monitor.Stat{
+		{Label: "Listed", Value: "3"},
+		{Label: "Newest", Value: "£13,871", Detail: "2024"},
+		{Label: "Cheapest", Value: "£12,000", Detail: "2022"},
+	}, got)
+
+	got = summary([]listing{car("£9,000", "2020")})
+	assert.Len(t, got, 2, "no cheapest when it's the newest")
+	assert.Equal(t, []monitor.Stat{{Label: "Listed", Value: "0"}}, summary(nil))
+}
+
+func TestPrice(t *testing.T) {
+	p, ok := price("£13,871")
+	assert.True(t, ok)
+	assert.Equal(t, 13871, p)
+	p, _ = price("£9,999.50")
+	assert.Equal(t, 9999, p)
+	_, ok = price("POA")
+	assert.False(t, ok)
+}

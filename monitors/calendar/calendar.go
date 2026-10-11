@@ -144,17 +144,88 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		blocks = append(blocks, monitor.Block{Type: monitor.BlockText, Text: "Couldn't load " + f})
 	}
 	blocks = append(blocks, m.blocks(occs, now)...)
-	return monitor.Result{Blocks: blocks, Events: m.reminders(occs, now), Next: m.next(occs, now)}, nil
+	return monitor.Result{
+		Blocks:  blocks,
+		Summary: m.summary(occs, now),
+		Events:  m.reminders(occs, now),
+		Next:    m.next(occs, now),
+	}, nil
+}
+
+// summaryLen is how many events the summary shows.
+const summaryLen = 3
+
+// summary lists what's on now, then what's next: today's all-day events
+// count as on now, and later days' as next on their day.
+func (m *Monitor) summary(occs []occurrence, now time.Time) []monitor.Stat {
+	today, tomorrow := midnight(now), midnight(now).AddDate(0, 0, 1)
+	var on, next []monitor.Stat
+	for _, o := range occs {
+		cal := m.cfg.Calendars[o.Cal]
+		switch {
+		case over(o, now):
+		case o.AllDay && o.Start.Before(tomorrow):
+			on = append(on, monitor.Stat{Label: "Today", Value: o.Title, Detail: cal.Name})
+		case !o.AllDay && !o.Start.After(now):
+			on = append(on, monitor.Stat{Label: "Now", Value: o.Title, Detail: "until " + o.End.In(m.loc).Format("15:04"), Tone: monitor.ToneAccent})
+		default:
+			next = append(next, monitor.Stat{Label: when(o, now, today), Value: o.Title, Detail: cal.Name})
+		}
+	}
+	if len(m.cfg.Calendars) == 1 {
+		for i := range on {
+			if on[i].Label == "Today" {
+				on[i].Detail = ""
+			}
+		}
+		for i := range next {
+			next[i].Detail = ""
+		}
+	}
+	// Something coming up always gets a place, however busy now is.
+	out := on
+	if len(out) > summaryLen-1 && len(next) > 0 {
+		out = out[:summaryLen-1]
+	}
+	out = append(out, next...)
+	if len(out) > summaryLen {
+		out = out[:summaryLen]
+	}
+	if len(out) == 0 {
+		out = append(out, monitor.Stat{Label: "Next", Value: fmt.Sprintf("Nothing in the next %d days", m.cfg.Days), Tone: monitor.ToneMuted})
+	}
+	return out
+}
+
+// when is a short label for when o starts: "in 25 min", "14:00", "Tomorrow
+// 09:00", "Thu 09:00", or the day alone for all-day events.
+func when(o occurrence, now, today time.Time) string {
+	start := o.Start.In(today.Location())
+	day := int(midnight(start).Sub(today).Hours()/24 + 0.5)
+	switch {
+	case o.AllDay && day == 1:
+		return "Tomorrow"
+	case o.AllDay:
+		return start.Format("Mon 2 Jan")
+	case start.Sub(now) < time.Hour:
+		return fmt.Sprintf("in %d min", max(1, int(start.Sub(now).Minutes()+0.5)))
+	case day == 0:
+		return start.Format("15:04")
+	case day == 1:
+		return "Tomorrow " + start.Format("15:04")
+	}
+	return start.Format("Mon 15:04")
 }
 
 // blocks makes a table for each day with something on. Today always gets
 // one, so an empty day says so.
 func (m *Monitor) blocks(occs []occurrence, now time.Time) []monitor.Block {
 	today := midnight(now)
-	cols := []monitor.Column{{Title: "Time"}, {Title: "Event"}}
+	// No headings: each day's table is short, and they'd repeat.
+	cols := []monitor.Column{{}, {Fill: true}}
 	many := len(m.cfg.Calendars) > 1
 	if many {
-		cols = append(cols, monitor.Column{Title: "Calendar"})
+		cols = append(cols, monitor.Column{})
 	}
 
 	var out []monitor.Block
@@ -172,12 +243,8 @@ func (m *Monitor) blocks(occs []occurrence, now time.Time) []monitor.Block {
 			}
 			rows++
 			tone := monitor.ToneNone
-			over := !o.End.After(now)
-			if o.End.Equal(o.Start) {
-				over = o.Start.Before(now)
-			}
 			switch {
-			case over:
+			case over(o, now):
 				tone = monitor.ToneMuted
 			case !o.AllDay && !o.Start.After(now):
 				tone = monitor.ToneAccent // on now
@@ -411,6 +478,15 @@ var meetingLink = regexp.MustCompile(`https://(?:meet\.google\.com|teams\.micros
 
 func instanceKey(uid string, start time.Time) string {
 	return fmt.Sprintf("%s@%d", uid, start.Unix())
+}
+
+// over reports whether o has finished. An event with no length is over
+// once it has started.
+func over(o occurrence, now time.Time) bool {
+	if o.End.Equal(o.Start) {
+		return o.Start.Before(now)
+	}
+	return !o.End.After(now)
 }
 
 // overlaps reports whether o is on during [from, to). An event with no

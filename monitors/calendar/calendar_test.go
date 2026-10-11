@@ -183,3 +183,45 @@ func TestConfig(t *testing.T) {
 		assert.Error(t, err, name)
 	}
 }
+
+func TestSummary(t *testing.T) {
+	work, personal := feeds(t)
+	m := newMonitor(t, work, personal)
+	brief := func(at time.Time) []string {
+		res, err := m.Poll(context.Background(), monitortest.Env(at))
+		require.NoError(t, err)
+		var out []string
+		for _, s := range res.Summary {
+			out = append(out, s.Label+" | "+s.Value+" | "+s.Detail)
+		}
+		return out
+	}
+	assert.Equal(t, []string{
+		"Today | Bins out | Personal",
+		"in 8 min | Standup | Work",
+		"15:00 | Quarterly review | Work",
+	}, brief(now))
+	assert.Equal(t, []string{
+		"Today | Bins out | Personal",
+		"Now | Quarterly review | until 16:00",
+		"Tomorrow 10:00 | Standup (moved) | Work",
+	}, brief(time.Date(2026, 10, 12, 15, 30, 0, 0, london)))
+	assert.Equal(t, []string{
+		"Tomorrow 09:00 | Standup | Work",
+		"Fri 16 Oct | Weekend in Cardiff | Personal",
+		"Fri 09:00 | Standup | Work",
+	}, brief(time.Date(2026, 10, 14, 20, 0, 0, 0, london)))
+}
+
+func TestTableLayout(t *testing.T) {
+	work, personal := feeds(t)
+	m := newMonitor(t, work, personal)
+	res, err := m.Poll(context.Background(), monitortest.Env(now))
+	require.NoError(t, err)
+	cols := res.Blocks[0].Columns
+	require.Len(t, cols, 3)
+	for _, c := range cols {
+		assert.Empty(t, c.Title, "no repeated headings")
+	}
+	assert.True(t, cols[1].Fill, "the event takes the spare width")
+}

@@ -138,7 +138,41 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	if err != nil {
 		return monitor.Result{}, err
 	}
-	return monitor.Result{Blocks: m.blocks(f), Events: m.events(f)}, nil
+	return monitor.Result{Blocks: m.blocks(f), Summary: m.summary(f), Events: m.events(f)}, nil
+}
+
+// summary is the current weather, rain in the next two hours and today's
+// range.
+func (m *Monitor) summary(f *forecast) []monitor.Stat {
+	c := f.Current
+	out := []monitor.Stat{
+		{Label: "Now", Value: fmt.Sprintf("%.0f°C", c.Temperature), Detail: describe(c.Code, c.IsDay == 1)},
+		rainStat(f.Minutely15.Rain),
+	}
+	d := f.Daily
+	if len(d.High) > 0 && len(d.Low) > 0 && len(d.RainProb) > 0 && len(d.Gusts) > 0 {
+		out = append(out, monitor.Stat{
+			Label:  "Today",
+			Value:  fmt.Sprintf("%.0f° / %.0f°", d.High[0], d.Low[0]),
+			Detail: fmt.Sprintf("%.0f%% rain · gusts %.0f", d.RainProb[0], d.Gusts[0]),
+			Tone:   m.windTone(d.Gusts[0]),
+		})
+	}
+	return out
+}
+
+// rainStat sums the next two hours' rain, with the series as a sparkline.
+func rainStat(series []float64) monitor.Stat {
+	rain := monitor.Stat{Label: "Rain, next 2h", Value: "Dry", Series: series}
+	var total float64
+	for _, r := range series {
+		total += r
+	}
+	if total > 0 {
+		rain.Value = fmt.Sprintf("%.1f mm", total)
+		rain.Tone = monitor.ToneAccent
+	}
+	return rain
 }
 
 // events checks the forecast against the alert thresholds. Keys hold the
@@ -189,15 +223,7 @@ func (m *Monitor) events(f *forecast) []monitor.Event {
 
 func (m *Monitor) blocks(f *forecast) []monitor.Block {
 	c := f.Current
-	rain := monitor.Stat{Label: "Rain, next 2h", Value: "Dry", Series: f.Minutely15.Rain}
-	var total float64
-	for _, r := range f.Minutely15.Rain {
-		total += r
-	}
-	if total > 0 {
-		rain.Value = fmt.Sprintf("%.1f mm", total)
-		rain.Tone = monitor.ToneAccent
-	}
+	rain := rainStat(f.Minutely15.Rain)
 	now := monitor.Block{
 		Type:  monitor.BlockStats,
 		Title: m.cfg.Place,

@@ -164,6 +164,7 @@ func (e *Engine) poll(ctx context.Context, r *runner) time.Duration {
 		snap.Error = ""
 		snap.Updated = e.opts.Now()
 		snap.Blocks = res.Blocks
+		snap.Summary = res.Summary
 		if snap.Blocks == nil {
 			snap.Blocks = []monitor.Block{}
 		}

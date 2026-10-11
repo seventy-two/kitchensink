@@ -155,7 +155,25 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		return monitor.Result{}, err
 	}
 
-	return monitor.Result{Blocks: []monitor.Block{table(quotes)}, Events: events}, nil
+	return monitor.Result{Blocks: []monitor.Block{table(quotes)}, Summary: summary(quotes), Events: events}, nil
+}
+
+// moversLen is how many symbols the summary shows.
+const moversLen = 4
+
+// summary is the biggest movers today, either way.
+func summary(quotes []quote) []monitor.Stat {
+	sorted := append([]quote(nil), quotes...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		a, _ := parsePct(sorted[i].ChangePct)
+		b, _ := parsePct(sorted[j].ChangePct)
+		return math.Abs(a) > math.Abs(b)
+	})
+	var out []monitor.Stat
+	for _, q := range sorted[:min(moversLen, len(sorted))] {
+		out = append(out, monitor.Stat{Label: displayName(q), Value: formatPct(q.ChangePct), Detail: q.Last, Tone: toneOf(q.ChangePct)})
+	}
+	return out
 }
 
 // moveEvents notifies for each multiple of movePct the day's move has

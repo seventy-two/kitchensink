@@ -100,13 +100,15 @@ Each `event` message carries the event's ID as its SSE `id`.
 history but shouldn't raise a notification.
 
 **Snapshot**: `monitor`, `kind`, `title`, `updated`, `error` (the last
-poll's, with the last good blocks kept) and `blocks`. Every monitor is
+poll's, with the last good blocks kept), `blocks` and `summary`: a few
+stats (as in a `stats` block) worth seeing at a glance, which clients show
+instead of the blocks when space is short. Every monitor is
 drawn from the same few block types, so clients need no per-monitor code:
 
 | Block `type` | Fields |
 | --- | --- |
 | `stats` | `stats`: `label`, `value`, `detail`, `tone`, `series` (a sparkline) |
-| `table` | `columns` (`title`, `align`) and `rows` of cells (`text`, `tone`, `url`) |
+| `table` | `columns` (`title`, `align`, `fill` for the column that takes spare width) and `rows` of cells (`text`, `tone`, `url`) |
 | `list` | `items`: `title`, `subtitle`, `detail`, `url`, `image`, `tone` |
 | `text` | `text` |
 
@@ -133,8 +135,9 @@ func init() {
 func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, error) {
 	// Fetch with env.HTTP; keep anything between polls in env.State.
 	return monitor.Result{
-		Blocks: []monitor.Block{{Type: monitor.BlockText, Text: "hello"}},
-		Events: []monitor.Event{{Key: "something-2026-10-10", Title: "Something happened"}},
+		Blocks:  []monitor.Block{{Type: monitor.BlockText, Text: "hello"}},
+		Summary: []monitor.Stat{{Label: "Status", Value: "fine"}},
+		Events:  []monitor.Event{{Key: "something-2026-10-10", Title: "Something happened"}},
 	}, nil
 }
 ```

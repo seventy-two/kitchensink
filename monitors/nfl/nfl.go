@@ -196,9 +196,10 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		events = append(events, m.gameEvents(g)...)
 	}
 	return monitor.Result{
-		Blocks: []monitor.Block{m.table(week, games)},
-		Events: events,
-		Next:   m.next(games, env.Now()),
+		Blocks:  []monitor.Block{m.table(week, games)},
+		Summary: m.summary(week, games),
+		Events:  events,
+		Next:    m.next(games, env.Now()),
 	}, nil
 }
 
@@ -315,6 +316,50 @@ func (m *Monitor) table(week int, games []game) monitor.Block {
 		})
 	}
 	return b
+}
+
+// summary is the followed teams' games this week: the score once they've
+// kicked off, otherwise when they do. Without any, it counts live games.
+func (m *Monitor) summary(week int, games []game) []monitor.Stat {
+	var out []monitor.Stat
+	live := 0
+	for _, g := range games {
+		if g.state == "in" {
+			live++
+		}
+		if !m.followed(g) {
+			continue
+		}
+		s := monitor.Stat{Label: g.away + " @ " + g.home, Value: g.awayScore + "–" + g.homeScore, Detail: g.detail}
+		switch g.state {
+		case "pre":
+			s.Value = g.kickoff.In(m.zone).Format("Mon 15:04")
+			s.Detail = g.broadcast
+		case "in":
+			s.Tone = monitor.ToneWarn
+		case "post":
+			// Green for a followed team's win, red for a loss.
+			ours, theirs := n(g.homeScore), n(g.awayScore)
+			if m.teams[g.away] {
+				ours, theirs = theirs, ours
+			}
+			switch {
+			case ours > theirs:
+				s.Tone = monitor.ToneGood
+			case ours < theirs:
+				s.Tone = monitor.ToneBad
+			}
+		}
+		out = append(out, s)
+	}
+	if len(out) == 0 {
+		s := monitor.Stat{Label: fmt.Sprintf("Week %d", week), Value: "No games on", Tone: monitor.ToneMuted}
+		if live > 0 {
+			s.Value, s.Tone = fmt.Sprintf("%d live", live), monitor.ToneWarn
+		}
+		out = append(out, s)
+	}
+	return out
 }
 
 func n(s string) int {

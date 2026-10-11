@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/seventy-two/kitchensink/monitor"
@@ -80,7 +81,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		return monitor.Result{}, err
 	}
 
-	res := monitor.Result{Blocks: []monitor.Block{m.list(listings)}}
+	res := monitor.Result{Blocks: []monitor.Block{m.list(listings)}, Summary: summary(listings)}
 	for _, l := range listings {
 		res.Events = append(res.Events, monitor.Event{
 			Key:      "advert:" + l.AdvertID,
@@ -210,6 +211,51 @@ func (m *Monitor) list(listings []listing) monitor.Block {
 	return b
 }
 
+// summary is how many are listed, the newest and the cheapest.
+func summary(listings []listing) []monitor.Stat {
+	out := []monitor.Stat{{Label: "Listed", Value: strconv.Itoa(len(listings))}}
+	if len(listings) == 0 {
+		return out
+	}
+	newest := listings[0]
+	out = append(out, monitor.Stat{Label: "Newest", Value: newest.Price, Detail: newest.brief()})
+	cheapest, best := -1, 0
+	for i, l := range listings {
+		if p, ok := price(l.Price); ok && (cheapest < 0 || p < best) {
+			cheapest, best = i, p
+		}
+	}
+	if cheapest > 0 {
+		l := listings[cheapest]
+		out = append(out, monitor.Stat{Label: "Cheapest", Value: l.Price, Detail: l.brief()})
+	}
+	return out
+}
+
+// brief is the year and mileage, e.g. "2022 (22 reg) · 14,000 miles".
+func (l *listing) brief() string {
+	var parts []string
+	for _, b := range l.Badges {
+		switch b.Type {
+		case "REGISTERED_YEAR", "MILEAGE":
+			parts = append(parts, b.DisplayText)
+		}
+	}
+	return strings.Join(parts, " · ")
+}
+
+// price reads a price such as "£13,871" in whole pounds.
+func price(s string) (int, bool) {
+	digits := strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, strings.SplitN(s, ".", 2)[0])
+	n, err := strconv.Atoi(digits)
+	return n, err == nil
+}
+
 func (l *listing) url() string { return siteURL + "/car-details/" + l.AdvertID }
 
 func (l *listing) image() string {
@@ -228,12 +274,7 @@ func (l *listing) summary() string {
 			parts = append(parts, s)
 		}
 	}
-	for _, b := range l.Badges {
-		switch b.Type {
-		case "REGISTERED_YEAR", "MILEAGE":
-			add(b.DisplayText)
-		}
-	}
+	add(l.brief())
 	add(l.VehicleLocation)
 	add(sellerName(l.SellerType))
 	if w := l.writeOff(); w != "" {

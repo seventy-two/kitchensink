@@ -47,6 +47,10 @@ type State interface {
 type Result struct {
 	// Blocks make up the monitor's dashboard panel.
 	Blocks []Block
+	// Summary is the few things most worth seeing at a glance, e.g. the
+	// next meeting or the biggest movers. Clients show it in place of the
+	// blocks when space is short.
+	Summary []Stat
 	// Events are things that happened. The engine drops any whose Key the
 	// monitor has emitted before, so monitors can re-emit freely.
 	Events []Event
@@ -93,8 +97,9 @@ type Snapshot struct {
 	Updated time.Time `json:"updated"`
 	// Error is the last poll's error, if it failed. Blocks then still hold
 	// the last good data.
-	Error  string  `json:"error,omitempty"`
-	Blocks []Block `json:"blocks"`
+	Error   string  `json:"error,omitempty"`
+	Blocks  []Block `json:"blocks"`
+	Summary []Stat  `json:"summary,omitempty"`
 }
 
 // BlockType says how a Block is drawn. Clients draw every monitor with the
@@ -160,6 +165,9 @@ const (
 type Column struct {
 	Title string `json:"title"`
 	Align Align  `json:"align,omitempty"`
+	// Fill gives the column the table's spare width. Clients otherwise
+	// pick the left-aligned column with the most text.
+	Fill bool `json:"fill,omitempty"`
 }
 
 // Cell is a table cell.

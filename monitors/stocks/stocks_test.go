@@ -173,3 +173,17 @@ func TestFormatPct(t *testing.T) {
 	assert.Equal(t, "UNCH", formatPct("UNCH"))
 	assert.Equal(t, "", formatPct(""))
 }
+
+func TestSummary(t *testing.T) {
+	srv := monitortest.Serve(t, "testdata/quotes.json")
+	res, err := newMonitor(t, srv.URL, map[string]any{"symbols": []string{"AAPL"}}).Poll(context.Background(), monitortest.Env(now))
+	require.NoError(t, err)
+	var got []string
+	for _, s := range res.Summary {
+		got = append(got, s.Label+" "+s.Value)
+	}
+	assert.Equal(t, []string{"TSLA +2.05%", "AAPL -1.11%", "FTSE 100 +1.06%", "Bitcoin/USD Coin Metrics +0.91%"}, got,
+		"the biggest moves either way")
+	assert.Equal(t, monitor.ToneBad, res.Summary[1].Tone)
+	assert.Equal(t, "336.64", res.Summary[1].Detail)
+}
