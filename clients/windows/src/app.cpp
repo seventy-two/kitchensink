@@ -133,10 +133,14 @@ void App::Pump() {
         switch (m.type) {
         case Inbound::Type::SyncStart: model_.BeginSync(); break;
         case Inbound::Type::Ready: model_.EndSync(); break;
-        case Inbound::Type::Snapshot:
+        case Inbound::Type::Snapshot: {
             refreshing_.erase(m.snapshot.monitor);
+            std::string prefix = m.snapshot.monitor + "/";
+            for (auto it = ticked_.begin(); it != ticked_.end();)
+                it = it->first.rfind(prefix, 0) == 0 ? ticked_.erase(it) : std::next(it);
             model_.ApplySnapshot(std::move(m.snapshot));
             break;
+        }
         case Inbound::Type::Event: {
             Event e = m.event;
             if (!model_.AddEvent(std::move(m.event))) break;
@@ -472,7 +476,7 @@ void App::card(const Snapshot& s, float width) {
     for (size_t i = 0; i < s.blocks.size(); i++) {
         ImGui::PushID(int(i));
         ImGui::Dummy(ImVec2(0, 2 * scale_));
-        block(s.blocks[i]);
+        block(s.monitor, s.blocks[i]);
         ImGui::PopID();
     }
 
@@ -710,7 +714,7 @@ float App::compactCard(const Snapshot& s, float width, Show show, float body, bo
         for (size_t i = 0; i < s.blocks.size(); i++) {
             ImGui::PushID(int(i));
             if (i > 0) ImGui::Dummy(ImVec2(0, 2 * scale_));
-            block(s.blocks[i]);
+            block(s.monitor, s.blocks[i]);
             ImGui::PopID();
         }
         ImGui::EndChild();
@@ -763,7 +767,7 @@ void App::summary(const std::vector<Stat>& stats, float width) {
     ImGui::EndGroup();
 }
 
-void App::block(const Block& b) {
+void App::block(const std::string& monitor, const Block& b) {
     if (!b.title.empty() && b.type != "stats") {
         ImGui::PushFont(fonts_.caption);
         mutedText(b.title);
@@ -772,7 +776,85 @@ void App::block(const Block& b) {
     if (b.type == "stats") stats(b);
     else if (b.type == "table") table(b);
     else if (b.type == "list") list(b);
+    else if (b.type == "checklist") checklist(monitor, b);
     else if (!b.text.empty()) wrapped(b.text, Colours().text);
+}
+
+// checklist draws items with checkboxes, a delete button on the one under
+// the mouse, and a box for new items if the block takes them. Each change is
+// sent to the monitor as an action; ticks show at once, ahead of the
+// server's snapshot.
+void App::checklist(const std::string& monitor, const Block& b) {
+    const Palette& p = Colours();
+    const ImGuiStyle& st = ImGui::GetStyle();
+    auto act = [&](nlohmann::json action) { client_->Act(monitor, action.dump()); };
+    float right = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
+    ImGui::PushFont(fonts_.caption);
+    float bw = ImGui::CalcTextSize(icon::Close).x + st.FramePadding.x * 2;
+    ImGui::PopFont();
+
+    for (const Item& it : b.items) {
+        ImGui::PushID(it.id.c_str());
+        std::string key = monitor + "/" + it.id;
+        bool done = it.done;
+        if (auto t = ticked_.find(key); t != ticked_.end() && ImGui::GetTime() - t->second.second < 10)
+            done = t->second.first;
+
+        ImVec2 rowMin = ImGui::GetCursorScreenPos();
+        bool toggle = false;
+        bool v = done;
+        if (ImGui::Checkbox("##done", &v)) toggle = true;
+        ImGui::SameLine();
+        // The text wraps short of the delete button, and clicking it ticks
+        // the box too.
+        ImGui::PushTextWrapPos(right - bw - st.ItemSpacing.x - ImGui::GetWindowPos().x);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextColored(done ? p.muted : p.text, "%s", it.title.c_str());
+        ImGui::PopTextWrapPos();
+        ImVec2 textMin = ImGui::GetItemRectMin(), textMax = ImGui::GetItemRectMax();
+        if (ImGui::IsItemHovered()) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        if (ImGui::IsItemClicked()) toggle = true;
+        if (done && textMax.y - textMin.y < ImGui::GetTextLineHeight() * 1.5f) {
+            float y = std::round((textMin.y + textMax.y) / 2);
+            ImGui::GetWindowDrawList()->AddLine(ImVec2(textMin.x, y), ImVec2(textMax.x, y), u32(p.muted));
+        }
+        ImVec2 next = ImGui::GetCursorScreenPos();
+        float rowBottom = std::max(textMax.y, ImGui::GetItemRectMax().y);
+
+        // Allowing for an active item keeps the button there while it's
+        // held, so the click completes.
+        if (ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) &&
+            ImGui::IsMouseHoveringRect(rowMin, ImVec2(right, rowBottom))) {
+            ImGui::SetCursorScreenPos(ImVec2(right - bw, rowMin.y));
+            ImGui::PushFont(fonts_.caption);
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
+            if (ImGui::Button(icon::Close)) act({{"type", "delete"}, {"id", it.id}});
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Delete");
+            ImGui::PopStyleColor(2);
+            ImGui::PopFont();
+            ImGui::SetCursorScreenPos(next);
+        }
+        if (toggle) {
+            ticked_[key] = {!done, ImGui::GetTime()};
+            act({{"type", "toggle"}, {"id", it.id}});
+        }
+        ImGui::PopID();
+    }
+    if (b.items.empty()) mutedText("Nothing to do.");
+
+    if (!b.addHint.empty()) {
+        auto& buf = newItem_[monitor];
+        ImGui::Dummy(ImVec2(0, 2 * scale_));
+        ImGui::SetNextItemWidth(right - ImGui::GetCursorScreenPos().x);
+        if (ImGui::InputTextWithHint("##add", b.addHint.c_str(), buf.data(), buf.size(),
+                                     ImGuiInputTextFlags_EnterReturnsTrue)) {
+            std::string text = buf.data();
+            if (text.find_first_not_of(" \t") != std::string::npos) act({{"type", "add"}, {"text", text}});
+            buf[0] = 0;
+            ImGui::SetKeyboardFocusHere(-1);  // stay in the box for the next one
+        }
+    }
 }
 
 void App::stats(const Block& b) {

@@ -37,8 +37,9 @@ public:
     Http& operator=(const Http&) = delete;
 
     // Request makes a request and reads the whole response, up to maxBytes.
+    // A non-empty body is sent as JSON.
     HttpResult Request(const std::string& method, const std::string& url, const std::string& token,
-                       size_t maxBytes = 16 << 20);
+                       size_t maxBytes = 16 << 20, const std::string& body = {});
 
     // Stream makes a GET and passes each chunk of the body to onData until
     // it returns false, the connection ends, or Cancel is called. It
@@ -52,7 +53,7 @@ public:
 
 private:
     HINTERNET open(const std::string& method, const std::string& url, const std::string& token,
-                   std::string& error);
+                   std::string& error, const std::string& body = {});
 
     HINTERNET session_ = nullptr;
     std::mutex mu_;
@@ -95,6 +96,9 @@ public:
 
     // Refresh asks the server to poll a monitor now, in the background.
     void Refresh(const std::string& monitor);
+    // Act sends a monitor an action, such as ticking a todo, in the
+    // background. action is the JSON the API takes.
+    void Act(const std::string& monitor, const std::string& action);
 
 private:
     void run(std::string base, std::string token);

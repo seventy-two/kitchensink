@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <d3d11.h>
 
+#include <array>
 #include <functional>
 #include <memory>
 #include <string>
@@ -68,10 +69,13 @@ private:
     float compactCard(const Snapshot& s, float width, Show show, float body, bool* clicked);
     void summary(const std::vector<Stat>& stats, float width);
     void refreshButton(const Snapshot& s);
-    void block(const Block& b);
+    // block draws one block of a monitor's panel; monitor is where a
+    // checklist sends its actions.
+    void block(const std::string& monitor, const Block& b);
     void stats(const Block& b);
     void table(const Block& b);
     void list(const Block& b);
+    void checklist(const std::string& monitor, const Block& b);
     void feed();
     void empty(const char* message, bool settingsButton);
     void settings();
@@ -105,6 +109,11 @@ private:
     std::unordered_map<std::string, float> heights_;  // card heights last frame
     std::unordered_map<std::string, double> refreshing_;
     bool busy_ = false;
+
+    // Checklist ticks shown before the server confirms them, by
+    // "monitor/item", with when they were made; a snapshot replaces them.
+    std::unordered_map<std::string, std::pair<bool, double>> ticked_;
+    std::unordered_map<std::string, std::array<char, 512>> newItem_;  // add boxes, by monitor
 
     bool settingsOpen_ = false;
     char urlBuf_[512] = {};

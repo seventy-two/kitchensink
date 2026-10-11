@@ -40,12 +40,16 @@ struct Cell {
 struct Item {
     std::string title, subtitle, detail, url, image;
     Tone tone = Tone::None;
+    // For checklists.
+    std::string id;
+    bool done = false;
 };
 
 // Block is one part of a monitor's panel. Only the fields for its type are
-// set: "stats", "table", "list" or "text".
+// set: "stats", "table", "list", "checklist" or "text".
 struct Block {
     std::string type, title, text;
+    std::string addHint;  // a checklist takes new items when set
     std::vector<Stat> stats;
     std::vector<Column> columns;
     std::vector<std::vector<Cell>> rows;

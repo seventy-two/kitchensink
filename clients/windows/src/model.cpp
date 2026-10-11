@@ -57,8 +57,12 @@ Block parseBlock(const json& j) {
         for (const auto& c : r) row.push_back({str(c, "text"), str(c, "url"), tone(c)});
         b.rows.push_back(std::move(row));
     }
-    for (const auto& i : array(j, "items"))
-        b.items.push_back({str(i, "title"), str(i, "subtitle"), str(i, "detail"), str(i, "url"), str(i, "image"), tone(i)});
+    for (const auto& i : array(j, "items")) {
+        auto done = i.find("done");
+        b.items.push_back({str(i, "title"), str(i, "subtitle"), str(i, "detail"), str(i, "url"), str(i, "image"),
+                           tone(i), str(i, "id"), done != i.end() && done->is_boolean() && done->get<bool>()});
+    }
+    b.addHint = str(j, "addHint");
     return b;
 }
 

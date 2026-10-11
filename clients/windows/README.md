@@ -20,6 +20,8 @@ result is a single `kitchensink.exe` with nothing to install.
   and video memory, each with a minute's history) and **Drives** (each
   fixed drive's use). They read Windows' own counters once a second, only
   while the window is showing, and work with the server offline.
+- Checklists (the `todo` monitor) can be ticked, added to and deleted
+  from; a tick shows at once, ahead of the server's update.
 - Keeps the server's event stream open, reconnects with backoff, and
   catches up on events missed while offline. A burst of events becomes one
   notification.

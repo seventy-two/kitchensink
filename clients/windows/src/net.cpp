@@ -83,7 +83,8 @@ Http::~Http() {
 
 // open connects and sends a request. The connection handle is stored as
 // the request's context so it's closed with it; see closeRequest.
-HINTERNET Http::open(const std::string& method, const std::string& url, const std::string& token, std::string& error) {
+HINTERNET Http::open(const std::string& method, const std::string& url, const std::string& token, std::string& error,
+                     const std::string& body) {
     if (!session_) {
         error = "WinHTTP unavailable";
         return nullptr;
@@ -121,8 +122,10 @@ HINTERNET Http::open(const std::string& method, const std::string& url, const st
 
     std::wstring headers;
     if (!token.empty()) headers = L"Authorization: Bearer " + Widen(token) + L"\r\n";
-    if (!WinHttpSendRequest(req, headers.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : headers.c_str(), DWORD(-1),
-                            WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
+    if (!body.empty()) headers += L"Content-Type: application/json\r\n";
+    LPVOID data = body.empty() ? WINHTTP_NO_REQUEST_DATA : const_cast<char*>(body.data());
+    if (!WinHttpSendRequest(req, headers.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : headers.c_str(), DWORD(-1), data,
+                            DWORD(body.size()), DWORD(body.size()), 0) ||
         !WinHttpReceiveResponse(req, nullptr)) {
         error = winError(GetLastError());
         WinHttpCloseHandle(req);
@@ -141,9 +144,9 @@ static void closeRequest(HINTERNET req) {
 }
 
 HttpResult Http::Request(const std::string& method, const std::string& url, const std::string& token,
-                         size_t maxBytes) {
+                         size_t maxBytes, const std::string& body) {
     HttpResult r;
-    HINTERNET req = open(method, url, token, r.error);
+    HINTERNET req = open(method, url, token, r.error, body);
     if (!req) return r;
     r.status = statusOf(req);
     char buf[16384];
@@ -283,6 +286,14 @@ void Client::Refresh(const std::string& monitor) {
     std::thread([url, token] {
         Http h;
         h.Request("POST", url, token);
+    }).detach();
+}
+
+void Client::Act(const std::string& monitor, const std::string& action) {
+    std::string url = base_ + "/api/monitors/" + monitor + "/actions", token = token_;
+    std::thread([url, token, action] {
+        Http h;
+        h.Request("POST", url, token, 1 << 20, action);
     }).detach();
 }
 

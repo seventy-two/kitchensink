@@ -60,7 +60,8 @@ static void testParseSnapshot() {
             {"type": "table", "columns": [{"title": "Day"}, {"title": "High", "align": "right", "fill": true}],
              "rows": [[{"text": "Today", "url": "https://example.com"}, {"text": "15°", "tone": "bad"}]]},
             {"type": "list", "items": [{"title": "Car", "image": "https://example.com/a.jpg", "tone": "warn"}]},
-            {"type": "text", "text": "hello", "unknown": {"nested": true}}
+            {"type": "text", "text": "hello", "unknown": {"nested": true}},
+            {"type": "checklist", "addHint": "Add a task…", "items": [{"id": "a1", "title": "Bins", "done": true}, {"id": "b2", "title": "Post"}]}
         ],
         "summary": [{"label": "Now", "value": "13°C", "tone": "good", "series": [1, 2]}, {"label": "Rain"}]
     })");
@@ -69,7 +70,11 @@ static void testParseSnapshot() {
     CHECK_EQ(s.error, std::string("site down"));
     CHECK_EQ(s.subtitle, std::string("Mazda3 · Automatic"));
     CHECK_EQ(s.updated, int64_t(1791655651));
-    CHECK_EQ(s.blocks.size(), size_t(4));
+    CHECK_EQ(s.blocks.size(), size_t(5));
+    CHECK_EQ(s.blocks[4].addHint, std::string("Add a task…"));
+    CHECK_EQ(s.blocks[4].items[0].id, std::string("a1"));
+    CHECK(s.blocks[4].items[0].done);
+    CHECK(!s.blocks[4].items[1].done);
     CHECK_EQ(s.blocks[0].stats.size(), size_t(1));
     CHECK_EQ(s.blocks[0].stats[0].value, std::string("13°C"));
     CHECK(s.blocks[0].stats[0].tone == Tone::Accent);
