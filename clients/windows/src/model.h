@@ -7,6 +7,7 @@
 #include <deque>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -109,6 +110,20 @@ std::vector<std::string> Arrange(const std::vector<std::string>& defaults, const
 // when after is set. Unknown IDs leave it unchanged.
 std::vector<std::string> Move(std::vector<std::string> order, const std::string& id, const std::string& target,
                               bool after);
+
+// OLED care: small, regular changes so nothing sits on the same pixels for
+// hours on an OLED screen. Times are Unix seconds.
+//
+// OledShift is how far to move the whole window's contents at time t: one
+// of eight points on a circle of radius r, moving on every three minutes.
+std::pair<float, float> OledShift(int64_t t, float r);
+// OledSwapSides says whether the side column swaps sides at time t, which
+// it does every other hour.
+bool OledSwapSides(int64_t t);
+// OledDim says whether to dim at time now: ten minutes after the last
+// activity (the mouse over the window), unless something new has woken it
+// until wakeUntil.
+bool OledDim(int64_t now, int64_t lastActivity, int64_t wakeUntil);
 
 // UseCompact decides whether a window of this size, in pixels at this DPI
 // scale, shows each monitor's summary rather than its full panel. It takes

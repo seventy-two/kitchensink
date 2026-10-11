@@ -16,6 +16,9 @@ struct Config {
     // Events below this priority don't raise a Windows notification.
     Priority minPriority = Priority::Normal;
     bool notify = true;
+    // OLED care: pixel orbit, a true-black theme, dimming when idle and
+    // swapping the side column's side, against burn-in.
+    bool oled = false;
     // In the compact layout, monitors opened or closed by hand. The rest
     // open by themselves while there's room.
     std::set<std::string> expanded, collapsed;

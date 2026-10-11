@@ -22,6 +22,13 @@ const Palette kLight = {
     hex(0xCF222E), hex(0x9A6700), hex(0x0969DA), hex(0xF0F3F6), hex(0xF7F8FA), hex(0xEEF0F3),
 };
 
+// Pixels showing black are off on an OLED screen, and dimmer, fainter
+// static parts wear it less.
+const Palette kOled = {
+    hex(0x000000), hex(0x0A0B0D), hex(0x17191D), hex(0xC4C8CF), hex(0x6A707A), hex(0x2E9A45),
+    hex(0xD9534B), hex(0xBF8A27), hex(0x4A8AD4), hex(0x15171B), hex(0x0E0F12), hex(0x131518),
+};
+
 Palette current = kDark;
 
 std::string fontPath(const char* file) {
@@ -57,8 +64,9 @@ ImVec4 ToneColour(Tone t) {
     }
 }
 
-void ApplyTheme(bool dark, float scale, bool compact) {
-    current = dark ? kDark : kLight;
+void ApplyTheme(bool dark, float scale, bool compact, bool oled) {
+    current = oled ? kOled : dark ? kDark : kLight;
+    dark = dark || oled;
     const Palette& p = current;
 
     ImGuiStyle& s = ImGui::GetStyle();

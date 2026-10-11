@@ -1,6 +1,7 @@
 // Tests for the dashboard's portable code. Build and run with build.bat, or
 // on Linux: g++ -std=c++17 -I src -I third_party tests/tests.cpp src/model.cpp src/sse.cpp src/local.cpp
 #include <cstdio>
+#include <set>
 #include <string>
 
 #include "../src/local.h"
@@ -253,6 +254,27 @@ static void testArrange() {
     CHECK(Move(order, "x", "b", true) == order);
 }
 
+static void testOled() {
+    // Eight points round a circle, three minutes apart, then round again.
+    std::set<std::pair<float, float>> points;
+    for (int64_t t = 0; t < 8 * 180; t += 180) points.insert(OledShift(t, 6));
+    CHECK_EQ(points.size(), size_t(8));
+    CHECK(OledShift(0, 6) == std::make_pair(6.0f, 0.0f));
+    CHECK(OledShift(179, 6) == OledShift(0, 6));
+    CHECK(OledShift(2 * 180, 6) == std::make_pair(0.0f, 6.0f));
+    CHECK(OledShift(8 * 180, 6) == OledShift(0, 6));
+    for (const auto& [x, y] : points) CHECK(x * x + y * y <= 37);
+
+    CHECK(!OledSwapSides(0));
+    CHECK(OledSwapSides(3600));
+    CHECK(!OledSwapSides(7200 + 59));
+
+    CHECK(!OledDim(1000, 1000, 0));
+    CHECK(!OledDim(1000 + 599, 1000, 0));
+    CHECK(OledDim(1000 + 600, 1000, 0));
+    CHECK(!OledDim(1000 + 600, 1000, 1000 + 700));  // woken by something new
+}
+
 static void testParseEvent() {
     Event e = ParseEvent(nlohmann::json::parse(
         R"({"id": 42, "monitor": "nfl", "key": "final:1", "time": "2026-10-10T18:07:31Z",
@@ -342,6 +364,7 @@ int main() {
     testLocalPanels();
     testMedia();
     testArrange();
+    testOled();
     testParseEvent();
     testModel();
     testSse();

@@ -135,6 +135,13 @@ private:
     int priorityChoice_ = 1;
     bool notifyChoice_ = true;
     bool startChoice_ = false;
+    bool oledChoice_ = false;
+
+    // OLED care: when the mouse was last over the window, and until when
+    // something new keeps it bright (Unix seconds).
+    int64_t lastActivity_ = 0;
+    int64_t wakeUntil_ = 0;
+    float captionTop_ = 0;  // where the title bar starts, as the orbit moves it
 };
 
 // OpenURL opens an http or https URL in the default browser. Other schemes

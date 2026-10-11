@@ -1,6 +1,7 @@
 #include "model.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 
 namespace ks {
@@ -158,6 +159,20 @@ std::vector<std::string> Move(std::vector<std::string> order, const std::string&
     auto to = std::find(order.begin(), order.end(), target);
     order.insert(after ? to + 1 : to, id);
     return order;
+}
+
+std::pair<float, float> OledShift(int64_t t, float r) {
+    constexpr int64_t kStep = 3 * 60;
+    constexpr double kPi = 3.14159265358979323846;
+    double angle = double((t / kStep) % 8) * kPi / 4;
+    return {float(std::round(std::cos(angle) * r)), float(std::round(std::sin(angle) * r))};
+}
+
+bool OledSwapSides(int64_t t) { return (t / 3600) % 2 == 1; }
+
+bool OledDim(int64_t now, int64_t lastActivity, int64_t wakeUntil) {
+    constexpr int64_t kIdle = 10 * 60;
+    return now - lastActivity >= kIdle && now >= wakeUntil;
 }
 
 bool UseCompact(bool compact, float width, float height, float scale) {

@@ -38,6 +38,12 @@ result is a single `kitchensink.exe` with nothing to install.
   and double-click to maximise.
 - Closing the window keeps it running in the tray; **Quit** is in the tray
   icon's menu. It can start with Windows (minimised to the tray).
+- **OLED care** (in settings, off by default) guards OLED screens against
+  burn-in: the contents move round a 6px circle every three minutes, the
+  theme goes true black with dimmer text and fainter borders, everything
+  dims after ten minutes without the mouse over the window (until hovered,
+  or for two minutes after something new), and the Recent column swaps
+  sides every other hour.
 - Follows the Windows light or dark app theme (set `KITCHENSINK_THEME` to
   `light` or `dark` to override) and per-monitor DPI.
 - Settings live in `%APPDATA%\kitchensink\config.json`; the token is

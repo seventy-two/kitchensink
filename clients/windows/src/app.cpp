@@ -134,13 +134,13 @@ App::~App() {
 
 void App::SetScale(float scale) {
     scale_ = scale;
-    ApplyTheme(dark_, scale_, compact_);
+    ApplyTheme(dark_, scale_, compact_, config_.oled);
     fonts_ = LoadFonts(scale_);
 }
 
 void App::SetDark(bool dark) {
     dark_ = dark;
-    ApplyTheme(dark_, scale_, compact_);
+    ApplyTheme(dark_, scale_, compact_, config_.oled);
 }
 
 void App::Pump() {
@@ -163,6 +163,7 @@ void App::Pump() {
             if (!model_.AddEvent(std::move(m.event))) break;
             // History from before the app started has already been seen
             // (or missed for good); events missed while offline are new.
+            if (!m.history && !e.quiet) wakeUntil_ = now() + 2 * 60;  // OLED care: show it
             if (!m.history && !e.quiet && config_.notify && e.priority >= config_.minPriority)
                 pending_.push_back(std::move(e));
             break;
@@ -213,14 +214,27 @@ void App::Frame() {
     ImGuiIO& io = ImGui::GetIO();
     if (bool c = UseCompact(compact_, io.DisplaySize.x, io.DisplaySize.y, scale_); c != compact_) {
         compact_ = c;
-        ApplyTheme(dark_, scale_, compact_);
+        ApplyTheme(dark_, scale_, compact_, config_.oled);
     }
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(io.DisplaySize);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::Begin("##root", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                      ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoScrollbar |
                      ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::PopStyleVar();
+
+    // OLED care moves everything round a small circle, inside a margin left
+    // for it. The window itself stays full size, so nothing behind it (the
+    // panels being measured) shows round the edge.
+    int64_t t = now();
+    float margin = config_.oled ? std::round(6 * scale_) : 0;
+    auto [dx, dy] = config_.oled ? OledShift(t, margin) : std::pair<float, float>{0.0f, 0.0f};
+    ImGui::SetCursorPos(ImVec2(margin + dx, margin + dy));
+    ImGui::BeginChild("##contents", ImVec2(io.DisplaySize.x - margin * 2, io.DisplaySize.y - margin * 2),
+                      ImGuiChildFlags_AlwaysUseWindowPadding,
+                      ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
     header();
     local_->Want();
@@ -237,18 +251,34 @@ void App::Frame() {
     } else if (model_.Snapshots().empty() && localPanels_.empty()) {
         empty(state == ConnState::Offline ? "Can't reach the server." : "Connecting…", state == ConnState::Offline);
     } else {
-        ImGui::BeginChild("##cards", ImVec2(cardsW, 0), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
-        cards(ImGui::GetContentRegionAvail().x);
-        ImGui::EndChild();
-        if (feedW > 0) {
-            ImGui::SameLine(0, gap);
+        // OLED care swaps the side column's side every other hour.
+        bool feedFirst = feedW > 0 && config_.oled && OledSwapSides(t);
+        auto drawFeed = [&] {
             ImGui::BeginChild("##feed", ImVec2(feedW, 0), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
             feed();
             ImGui::EndChild();
+        };
+        if (feedFirst) {
+            drawFeed();
+            ImGui::SameLine(0, gap);
+        }
+        ImGui::BeginChild("##cards", ImVec2(cardsW, 0), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
+        cards(ImGui::GetContentRegionAvail().x);
+        ImGui::EndChild();
+        if (feedW > 0 && !feedFirst) {
+            ImGui::SameLine(0, gap);
+            drawFeed();
         }
     }
 
+    ImGui::EndChild();
     settings();
+
+    // OLED care dims everything when the mouse hasn't been over the window
+    // for a while; it's back as soon as it is.
+    if (ImGui::IsMousePosValid() || settingsOpen_) lastActivity_ = t;
+    if (config_.oled && OledDim(t, lastActivity_, wakeUntil_))
+        ImGui::GetForegroundDrawList()->AddRectFilled(ImVec2(0, 0), io.DisplaySize, IM_COL32(0, 0, 0, 153));
     busy_ = ImGui::IsAnyItemActive() || ImGui::GetIO().WantTextInput || settingsOpen_;
     ImGui::End();
 }
@@ -278,7 +308,7 @@ bool App::hoveringCard() const {
 }
 
 bool App::InCaption(float x, float y) const {
-    if (y >= captionH_) return false;
+    if (y >= captionTop_ + captionH_) return false;
     for (const ImRect& r : noDrag_)
         if (r.Contains(ImVec2(x, y))) return false;
     return true;
@@ -292,12 +322,15 @@ void App::header() {
     ImVec2 origin = ImGui::GetWindowPos();
     float width = ImGui::GetWindowWidth();
     captionH_ = (compact_ ? 36 : 44) * scale_;
+    captionTop_ = origin.y;
     noDrag_.clear();
 
     // Windows 10 draws no border along the top of a window without a
     // standard title bar, so draw one to match the sides.
+    // It belongs at the window's real edge, wherever OLED care has moved
+    // the contents.
     if (!IsZoomed(hwnd_))
-        ImGui::GetWindowDrawList()->AddLine(origin, ImVec2(origin.x + width, origin.y), u32(p.border));
+        ImGui::GetBackgroundDrawList()->AddLine(ImVec2(0, 0.5f), ImVec2(ImGui::GetIO().DisplaySize.x, 0.5f), u32(p.border));
 
     float left = windowButtons();
 
@@ -1336,6 +1369,7 @@ void App::openSettings() {
     priorityChoice_ = int(std::find(std::begin(kPriorities), std::end(kPriorities), config_.minPriority) - std::begin(kPriorities));
     notifyChoice_ = config_.notify;
     startChoice_ = StartsWithWindows();
+    oledChoice_ = config_.oled;
     settingsOpen_ = true;
 }
 
@@ -1371,6 +1405,12 @@ void App::settings() {
     ImGui::Combo("##priority", &priorityChoice_, kPriorityNames, IM_ARRAYSIZE(kPriorityNames));
     ImGui::EndDisabled();
     ImGui::Checkbox("Start with Windows", &startChoice_);
+    ImGui::Checkbox("OLED care", &oledChoice_);
+    ImGui::SameLine();
+    ImGui::PushFont(fonts_.caption);
+    ImGui::AlignTextToFramePadding();
+    mutedText("shifts, dims and blacks things out against burn-in");
+    ImGui::PopFont();
     ImGui::Dummy(ImVec2(0, 8 * scale_));
 
     bool configured = !config_.url.empty() && !config_.token.empty();
@@ -1392,11 +1432,13 @@ void App::settings() {
         c.url = urlBuf_;
         c.token = tokenBuf_;
         c.notify = notifyChoice_;
+        c.oled = oledChoice_;
         c.minPriority = kPriorities[std::clamp(priorityChoice_, 0, 2)];
         bool reconnect = c.url != config_.url || c.token != config_.token;
         config_ = c;
         SaveConfig(config_);
         SetStartWithWindows(startChoice_);
+        ApplyTheme(dark_, scale_, compact_, config_.oled);
         if (reconnect) {
             model_ = Model();
             client_->Start(config_.url, config_.token);

@@ -42,8 +42,9 @@ inline constexpr const char* ChevronUp = "\xEE\x9C\x8E";    // U+E70E
 bool SystemUsesDarkTheme();
 
 // ApplyTheme sets the palette and ImGui style for a theme and DPI scale.
-// Compact spacing is tighter, for small windows.
-void ApplyTheme(bool dark, float scale, bool compact = false);
+// Compact spacing is tighter, for small windows. OLED is a true-black dark
+// theme with dimmer text and fainter borders, whatever Windows' theme.
+void ApplyTheme(bool dark, float scale, bool compact = false, bool oled = false);
 const Palette& Colours();
 
 // LoadFonts rebuilds the font atlas for a DPI scale. The renderer's font
