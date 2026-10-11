@@ -1118,6 +1118,12 @@ void App::table(const Block& b) {
             const Cell& cell = row[c];
             textAligned(cell.text, b.columns[c].align, ToneColour(cell.tone));
             linkBehaviour(cell.url);
+            if (!cell.detail.empty()) {
+                ImGui::PushFont(fonts_.caption);
+                if (b.columns[c].align == Align::Left) wrapped(cell.detail, Colours().muted);
+                else textAligned(cell.detail, b.columns[c].align, Colours().muted);
+                ImGui::PopFont();
+            }
         }
     }
     ImGui::EndTable();

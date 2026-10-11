@@ -58,7 +58,7 @@ static void testParseSnapshot() {
                 {"label": "Now", "value": "13°C", "detail": "Clear", "tone": "accent", "series": [0, 0.4, 1.5]}
             ]},
             {"type": "table", "columns": [{"title": "Day"}, {"title": "High", "align": "right", "fill": true}],
-             "rows": [[{"text": "Today", "url": "https://example.com"}, {"text": "15°", "tone": "bad"}]]},
+             "rows": [[{"text": "Today", "url": "https://example.com", "detail": "dry"}, {"text": "15°", "tone": "bad"}]]},
             {"type": "list", "items": [{"title": "Car", "image": "https://example.com/a.jpg", "tone": "warn"}]},
             {"type": "text", "text": "hello", "unknown": {"nested": true}},
             {"type": "checklist", "addHint": "Add a task…", "items": [{"id": "a1", "title": "Bins", "done": true}, {"id": "b2", "title": "Post"}]}
@@ -87,6 +87,8 @@ static void testParseSnapshot() {
     CHECK(s.summary[0].tone == Tone::Good);
     CHECK_EQ(s.summary[0].series.size(), size_t(2));
     CHECK_EQ(s.blocks[1].rows[0][0].url, std::string("https://example.com"));
+    CHECK_EQ(s.blocks[1].rows[0][0].detail, std::string("dry"));
+    CHECK(s.blocks[1].rows[0][1].detail.empty());
     CHECK(s.blocks[1].rows[0][1].tone == Tone::Bad);
     CHECK(s.blocks[2].items[0].tone == Tone::Warn);
     CHECK_EQ(s.blocks[3].text, std::string("hello"));

@@ -35,6 +35,7 @@ struct Column {
 struct Cell {
     std::string text, url;
     Tone tone = Tone::None;
+    std::string detail;  // a smaller, muted line under the text
 };
 
 struct Item {

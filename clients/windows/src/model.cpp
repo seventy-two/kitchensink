@@ -54,7 +54,7 @@ Block parseBlock(const json& j) {
     }
     for (const auto& r : array(j, "rows")) {
         std::vector<Cell> row;
-        for (const auto& c : r) row.push_back({str(c, "text"), str(c, "url"), tone(c)});
+        for (const auto& c : r) row.push_back({str(c, "text"), str(c, "url"), tone(c), str(c, "detail")});
         b.rows.push_back(std::move(row));
     }
     for (const auto& i : array(j, "items")) {
