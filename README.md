@@ -33,8 +33,9 @@ The `calendar` monitor merges any number of ICS feeds into one view of the
 next `days` days, one table per day, and links each event's Teams, Meet or
 Zoom call. Recurring events, exceptions and moved instances are handled.
 With `explain` set (a Gemini API key, and optionally a little `context`
-about you), each of today's events gets a muted note from Gemini saying
-what it probably is. Notes are kept for the day, so each event is asked
+about you), each of today's events gets a subtitle from Gemini, found with
+Google Search, listing what it is, when and where (e.g. "Eagles v
+Jaguars · 14:30 kick-off · Tottenham Hotspur Stadium, London"). Notes are kept for the day, so each event is asked
 about once; if Gemini is unavailable the calendar shows without them.
 
 Each feed's address is a secret, so put it in the environment:
@@ -116,7 +117,7 @@ drawn from the same few block types, so clients need no per-monitor code:
 | Block `type` | Fields |
 | --- | --- |
 | `stats` | `stats`: `label`, `value`, `detail`, `tone`, `series` (a sparkline) |
-| `table` | `columns` (`title`, `align`, `fill` for the column that takes spare width) and `rows` of cells (`text`, `tone`, `url`) |
+| `table` | `columns` (`title`, `align`, `fill` for the column that takes spare width) and `rows` of cells (`text`, `tone`, `url`, and `detail` for a smaller line under the text) |
 | `list` | `items`: `title`, `subtitle`, `detail`, `url`, `image`, `tone` |
 | `checklist` | `items` (`id`, `title`, `done`) with checkboxes that send `toggle` and `delete` actions; `addHint` adds a box for `add` |
 | `text` | `text` |

@@ -244,8 +244,8 @@ func when(o occurrence, now, today time.Time) string {
 }
 
 // blocks makes a table for each day with something on. Today always gets
-// one, so an empty day says so. notes, by noteKey, go on a muted line
-// under today's events.
+// one, so an empty day says so. notes, by noteKey, go under today's
+// events' titles.
 func (m *Monitor) blocks(occs []occurrence, now time.Time, notes map[string]string) []monitor.Block {
 	today := midnight(now)
 	// No headings: each day's table is short, and they'd repeat.
@@ -288,14 +288,10 @@ func (m *Monitor) blocks(occs []occurrence, now time.Time, notes map[string]stri
 				cal := m.cfg.Calendars[o.Cal]
 				row = append(row, monitor.Cell{Text: cal.Name, Tone: cal.Tone})
 			}
-			b.Rows = append(b.Rows, row)
-			if n := notes[noteKey(o, m.cfg.Calendars[o.Cal].Name)]; n != "" && i == 0 {
-				line := []monitor.Cell{{}, {Text: n, Tone: monitor.ToneMuted}}
-				if many {
-					line = append(line, monitor.Cell{})
-				}
-				b.Rows = append(b.Rows, line)
+			if i == 0 {
+				row[1].Detail = notes[noteKey(o, m.cfg.Calendars[o.Cal].Name)]
 			}
+			b.Rows = append(b.Rows, row)
 		}
 		switch {
 		case len(b.Rows) > 0:

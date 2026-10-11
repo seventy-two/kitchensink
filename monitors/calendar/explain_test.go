@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/seventy-two/kitchensink/monitor"
 	"github.com/seventy-two/kitchensink/monitor/monitortest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -89,13 +88,18 @@ func TestExplain(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{
 		"All day | Bins out | Personal",
-		" | about Bins out | ",
 		"09:00–09:15 | Standup | Work",
-		" | about Standup | ",
 		"15:00–16:00 | Quarterly review · Room 4 | Work",
-		" | about Quarterly review | ",
-	}, rows(res.Blocks[0]), "a note under each of today's events, its full stop dropped")
-	assert.Equal(t, monitor.ToneMuted, res.Blocks[0].Rows[1][1].Tone)
+	}, rows(res.Blocks[0]), "the titles stay as they were")
+	var details []string
+	for _, r := range res.Blocks[0].Rows {
+		details = append(details, r[1].Detail)
+	}
+	assert.Equal(t, []string{"about Bins out", "about Standup", "about Quarterly review"}, details,
+		"each note under its title, its full stop dropped")
+	for _, r := range res.Blocks[1].Rows {
+		assert.Empty(t, r[1].Detail, "only today's")
+	}
 	assert.Equal(t, []string{"10:00–10:15 | Standup (moved) | Work", "22:00–… | Late film | Personal"}, rows(res.Blocks[1]),
 		"only today's")
 
@@ -145,7 +149,7 @@ func TestExplainFailing(t *testing.T) {
 	gemini.mu.Unlock()
 	res, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
-	assert.Len(t, res.Blocks[0].Rows, 4)
+	assert.Equal(t, "about Standup", res.Blocks[0].Rows[0][1].Detail)
 	assert.Equal(t, 2, gemini.calls())
 }
 

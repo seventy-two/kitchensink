@@ -205,6 +205,8 @@ type Cell struct {
 	Text string `json:"text"`
 	Tone Tone   `json:"tone,omitempty"`
 	URL  string `json:"url,omitempty"`
+	// Detail is a smaller, muted line under the text.
+	Detail string `json:"detail,omitempty"`
 }
 
 // Item is an entry in a list or checklist block.
