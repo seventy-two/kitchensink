@@ -70,6 +70,7 @@ private:
     void compactCards(float width);
     float compactCard(const Snapshot& s, float width, Show show, float body, bool* clicked);
     void summary(const std::vector<Stat>& stats, float width);
+    void chips(const std::vector<Stat>& stats, float width);
     void refreshButton(const Snapshot& s);
     bool grip(const Snapshot& s, float y, bool shown);
     bool hoveringCard() const;

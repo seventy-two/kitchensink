@@ -63,7 +63,8 @@ static void testParseSnapshot() {
             {"type": "text", "text": "hello", "unknown": {"nested": true}},
             {"type": "checklist", "addHint": "Add a task…", "items": [{"id": "a1", "title": "Bins", "done": true}, {"id": "b2", "title": "Post"}]}
         ],
-        "summary": [{"label": "Now", "value": "13°C", "tone": "good", "series": [1, 2]}, {"label": "Rain"}]
+        "summary": [{"label": "Now", "value": "13°C", "tone": "good", "series": [1, 2]}, {"label": "Rain"}],
+        "summaryStyle": "chips"
     })");
     Snapshot s = ParseSnapshot(j);
     CHECK_EQ(s.monitor, std::string("weather"));
@@ -83,6 +84,7 @@ static void testParseSnapshot() {
     CHECK(!s.blocks[1].columns[0].fill);
     CHECK(s.blocks[1].columns[1].fill);
     CHECK_EQ(s.summary.size(), size_t(2));
+    CHECK_EQ(s.summaryStyle, std::string("chips"));
     CHECK_EQ(s.summary[0].value, std::string("13°C"));
     CHECK(s.summary[0].tone == Tone::Good);
     CHECK_EQ(s.summary[0].series.size(), size_t(2));

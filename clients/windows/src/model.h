@@ -76,6 +76,7 @@ struct Snapshot {
     // The few things most worth seeing at a glance, shown in place of the
     // blocks when space is short. Older servers don't send it.
     std::vector<Stat> summary;
+    std::string summaryStyle;  // "" for tiles, or "chips"
 };
 
 struct Event {

@@ -96,6 +96,7 @@ Snapshot ParseSnapshot(const json& j) {
     s.updated = std::max<int64_t>(0, ParseTime(str(j, "updated")));
     for (const auto& b : array(j, "blocks")) s.blocks.push_back(parseBlock(b));
     for (const auto& st : array(j, "summary")) s.summary.push_back(parseStat(st));
+    s.summaryStyle = str(j, "summaryStyle");
     return s;
 }
 
