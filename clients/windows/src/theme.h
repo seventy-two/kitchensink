@@ -30,13 +30,16 @@ inline constexpr const char* Minimise = "\xEE\xA4\xA1";  // U+E921
 inline constexpr const char* Maximise = "\xEE\xA4\xA2";  // U+E922
 inline constexpr const char* Restore = "\xEE\xA4\xA3";   // U+E923
 inline constexpr const char* Close = "\xEE\xA2\xBB";     // U+E8BB
+inline constexpr const char* ChevronDown = "\xEE\x9C\x8D";  // U+E70D
+inline constexpr const char* ChevronUp = "\xEE\x9C\x8E";    // U+E70E
 }  // namespace icon
 
 // SystemUsesDarkTheme reads the Windows "app mode" setting.
 bool SystemUsesDarkTheme();
 
 // ApplyTheme sets the palette and ImGui style for a theme and DPI scale.
-void ApplyTheme(bool dark, float scale);
+// Compact spacing is tighter, for small windows.
+void ApplyTheme(bool dark, float scale, bool compact = false);
 const Palette& Colours();
 
 // LoadFonts rebuilds the font atlas for a DPI scale. The renderer's font

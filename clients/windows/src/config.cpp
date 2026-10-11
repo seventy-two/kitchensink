@@ -74,6 +74,9 @@ Config LoadConfig() {
     c.token = unprotect(j.value("token", ""));
     c.minPriority = ParsePriority(j.value("minPriority", "normal"));
     c.notify = j.value("notify", true);
+    if (auto it = j.find("expanded"); it != j.end() && it->is_array())
+        for (const auto& id : *it)
+            if (id.is_string()) c.expanded.insert(id.get<std::string>());
     return c;
 }
 
@@ -83,6 +86,7 @@ bool SaveConfig(const Config& c) {
         {"token", protect(c.token)},
         {"minPriority", priorityName(c.minPriority)},
         {"notify", c.notify},
+        {"expanded", c.expanded},
     };
     std::wstring path = configPath(true);
     std::wstring tmp = path + L".tmp";

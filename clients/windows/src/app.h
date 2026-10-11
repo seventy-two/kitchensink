@@ -60,6 +60,9 @@ private:
     float windowButtons();
     void cards(float width);
     void card(const Snapshot& s, float width);
+    void compactCard(const Snapshot& s, float width);
+    void summary(const std::vector<Stat>& stats, float width);
+    void refreshButton(const Snapshot& s);
     void block(const Block& b);
     void stats(const Block& b);
     void table(const Block& b);
@@ -77,6 +80,9 @@ private:
 
     float scale_ = 1;
     bool dark_ = true;
+    // Compact shows each monitor's summary instead of its full panel, for
+    // small windows; see UseCompact.
+    bool compact_ = false;
     bool fontsDirty_ = true;
     Fonts fonts_;
 

@@ -47,6 +47,20 @@ void linkBehaviour(const std::string& url) {
 
 void mutedText(const std::string& s) { ImGui::TextColored(Colours().muted, "%s", s.c_str()); }
 
+// fit shortens s with an ellipsis to fit width in the current font.
+std::string fit(const std::string& s, float width) {
+    if (ImGui::CalcTextSize(s.c_str()).x <= width) return s;
+    std::string out = s;
+    while (!out.empty()) {
+        // Drop one UTF-8 character: its continuation bytes, then its lead.
+        while (!out.empty() && (static_cast<unsigned char>(out.back()) & 0xC0) == 0x80) out.pop_back();
+        if (!out.empty()) out.pop_back();
+        while (!out.empty() && out.back() == ' ') out.pop_back();
+        if (ImGui::CalcTextSize((out + "…").c_str()).x <= width) return out + "…";
+    }
+    return "…";
+}
+
 void wrapped(const std::string& s, const ImVec4& colour) {
     ImGui::PushStyleColor(ImGuiCol_Text, colour);
     ImGui::PushTextWrapPos(0);
@@ -99,13 +113,13 @@ App::~App() {
 
 void App::SetScale(float scale) {
     scale_ = scale;
-    ApplyTheme(dark_, scale_);
+    ApplyTheme(dark_, scale_, compact_);
     fonts_ = LoadFonts(scale_);
 }
 
 void App::SetDark(bool dark) {
     dark_ = dark;
-    ApplyTheme(dark_, scale_);
+    ApplyTheme(dark_, scale_, compact_);
 }
 
 void App::Pump() {
@@ -170,6 +184,10 @@ bool App::NotificationClicked() {
 
 void App::Frame() {
     ImGuiIO& io = ImGui::GetIO();
+    if (bool c = UseCompact(compact_, io.DisplaySize.x, io.DisplaySize.y, scale_); c != compact_) {
+        compact_ = c;
+        ApplyTheme(dark_, scale_, compact_);
+    }
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(io.DisplaySize);
     ImGui::Begin("##root", nullptr,
@@ -179,9 +197,9 @@ void App::Frame() {
 
     header();
 
-    float gap = 16 * scale_;
+    float gap = (compact_ ? 8 : 16) * scale_;
     float avail = ImGui::GetContentRegionAvail().x;
-    float feedW = avail >= 980 * scale_ ? 340 * scale_ : 0;
+    float feedW = avail >= 980 * scale_ ? (compact_ ? 300 : 340) * scale_ : 0;
     float cardsW = feedW > 0 ? avail - feedW - gap : avail;
 
     ConnState state = client_->State();
@@ -220,7 +238,7 @@ void App::header() {
     const Palette& p = Colours();
     ImVec2 origin = ImGui::GetWindowPos();
     float width = ImGui::GetWindowWidth();
-    captionH_ = 44 * scale_;
+    captionH_ = (compact_ ? 36 : 44) * scale_;
     noDrag_.clear();
 
     // Windows 10 draws no border along the top of a window without a
@@ -278,7 +296,7 @@ void App::header() {
     if (open) openSettings();
     noDrag_.push_back(ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax()));
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Settings");
-    ImGui::SetCursorPosY(captionH_ + 8 * scale_);
+    ImGui::SetCursorPosY(captionH_ + (compact_ ? 2 : 8) * scale_);
 }
 
 // windowButtons draws minimise, maximise and close in the top-right corner,
@@ -369,6 +387,15 @@ void App::empty(const char* message, bool settingsButton) {
 
 void App::cards(float width) {
     const auto& snaps = model_.Snapshots();
+    if (compact_) {
+        // One row per monitor, full width, so the summaries line up.
+        float gap = 8 * scale_;
+        for (const auto& s : snaps) {
+            compactCard(s, width);
+            ImGui::Dummy(ImVec2(0, gap - ImGui::GetStyle().ItemSpacing.y * 2));
+        }
+        return;
+    }
     float gap = 16 * scale_;
     int cols = std::max(1, int((width + gap) / (440 * scale_ + gap)));
     cols = std::min<int>(cols, int(snaps.size()));
@@ -421,16 +448,7 @@ void App::card(const Snapshot& s, float width) {
     ImGui::AlignTextToFramePadding();
     mutedText(when);
     ImGui::SameLine();
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-    ImGui::PushID(s.monitor.c_str());
-    ImGui::BeginDisabled(pending);
-    if (ImGui::Button(icon::Refresh)) {
-        refreshing_[s.monitor] = ImGui::GetTime();
-        client_->Refresh(s.monitor);
-    }
-    ImGui::EndDisabled();
-    ImGui::PopID();
-    ImGui::PopStyleColor();
+    refreshButton(s);
     ImGui::PopFont();
 
     if (!s.error.empty()) {
@@ -450,6 +468,161 @@ void App::card(const Snapshot& s, float width) {
     ImGui::EndChild();
     ImGui::PopStyleColor();
     heights_[s.monitor] = ImGui::GetItemRectSize().y;
+}
+
+void App::refreshButton(const Snapshot& s) {
+    bool pending = refreshing_.count(s.monitor) && ImGui::GetTime() - refreshing_[s.monitor] < 15;
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+    ImGui::PushID(s.monitor.c_str());
+    ImGui::BeginDisabled(pending);
+    if (ImGui::Button(icon::Refresh)) {
+        refreshing_[s.monitor] = ImGui::GetTime();
+        client_->Refresh(s.monitor);
+    }
+    ImGui::EndDisabled();
+    ImGui::PopID();
+    ImGui::PopStyleColor();
+}
+
+// compactCard is one monitor as a row: its name, its summary, and its full
+// panel underneath once clicked open.
+void App::compactCard(const Snapshot& s, float width) {
+    const Palette& p = Colours();
+    bool expanded = config_.expanded.count(s.monitor) > 0;
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, p.card);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12 * scale_, 8 * scale_));
+    ImGui::BeginChild(s.monitor.c_str(), ImVec2(width, 0),
+                      ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysUseWindowPadding,
+                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::PopStyleVar();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->ChannelsSplit(2);
+    dl->ChannelsSetCurrent(1);
+
+    ImVec2 top = ImGui::GetCursorScreenPos();
+    float avail = ImGui::GetContentRegionAvail().x;
+    float nameW = 112 * scale_;
+
+    // The name, and below it when it was updated or that it failed.
+    bool pending = refreshing_.count(s.monitor) && ImGui::GetTime() - refreshing_[s.monitor] < 15;
+    ImGui::BeginGroup();
+    ImGui::PushFont(fonts_.heading);
+    ImGui::TextUnformatted(fit(s.title, nameW - 8 * scale_).c_str());
+    ImGui::PopFont();
+    ImGui::PushFont(fonts_.caption);
+    if (!s.error.empty()) {
+        ImGui::TextColored(p.warn, "%s  Failed", icon::Warning);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", s.error.c_str());
+    } else {
+        mutedText(pending ? "refreshing…" : s.updated ? Ago(s.updated, now()) : "waiting…");
+    }
+    ImGui::PopFont();
+    ImGui::EndGroup();
+    float nameH = ImGui::GetItemRectSize().y;
+
+    // Refresh and the open/closed chevron on the right.
+    ImGui::PushFont(fonts_.caption);
+    const ImGuiStyle& st = ImGui::GetStyle();
+    float bw = ImGui::CalcTextSize(icon::Refresh).x + st.FramePadding.x * 2;
+    float cw = ImGui::CalcTextSize(icon::ChevronDown).x;
+    ImGui::SetCursorScreenPos(ImVec2(top.x + avail - bw, top.y));
+    refreshButton(s);
+    bool onButton = ImGui::IsItemHovered();
+    ImGui::SetCursorScreenPos(ImVec2(top.x + avail - bw - cw - 6 * scale_, top.y + st.FramePadding.y));
+    mutedText(expanded ? icon::ChevronUp : icon::ChevronDown);
+    ImGui::PopFont();
+
+    // The summary between them.
+    ImGui::SetCursorScreenPos(ImVec2(top.x + nameW, top.y));
+    float sumW = avail - nameW - bw - cw - 16 * scale_;
+    if (!s.summary.empty()) {
+        summary(s.summary, sumW);
+    } else if (s.blocks.empty() && s.error.empty()) {
+        mutedText("Waiting for the first check…");
+    } else {
+        mutedText("Click for details");
+    }
+    float headH = std::max(nameH, ImGui::GetItemRectMax().y - top.y);
+    ImVec2 headMax(top.x + avail, top.y + headH);
+
+    // Clicking anywhere on the row, bar the refresh button, opens or closes
+    // it.
+    ImVec2 winMin = ImGui::GetWindowPos();
+    ImVec2 rowMin(winMin.x, winMin.y), rowMax(winMin.x + ImGui::GetWindowWidth(), headMax.y + 8 * scale_);
+    bool hovered = ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect(rowMin, rowMax) && !onButton;
+    dl->ChannelsSetCurrent(0);
+    if (hovered) {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        ImDrawFlags corners = expanded ? ImDrawFlags_RoundCornersTop : ImDrawFlags_RoundCornersAll;
+        dl->AddRectFilled(rowMin, rowMax, u32(p.hover), ImGui::GetStyle().ChildRounding, corners);
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            if (expanded) config_.expanded.erase(s.monitor);
+            else config_.expanded.insert(s.monitor);
+            expanded = !expanded;
+            SaveConfig(config_);
+        }
+    }
+    // Merge before the blocks: tables and lists split channels themselves.
+    dl->ChannelsMerge();
+    ImGui::SetCursorScreenPos(ImVec2(top.x, headMax.y));
+    ImGui::Dummy(ImVec2(avail, 0));
+
+    if (expanded) {
+        ImGui::Dummy(ImVec2(0, 4 * scale_));
+        if (!s.error.empty()) {
+            ImGui::PushFont(fonts_.caption);
+            wrapped(std::string(icon::Warning) + "  " + s.error, p.warn);
+            ImGui::PopFont();
+        }
+        for (size_t i = 0; i < s.blocks.size(); i++) {
+            ImGui::PushID(int(i));
+            if (i > 0) ImGui::Dummy(ImVec2(0, 2 * scale_));
+            block(s.blocks[i]);
+            ImGui::PopID();
+        }
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+}
+
+// summary lays stats out as tiles of label, value and detail, flowing onto
+// more lines when they don't fit in width.
+void App::summary(const std::vector<Stat>& stats, float width) {
+    bool details = std::any_of(stats.begin(), stats.end(), [](const Stat& s) { return !s.detail.empty(); });
+    float spacing = 24 * scale_;
+    ImVec2 origin = ImGui::GetCursorScreenPos();
+    float x = 0, y = 0, lineH = 0;
+    ImGui::BeginGroup();
+    for (size_t i = 0; i < stats.size(); i++) {
+        const Stat& s = stats[i];
+        ImGui::PushFont(fonts_.caption);
+        std::string label = fit(s.label, width), detail = fit(s.detail, width);
+        float w = std::max(ImGui::CalcTextSize(label.c_str()).x, ImGui::CalcTextSize(detail.c_str()).x);
+        ImGui::PopFont();
+        ImGui::PushFont(fonts_.heading);
+        std::string value = fit(s.value, width);
+        w = std::max(w, ImGui::CalcTextSize(value.c_str()).x);
+        ImGui::PopFont();
+
+        if (x > 0 && x + w > width) x = 0, y += lineH + 4 * scale_, lineH = 0;
+        ImGui::SetCursorScreenPos(ImVec2(origin.x + x, origin.y + y));
+        ImGui::BeginGroup();
+        ImGui::PushFont(fonts_.caption);
+        mutedText(label);
+        ImGui::PopFont();
+        ImGui::PushFont(fonts_.heading);
+        ImGui::TextColored(ToneColour(s.tone), "%s", value.c_str());
+        ImGui::PopFont();
+        if (details) {
+            ImGui::PushFont(fonts_.caption);
+            mutedText(detail.empty() ? " " : detail);
+            ImGui::PopFont();
+        }
+        ImGui::EndGroup();
+        lineH = std::max(lineH, ImGui::GetItemRectSize().y);
+        x += w + spacing;
+    }
+    ImGui::EndGroup();
 }
 
 void App::block(const Block& b) {
@@ -504,11 +677,12 @@ void App::stats(const Block& b) {
 void App::table(const Block& b) {
     size_t cols = b.columns.size();
     if (cols == 0) return;
-    // The left-aligned column with the most text takes the spare width;
-    // the rest fit their contents.
-    int stretch = -1;
+    // The column marked fill takes the spare width, or failing that the
+    // left-aligned column with the most text. The rest fit their contents.
+    auto fill = std::find_if(b.columns.begin(), b.columns.end(), [](const Column& c) { return c.fill; });
+    int stretch = fill != b.columns.end() ? int(fill - b.columns.begin()) : -1;
     size_t most = 0;
-    for (size_t c = 0; c < cols; c++) {
+    for (size_t c = 0; c < cols && fill == b.columns.end(); c++) {
         if (b.columns[c].align != Align::Left) continue;
         size_t total = 0;
         for (const auto& r : b.rows)
@@ -617,7 +791,7 @@ void App::feed() {
         return;
     }
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    float pad = 10 * scale_;
+    float pad = (compact_ ? 7 : 10) * scale_;
     int64_t t = now();
     size_t shown = 0;
     for (const auto& e : events) {

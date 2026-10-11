@@ -33,20 +33,24 @@ const json& array(const json& j, const char* key) {
     return *it;
 }
 
+Stat parseStat(const json& j) {
+    Stat st{str(j, "label"), str(j, "value"), str(j, "detail"), tone(j), {}};
+    for (const auto& v : array(j, "series"))
+        if (v.is_number()) st.series.push_back(v.get<float>());
+    return st;
+}
+
 Block parseBlock(const json& j) {
     Block b;
     b.type = str(j, "type");
     b.title = str(j, "title");
     b.text = str(j, "text");
-    for (const auto& s : array(j, "stats")) {
-        Stat st{str(s, "label"), str(s, "value"), str(s, "detail"), tone(s), {}};
-        for (const auto& v : array(s, "series"))
-            if (v.is_number()) st.series.push_back(v.get<float>());
-        b.stats.push_back(std::move(st));
-    }
+    for (const auto& s : array(j, "stats")) b.stats.push_back(parseStat(s));
     for (const auto& c : array(j, "columns")) {
         std::string a = str(c, "align");
-        b.columns.push_back({str(c, "title"), a == "right" ? Align::Right : a == "center" ? Align::Center : Align::Left});
+        auto fill = c.find("fill");
+        b.columns.push_back({str(c, "title"), a == "right" ? Align::Right : a == "center" ? Align::Center : Align::Left,
+                             fill != c.end() && fill->is_boolean() && fill->get<bool>()});
     }
     for (const auto& r : array(j, "rows")) {
         std::vector<Cell> row;
@@ -86,7 +90,15 @@ Snapshot ParseSnapshot(const json& j) {
     // Go sends its zero time, year 1, for a monitor that hasn't polled yet.
     s.updated = std::max<int64_t>(0, ParseTime(str(j, "updated")));
     for (const auto& b : array(j, "blocks")) s.blocks.push_back(parseBlock(b));
+    for (const auto& st : array(j, "summary")) s.summary.push_back(parseStat(st));
     return s;
+}
+
+bool UseCompact(bool compact, float width, float height, float scale) {
+    // Below these, at 100% scale, the full panels don't fit at a glance.
+    constexpr float kHeight = 1100, kWidth = 900, kSlack = 40;
+    float slack = compact ? kSlack : -kSlack;
+    return height < (kHeight + slack) * scale || width < (kWidth + slack) * scale;
 }
 
 Event ParseEvent(const json& j) {

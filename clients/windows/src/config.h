@@ -2,6 +2,7 @@
 // token is encrypted with DPAPI, so only this Windows user can read it.
 #pragma once
 
+#include <set>
 #include <string>
 
 #include "model.h"
@@ -14,6 +15,8 @@ struct Config {
     // Events below this priority don't raise a Windows notification.
     Priority minPriority = Priority::Normal;
     bool notify = true;
+    // Monitors shown in full in the compact layout.
+    std::set<std::string> expanded;
 };
 
 // LoadConfig reads the settings, leaving defaults for anything missing.

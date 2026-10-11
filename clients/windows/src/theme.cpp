@@ -57,17 +57,17 @@ ImVec4 ToneColour(Tone t) {
     }
 }
 
-void ApplyTheme(bool dark, float scale) {
+void ApplyTheme(bool dark, float scale, bool compact) {
     current = dark ? kDark : kLight;
     const Palette& p = current;
 
     ImGuiStyle& s = ImGui::GetStyle();
     s = ImGuiStyle();
-    s.WindowPadding = ImVec2(20, 16);
-    s.FramePadding = ImVec2(10, 6);
-    s.ItemSpacing = ImVec2(8, 6);
-    s.ItemInnerSpacing = ImVec2(6, 4);
-    s.CellPadding = ImVec2(8, 5);
+    s.WindowPadding = compact ? ImVec2(12, 8) : ImVec2(20, 16);
+    s.FramePadding = compact ? ImVec2(6, 3) : ImVec2(10, 6);
+    s.ItemSpacing = compact ? ImVec2(6, 3) : ImVec2(8, 6);
+    s.ItemInnerSpacing = compact ? ImVec2(4, 3) : ImVec2(6, 4);
+    s.CellPadding = compact ? ImVec2(6, 2) : ImVec2(8, 5);
     s.ScrollbarSize = 10;
     s.WindowRounding = 0;
     s.ChildRounding = 10;

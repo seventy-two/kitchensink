@@ -56,11 +56,12 @@ static void testParseSnapshot() {
             {"type": "stats", "title": "Bristol", "stats": [
                 {"label": "Now", "value": "13°C", "detail": "Clear", "tone": "accent", "series": [0, 0.4, 1.5]}
             ]},
-            {"type": "table", "columns": [{"title": "Day"}, {"title": "High", "align": "right"}],
+            {"type": "table", "columns": [{"title": "Day"}, {"title": "High", "align": "right", "fill": true}],
              "rows": [[{"text": "Today", "url": "https://example.com"}, {"text": "15°", "tone": "bad"}]]},
             {"type": "list", "items": [{"title": "Car", "image": "https://example.com/a.jpg", "tone": "warn"}]},
             {"type": "text", "text": "hello", "unknown": {"nested": true}}
-        ]
+        ],
+        "summary": [{"label": "Now", "value": "13°C", "tone": "good", "series": [1, 2]}, {"label": "Rain"}]
     })");
     Snapshot s = ParseSnapshot(j);
     CHECK_EQ(s.monitor, std::string("weather"));
@@ -72,6 +73,12 @@ static void testParseSnapshot() {
     CHECK(s.blocks[0].stats[0].tone == Tone::Accent);
     CHECK_EQ(s.blocks[0].stats[0].series.size(), size_t(3));
     CHECK(s.blocks[1].columns[1].align == Align::Right);
+    CHECK(!s.blocks[1].columns[0].fill);
+    CHECK(s.blocks[1].columns[1].fill);
+    CHECK_EQ(s.summary.size(), size_t(2));
+    CHECK_EQ(s.summary[0].value, std::string("13°C"));
+    CHECK(s.summary[0].tone == Tone::Good);
+    CHECK_EQ(s.summary[0].series.size(), size_t(2));
     CHECK_EQ(s.blocks[1].rows[0][0].url, std::string("https://example.com"));
     CHECK(s.blocks[1].rows[0][1].tone == Tone::Bad);
     CHECK(s.blocks[2].items[0].tone == Tone::Warn);
@@ -82,6 +89,17 @@ static void testParseSnapshot() {
     CHECK(odd.monitor.empty());
     CHECK(odd.blocks.empty());
     CHECK_EQ(ParseSnapshot(nlohmann::json::parse(R"({"updated": "0001-01-01T00:00:00Z"})")).updated, int64_t(0));
+}
+
+static void testUseCompact() {
+    CHECK(UseCompact(false, 1242, 906, 1));   // the usual window
+    CHECK(!UseCompact(false, 5120, 1400, 1));  // maximised
+    CHECK(UseCompact(false, 800, 1400, 1));   // narrow
+    CHECK(UseCompact(false, 2484, 1812, 2));   // the usual window, at 200%
+    // Near the boundary, the current choice sticks.
+    CHECK(UseCompact(true, 1600, 1120, 1));
+    CHECK(!UseCompact(false, 1600, 1080, 1));
+    CHECK(!UseCompact(true, 1600, 1150, 1));
 }
 
 static void testParseEvent() {
@@ -167,6 +185,7 @@ int main() {
     testParseTime();
     testAgo();
     testParseSnapshot();
+    testUseCompact();
     testParseEvent();
     testModel();
     testSse();

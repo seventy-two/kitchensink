@@ -26,6 +26,7 @@ struct Stat {
 struct Column {
     std::string title;
     Align align = Align::Left;
+    bool fill = false;  // takes the table's spare width
 };
 
 struct Cell {
@@ -52,6 +53,9 @@ struct Snapshot {
     std::string monitor, kind, title, error;
     int64_t updated = 0;  // Unix seconds; 0 if never polled
     std::vector<Block> blocks;
+    // The few things most worth seeing at a glance, shown in place of the
+    // blocks when space is short. Older servers don't send it.
+    std::vector<Stat> summary;
 };
 
 struct Event {
@@ -73,6 +77,11 @@ int64_t ParseTime(const std::string& s);
 // Ago describes how long before now a time was: "just now", "4m ago",
 // "2h ago", "3d ago".
 std::string Ago(int64_t then, int64_t now);
+
+// UseCompact decides whether a window of this size, in pixels at this DPI
+// scale, shows each monitor's summary rather than its full panel. It takes
+// the current choice so that resizing near the boundary doesn't flicker.
+bool UseCompact(bool compact, float width, float height, float scale);
 
 // Model is the dashboard's state, built from the stream.
 class Model {
