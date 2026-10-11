@@ -74,6 +74,8 @@ type Result struct {
 	// next meeting or the biggest movers. Clients show it in place of the
 	// blocks when space is short.
 	Summary []Stat
+	// SummaryStyle says how clients draw the summary.
+	SummaryStyle SummaryStyle
 	// Events are things that happened. The engine drops any whose Key the
 	// monitor has emitted before, so monitors can re-emit freely.
 	Events []Event
@@ -124,7 +126,22 @@ type Snapshot struct {
 	Subtitle string  `json:"subtitle,omitempty"`
 	Blocks   []Block `json:"blocks"`
 	Summary  []Stat  `json:"summary,omitempty"`
+	// SummaryStyle is how to draw Summary; empty for plain tiles.
+	SummaryStyle SummaryStyle `json:"summaryStyle,omitempty"`
 }
+
+// SummaryStyle is how clients draw a summary.
+type SummaryStyle string
+
+const (
+	// SummaryTiles, the default, draws each stat as a label, value and
+	// detail.
+	SummaryTiles SummaryStyle = ""
+	// SummaryChips draws each stat as a small block filled with its
+	// tone's colour, with the label above the value; details are left out.
+	// It suits many short values, like a watchlist's daily moves.
+	SummaryChips SummaryStyle = "chips"
+)
 
 // BlockType says how a Block is drawn. Clients draw every monitor with the
 // same few block types, so a new monitor needs no client changes.

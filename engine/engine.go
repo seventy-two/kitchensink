@@ -166,6 +166,7 @@ func (e *Engine) poll(ctx context.Context, r *runner) time.Duration {
 		snap.Blocks = res.Blocks
 		snap.Summary = res.Summary
 		snap.Subtitle = res.Subtitle
+		snap.SummaryStyle = res.SummaryStyle
 		if snap.Blocks == nil {
 			snap.Blocks = []monitor.Block{}
 		}

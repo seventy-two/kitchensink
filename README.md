@@ -113,7 +113,9 @@ history but shouldn't raise a notification.
 poll's, with the last good blocks kept), `subtitle` (what it's watching, when that isn't obvious, e.g. a car
 search's filters), `blocks` and `summary`: a few
 stats (as in a `stats` block) worth seeing at a glance, which clients show
-instead of the blocks when space is short. Every monitor is
+instead of the blocks when space is short, and `summaryStyle`: empty for
+label/value/detail tiles, or `chips` for small blocks filled with each
+stat's tone (the watchlist's daily moves). Every monitor is
 drawn from the same few block types, so clients need no per-monitor code:
 
 | Block `type` | Fields |

@@ -181,7 +181,12 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		symbols = append(symbols, q.Symbol)
 	}
 	weekAgo := m.weekAgo(ctx, env, symbols)
-	return monitor.Result{Blocks: []monitor.Block{m.table(quotes, weekAgo)}, Summary: m.summary(quotes), Events: events}, nil
+	return monitor.Result{
+		Blocks:       []monitor.Block{m.table(quotes, weekAgo)},
+		Summary:      m.summary(quotes),
+		SummaryStyle: monitor.SummaryChips,
+		Events:       events,
+	}, nil
 }
 
 // moversLen is how many symbols the summary shows.
@@ -211,7 +216,7 @@ func (m *Monitor) summary(quotes []quote) []monitor.Stat {
 	}
 	var out []monitor.Stat
 	for _, q := range picked {
-		out = append(out, monitor.Stat{Label: displayName(q), Value: formatPct(q.ChangePct), Detail: q.Last, Tone: toneOf(q.ChangePct)})
+		out = append(out, monitor.Stat{Label: displayName(q), Value: formatPct(q.ChangePct), Tone: toneOf(q.ChangePct)})
 	}
 	return out
 }

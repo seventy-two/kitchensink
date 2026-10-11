@@ -188,7 +188,8 @@ func TestSummary(t *testing.T) {
 	assert.Equal(t, []string{"TSLA +2.05%", "AAPL -1.11%", "FTSE 100 +1.06%", "Bitcoin/USD Coin Metrics +0.91%"}, got,
 		"the biggest moves either way")
 	assert.Equal(t, monitor.ToneBad, res.Summary[1].Tone)
-	assert.Equal(t, "336.64", res.Summary[1].Detail)
+	assert.Empty(t, res.Summary[1].Detail, "chips leave out the price")
+	assert.Equal(t, monitor.SummaryChips, res.SummaryStyle)
 }
 
 func TestHoldings(t *testing.T) {
