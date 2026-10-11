@@ -640,8 +640,7 @@ float App::compactCard(const Snapshot& s, float width, Show show, float body, bo
     dl->ChannelsSetCurrent(0);
     if (hovered) {
         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-        ImDrawFlags corners = open ? ImDrawFlags_RoundCornersTop : ImDrawFlags_RoundCornersAll;
-        dl->AddRectFilled(rowMin, rowMax, u32(p.hover), ImGui::GetStyle().ChildRounding, corners);
+        dl->AddRectFilled(rowMin, rowMax, u32(p.hover));
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) *clicked = true;
     }
     // Merge before the blocks: tables and lists split channels themselves.
@@ -824,16 +823,15 @@ void App::list(const Block& b) {
         if (!it.image.empty()) {
             ImVec2 tp = ImGui::GetCursorScreenPos();
             ImVec2 tq(tp.x + thumbW, tp.y + thumbH);
-            float r = 6 * scale_;
             if (const Texture* t = images_->Get(it.image)) {
                 // Crop to the thumbnail's shape rather than squash.
                 float ta = float(t->width) / float(t->height), ba = thumbW / thumbH;
                 ImVec2 uv0(0, 0), uv1(1, 1);
                 if (ta > ba) uv0.x = (1 - ba / ta) / 2, uv1.x = 1 - uv0.x;
                 else uv0.y = (1 - ta / ba) / 2, uv1.y = 1 - uv0.y;
-                dl->AddImageRounded((ImTextureID)(intptr_t)t->srv, tp, tq, uv0, uv1, IM_COL32_WHITE, r);
+                dl->AddImage((ImTextureID)(intptr_t)t->srv, tp, tq, uv0, uv1);
             } else {
-                dl->AddRectFilled(tp, tq, u32(p.frame), r);
+                dl->AddRectFilled(tp, tq, u32(p.frame));
             }
             ImGui::Dummy(ImVec2(thumbW, thumbH));
             ImGui::SameLine(0, 12 * scale_);
@@ -858,7 +856,7 @@ void App::list(const Block& b) {
         ImGui::InvisibleButton("##item", ImVec2(right - start.x, end.y - start.y));
         dl->ChannelsSetCurrent(0);
         if (ImGui::IsItemHovered() && !it.url.empty()) {
-            dl->AddRectFilled(start, end, u32(p.hover), 8 * scale_);
+            dl->AddRectFilled(start, end, u32(p.hover));
             ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
         }
         if (ImGui::IsItemClicked()) OpenURL(it.url);
@@ -911,10 +909,9 @@ void App::feed() {
 
         dl->ChannelsSetCurrent(0);
         bool hovered = ImGui::IsItemHovered() && !e.url.empty();
-        dl->AddRectFilled(start, end, u32(hovered ? p.hover : p.card), 8 * scale_);
+        dl->AddRectFilled(start, end, u32(hovered ? p.hover : p.card));
         if (e.priority == Priority::High && !e.quiet)
-            dl->AddRectFilled(start, ImVec2(start.x + 3 * scale_, end.y), u32(p.accent), 8 * scale_,
-                              ImDrawFlags_RoundCornersLeft);
+            dl->AddRectFilled(start, ImVec2(start.x + 3 * scale_, end.y), u32(p.accent));
         if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
         if (ImGui::IsItemClicked()) OpenURL(e.url);
         dl->ChannelsMerge();
@@ -937,12 +934,10 @@ void App::settings() {
     ImGuiIO& io = ImGui::GetIO();
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x / 2, io.DisplaySize.y / 2), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(std::min(520 * scale_, io.DisplaySize.x - 32 * scale_), 0));
-    // Modals take window rounding, which the root window keeps at 0.
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24 * scale_, 20 * scale_));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 12 * scale_);
     bool open = ImGui::BeginPopupModal("Settings", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove |
                                                                ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings);
-    ImGui::PopStyleVar(2);
+    ImGui::PopStyleVar();
     if (!open) return;
     ImGui::PushFont(fonts_.title);
     ImGui::TextUnformatted("Settings");

@@ -69,12 +69,14 @@ void ApplyTheme(bool dark, float scale, bool compact) {
     s.ItemInnerSpacing = compact ? ImVec2(4, 3) : ImVec2(6, 4);
     s.CellPadding = compact ? ImVec2(6, 2) : ImVec2(8, 5);
     s.ScrollbarSize = 10;
+    // Square corners throughout.
     s.WindowRounding = 0;
-    s.ChildRounding = 10;
-    s.FrameRounding = 6;
-    s.PopupRounding = 8;
-    s.ScrollbarRounding = 8;
-    s.GrabRounding = 6;
+    s.ChildRounding = 0;
+    s.FrameRounding = 0;
+    s.PopupRounding = 0;
+    s.ScrollbarRounding = 0;
+    s.GrabRounding = 0;
+    s.TabRounding = 0;
     s.WindowBorderSize = 0;
     s.ChildBorderSize = 1;
     s.PopupBorderSize = 1;
