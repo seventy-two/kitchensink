@@ -64,6 +64,19 @@ std::string fit(const std::string& s, float width) {
     return "…";
 }
 
+// fitLines shortens each line of s to fit width, as fit does.
+std::string fitLines(const std::string& s, float width) {
+    std::string out;
+    size_t start = 0;
+    for (;;) {
+        size_t end = s.find('\n', start);
+        out += fit(s.substr(start, end == std::string::npos ? std::string::npos : end - start), width);
+        if (end == std::string::npos) return out;
+        out += '\n';
+        start = end + 1;
+    }
+}
+
 void wrapped(const std::string& s, const ImVec4& colour) {
     ImGui::PushStyleColor(ImGuiCol_Text, colour);
     ImGui::PushTextWrapPos(0);
@@ -844,34 +857,43 @@ void App::dragDrop() {
 
 // summary lays stats out as tiles of label, value and detail, flowing onto
 // more lines when they don't fit in width.
-// chips lays stats out as small blocks filled with their tone's colour,
-// the label above the value and any detail below, all one width so they
-// line up, flowing onto more lines when they don't fit in width.
+// chips lays stats out as small blocks filled with their tone's colour:
+// the label (which may be several lines) above the value and any detail
+// below, all one size so they line up. If they nearly fit on one line,
+// they narrow to do so, shortening text that's too wide; otherwise they
+// flow onto more lines.
 void App::chips(const std::vector<Stat>& stats, float width) {
+    if (stats.empty()) return;
     const Palette& p = Colours();
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    ImVec2 pad(8 * scale_, 4 * scale_);
+    ImVec2 pad(6 * scale_, 4 * scale_);
     float gap = 4 * scale_;
 
-    // One width for all: the widest label, value or detail.
-    bool details = std::any_of(stats.begin(), stats.end(), [](const Stat& s) { return !s.detail.empty(); });
-    float w = 0;
+    // One size for all, from the widest and tallest of each part.
+    float w = 0, labelH = 0, valueH = 0, detailH = 0;
     for (const Stat& s : stats) {
         ImGui::PushFont(fonts_.caption);
-        w = std::max({w, ImGui::CalcTextSize(s.label.c_str()).x, ImGui::CalcTextSize(s.detail.c_str()).x});
+        ImVec2 l = ImGui::CalcTextSize(s.label.c_str());
+        w = std::max(w, l.x);
+        labelH = std::max(labelH, l.y);
+        if (!s.detail.empty()) {
+            ImVec2 d = ImGui::CalcTextSize(s.detail.c_str());
+            w = std::max(w, d.x);
+            detailH = std::max(detailH, d.y);
+        }
         ImGui::PopFont();
         ImGui::PushFont(fonts_.heading);
-        w = std::max(w, ImGui::CalcTextSize(s.value.c_str()).x);
+        ImVec2 v = ImGui::CalcTextSize(s.value.c_str());
+        w = std::max(w, v.x);
+        valueH = std::max(valueH, v.y);
         ImGui::PopFont();
     }
-    w = std::min(w + pad.x * 2, width);
-    ImGui::PushFont(fonts_.caption);
-    float labelH = ImGui::GetTextLineHeight();
-    ImGui::PopFont();
-    ImGui::PushFont(fonts_.heading);
-    float valueH = ImGui::GetTextLineHeight();
-    ImGui::PopFont();
-    float h = pad.y * 2 + labelH + valueH + (details ? labelH : 0);
+    w += pad.x * 2;
+    float oneRow = (width - gap * float(stats.size() - 1)) / float(stats.size());
+    if (w > oneRow && oneRow >= 44 * scale_) w = oneRow;
+    w = std::min(w, width);
+    float inner = w - pad.x * 2;
+    float h = pad.y * 2 + labelH + valueH + detailH;
 
     ImVec2 origin = ImGui::GetCursorScreenPos();
     int perRow = std::max(1, int((width + gap) / (w + gap)));
@@ -882,18 +904,18 @@ void App::chips(const std::vector<Stat>& stats, float width) {
         ImVec4 tone = ToneColour(s.tone);
         bool coloured = s.tone == Tone::Good || s.tone == Tone::Bad || s.tone == Tone::Warn || s.tone == Tone::Accent;
         dl->AddRectFilled(a, ImVec2(a.x + w, a.y + h), u32(coloured ? fade(tone, 0.2f) : p.frame));
-        ImGui::SetCursorScreenPos(ImVec2(a.x + pad.x, a.y + pad.y));
         ImGui::PushFont(fonts_.caption);
-        ImGui::TextColored(p.text, "%s", fit(s.label, w - pad.x * 2).c_str());
+        ImGui::SetCursorScreenPos(ImVec2(a.x + pad.x, a.y + pad.y));
+        ImGui::TextColored(s.tone == Tone::Muted ? p.muted : p.text, "%s", fitLines(s.label, inner).c_str());
         ImGui::PopFont();
-        ImGui::SetCursorScreenPos(ImVec2(a.x + pad.x, a.y + pad.y + labelH));
         ImGui::PushFont(fonts_.heading);
-        ImGui::TextColored(coloured ? tone : p.text, "%s", fit(s.value, w - pad.x * 2).c_str());
+        ImGui::SetCursorScreenPos(ImVec2(a.x + pad.x, a.y + pad.y + labelH));
+        ImGui::TextColored(coloured ? tone : s.tone == Tone::Muted ? p.muted : p.text, "%s", fit(s.value, inner).c_str());
         ImGui::PopFont();
         if (!s.detail.empty()) {
-            ImGui::SetCursorScreenPos(ImVec2(a.x + pad.x, a.y + pad.y + labelH + valueH));
             ImGui::PushFont(fonts_.caption);
-            ImGui::TextColored(p.muted, "%s", fit(s.detail, w - pad.x * 2).c_str());
+            ImGui::SetCursorScreenPos(ImVec2(a.x + pad.x, a.y + pad.y + labelH + valueH));
+            ImGui::TextColored(p.muted, "%s", fitLines(s.detail, inner).c_str());
             ImGui::PopFont();
         }
         // The block itself, for the group's size.
