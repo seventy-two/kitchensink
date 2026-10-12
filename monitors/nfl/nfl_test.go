@@ -99,9 +99,9 @@ func TestSummary(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, monitor.SummaryChips, res.SummaryStyle)
 	assert.Equal(t, []monitor.Stat{
-		{Label: "PHI\nJAX", Value: "14:30", Detail: "NFL Net"},
+		{Label: "PHI\nJAX", Detail: "14:30"},
 		{Label: "CHI\nGB", Value: "7–3", Detail: "2nd 7:42", Tone: monitor.ToneAccent},
-	}, res.Summary, "teams stacked; time and channel, or score and clock")
+	}, res.Summary, "teams stacked; kick-off, or score and clock")
 	res, err = newMonitor(t, srv.URL, nil).Poll(context.Background(), monitortest.Env(now))
 	require.NoError(t, err)
 	assert.Equal(t, monitor.ToneWarn, res.Summary[1].Tone, "live, not followed")

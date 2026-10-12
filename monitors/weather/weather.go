@@ -195,10 +195,12 @@ func (m *Monitor) hourly(f *forecast) []hour {
 func (m *Monitor) summary(f *forecast) []monitor.Stat {
 	var out []monitor.Stat
 	for _, h := range m.hourly(f) {
-		out = append(out, monitor.Stat{Label: h.label, Value: h.temp, Tone: h.tone, Icon: h.icon, Level: h.rainProb / 100})
+		out = append(out, monitor.Stat{Label: h.label, Value: h.temp, Tone: h.tone, Icon: h.icon, Level: ptr(h.rainProb / 100)})
 	}
 	return out
 }
+
+func ptr[T any](v T) *T { return &v }
 
 // rainStat sums the next two hours' rain, with the series as a sparkline.
 func rainStat(series []float64) monitor.Stat {

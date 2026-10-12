@@ -214,7 +214,8 @@ type Stat struct {
 	Icon string `json:"icon,omitempty"`
 	// Level, from 0 to 1, is drawn faintly behind the stat as a chart
 	// joined to its neighbours', e.g. the chance of rain each hour.
-	Level float64 `json:"level,omitempty"`
+	// Nil for none: 0 still draws, along the bottom.
+	Level *float64 `json:"level,omitempty"`
 }
 
 // Align is a table column's alignment.

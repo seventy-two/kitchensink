@@ -28,6 +28,7 @@ struct Stat {
     bool isPrivate = false;  // a personal figure, e.g. money, hidden on request
     std::string icon;        // a picture by the value, e.g. "rain"
     float level = 0;         // 0 to 1, a faint chart behind, e.g. the chance of rain
+    bool hasLevel = false;
 };
 
 struct Column {

@@ -105,9 +105,9 @@ func TestSummary(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, monitor.SummaryChips, res.SummaryStyle)
 	require.Len(t, res.Summary, 12, "an hour to a chip")
-	assert.Equal(t, monitor.Stat{Label: "Now", Value: "13°", Icon: "moon"}, res.Summary[0], "now is the current temperature")
-	assert.Equal(t, monitor.Stat{Label: "19:00", Value: "13°", Icon: "moon-cloud", Level: 0.1}, res.Summary[1])
-	assert.Equal(t, monitor.Stat{Label: "20:00", Value: "12°", Tone: monitor.ToneAccent, Icon: "rain", Level: 0.6}, res.Summary[2],
+	assert.Equal(t, monitor.Stat{Label: "Now", Value: "13°", Icon: "moon", Level: ptr(0.0)}, res.Summary[0], "now is the current temperature")
+	assert.Equal(t, monitor.Stat{Label: "19:00", Value: "13°", Icon: "moon-cloud", Level: ptr(0.1)}, res.Summary[1])
+	assert.Equal(t, monitor.Stat{Label: "20:00", Value: "12°", Tone: monitor.ToneAccent, Icon: "rain", Level: ptr(0.6)}, res.Summary[2],
 		"likely rain is marked; the chance of it is the level")
 	assert.Equal(t, monitor.ToneWarn, res.Summary[3].Tone, "strong gusts outrank rain")
 	assert.Equal(t, "fog", res.Summary[10].Icon)

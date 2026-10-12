@@ -1017,7 +1017,7 @@ void App::chips(const std::vector<Stat>& stats, float width) {
             ImGui::PopFont();
             w = std::max(w, v.x + gap + v.y * 1.2f);
         }
-        valueH = std::max(valueH, v.y);
+        if (!s.value.empty()) valueH = std::max(valueH, v.y);
         ImGui::PopFont();
     }
     if (icons) w = std::max(w, beside + gap + labelH + valueH);
@@ -1031,7 +1031,7 @@ void App::chips(const std::vector<Stat>& stats, float width) {
 
     ImVec2 origin = ImGui::GetCursorScreenPos();
     int perRow = std::max(1, int((width + gap) / (w + gap)));
-    bool levels = std::any_of(stats.begin(), stats.end(), [](const Stat& s) { return s.level > 0; });
+    bool levels = std::any_of(stats.begin(), stats.end(), [](const Stat& s) { return s.hasLevel; });
     ImGui::BeginGroup();
     for (size_t i = 0; i < stats.size(); i++) {
         const Stat& s = stats[i];
@@ -1056,11 +1056,16 @@ void App::chips(const std::vector<Stat>& stats, float width) {
                 pts[k] = ImVec2(a.x + u * w, a.y + h - (from + (to - from) * e) * h);
             }
             ImU32 fill = u32(fade(p.accent, 0.13f)), line = u32(fade(p.accent, 0.5f));
+            float thick = 1.25f * scale_, floor = a.y + h - thick / 2;
             for (int k = 0; k < steps * 2; k++) {
-                if (pts[k].y >= a.y + h - 0.5f && pts[k + 1].y >= a.y + h - 0.5f) continue;
-                ImVec2 quad[4] = {pts[k], pts[k + 1], ImVec2(pts[k + 1].x, a.y + h), ImVec2(pts[k].x, a.y + h)};
-                dl->AddConvexPolyFilled(quad, 4, fill);
-                dl->AddLine(pts[k], pts[k + 1], line, 1.25f * scale_);
+                ImVec2 q0 = pts[k], q1 = pts[k + 1];
+                if (q0.y < a.y + h - 0.5f || q1.y < a.y + h - 0.5f) {
+                    ImVec2 quad[4] = {q0, q1, ImVec2(q1.x, a.y + h), ImVec2(q0.x, a.y + h)};
+                    dl->AddConvexPolyFilled(quad, 4, fill);
+                }
+                // At 0% the line still shows, along the bottom.
+                q0.y = std::min(q0.y, floor), q1.y = std::min(q1.y, floor);
+                dl->AddLine(q0, q1, line, thick);
             }
         }
         ImGui::PushFont(fonts_.caption);

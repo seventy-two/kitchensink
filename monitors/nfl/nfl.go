@@ -395,8 +395,8 @@ var newYork = func() *time.Location {
 
 // today is a chip for each of today's games, in kick-off order: the teams
 // stacked, away above home, to keep chips narrow, then the kick-off time
-// and channel until it starts, the score and clock while it's on, and the
-// final score. Followed teams' games are highlighted, and live ones
+// (small, in place of a value) until it starts, the score and clock while
+// it's on, and the final score. Followed teams' games are highlighted, and live ones
 // marked. It's nil on a day without games.
 func (m *Monitor) today(games []game, now time.Time) ([]monitor.Stat, monitor.SummaryStyle) {
 	day := now.In(newYork).Format("2006-01-02")
@@ -415,8 +415,9 @@ func (m *Monitor) today(games []game, now time.Time) ([]monitor.Stat, monitor.Su
 		s := monitor.Stat{Label: g.away + "\n" + g.home, Value: g.awayScore + "–" + g.homeScore}
 		switch g.state {
 		case "pre":
-			s.Value = g.kickoff.In(m.zone).Format("15:04")
-			s.Detail = g.broadcast
+			// Kick-off small, with no value: the channel is in the table.
+			s.Value = ""
+			s.Detail = g.kickoff.In(m.zone).Format("15:04")
 		case "in":
 			s.Detail = clock(g.detail)
 			s.Tone = monitor.ToneWarn
