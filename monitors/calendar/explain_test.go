@@ -184,3 +184,24 @@ func TestExplainConfig(t *testing.T) {
 	assert.Equal(t, "short", clip("  short  ", 10))
 	assert.Equal(t, "abc…", clip("abcdef", 3))
 }
+
+func TestExplainContextChanged(t *testing.T) {
+	work, personal := feeds(t)
+	gemini := newFakeGemini(t)
+	m := explainMonitor(t, gemini.URL, work, personal)
+	env := monitortest.Env(now)
+	_, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	require.Equal(t, 1, gemini.calls())
+
+	// Telling Gemini more about the user redoes every note straight away,
+	// later days' too, rather than waiting for each event's day.
+	m.cfg.Explain.Context = "Lives in Bristol. Their local cinema is the Odeon."
+	_, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	require.Equal(t, 2, gemini.calls())
+	input := gemini.bodies[1]["input"].(string)
+	assert.Contains(t, input, "Late film")
+	assert.Contains(t, input, "Call with Mum")
+	assert.Contains(t, gemini.bodies[1]["system_instruction"], "Their local cinema is the Odeon")
+}

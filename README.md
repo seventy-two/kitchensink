@@ -97,7 +97,10 @@ Search, listing what it is, when and where (e.g. "Eagles v Jaguars ·
 14:30 kick-off · Tottenham Hotspur Stadium, London"), or none when
 there's nothing to add. A note is made when an event first shows and
 again on its day, for the latest details; if Gemini is unavailable the
-calendar shows without them.
+calendar shows without them. Naming places you go regularly in the
+`context` ("their local cinema is the Odeon in Bristol") lets Gemini fill
+in a film's screening or a venue for titles that don't say; changing the
+`context` makes every note again.
 
 Each feed's address is a secret, so put it in the environment:
 

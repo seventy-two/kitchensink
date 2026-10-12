@@ -282,7 +282,7 @@ func (m *Monitor) blocks(occs []occurrence, now time.Time, notes map[string]stri
 				cal := m.cfg.Calendars[o.Cal]
 				row = append(row, monitor.Cell{Text: cal.Name, Tone: cal.Tone})
 			}
-			row[1].Detail = notes[noteKey(o, m.cfg.Calendars[o.Cal].Name)]
+			row[1].Detail = notes[m.noteKey(o)]
 			b.Rows = append(b.Rows, row)
 		}
 		switch {

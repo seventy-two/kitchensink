@@ -53,10 +53,21 @@ type note struct {
 }
 
 // noteKey identifies an occurrence for its note. A change of title, time
-// or place gets a fresh one.
-func noteKey(o occurrence, calName string) string {
-	h := sha256.Sum256([]byte(strings.Join([]string{notesVersion, calName, o.UID, o.Start.UTC().Format(time.RFC3339), o.Title, o.Location}, "\x00")))
+// or place gets a fresh one, as does a change to what Gemini is told about
+// the user, so editing that redoes every note at once rather than on each
+// event's day.
+func noteKey(o occurrence, calName, about string) string {
+	h := sha256.Sum256([]byte(strings.Join([]string{notesVersion, calName, o.UID, o.Start.UTC().Format(time.RFC3339), o.Title, o.Location, about}, "\x00")))
 	return hex.EncodeToString(h[:12])
+}
+
+// noteKey is an occurrence's noteKey under this monitor's config.
+func (m *Monitor) noteKey(o occurrence) string {
+	about := ""
+	if m.cfg.Explain != nil {
+		about = m.cfg.Explain.Context
+	}
+	return noteKey(o, m.cfg.Calendars[o.Cal].Name, about)
 }
 
 // explain returns notes for the occurrences shown, by noteKey. Gemini is
@@ -75,7 +86,7 @@ func (m *Monitor) explain(ctx context.Context, env monitor.Env, events []occurre
 	var ask []occurrence
 	var keys []string
 	for _, o := range events {
-		k := noteKey(o, m.cfg.Calendars[o.Cal].Name)
+		k := m.noteKey(o)
 		if _, done := kept[k]; done {
 			continue // a multi-day event, seen already
 		}
