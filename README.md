@@ -10,9 +10,10 @@ notification for each event.
   keeps an event log and serves an HTTP API with a live
   [server-sent events](https://html.spec.whatwg.org/multipage/server-sent-events.html)
   stream.
-- **Windows dashboard**: native C++ (Win32, Dear ImGui), in `clients/windows`.
+- **Windows dashboard**: native C++ (Win32, Dear ImGui), in
+  [kitchensink-windows](https://github.com/seventy-two/kitchensink-windows).
 - **Android app** for phones, tablets and Android TV: Kotlin and Jetpack
-  Compose, in `clients/android`.
+  Compose, in [kitchensink-android](https://github.com/seventy-two/kitchensink-android).
 - Optional **ntfy** notifier, for phones without a kitchensink client.
 
 ## Monitors

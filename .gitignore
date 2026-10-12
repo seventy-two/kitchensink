@@ -6,5 +6,3 @@ kitchensink.json
 *.db
 *.db-*
 *.log
-# Windows client build output
-clients/windows/build/

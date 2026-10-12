@@ -1,3 +1,0 @@
-*.bat text eol=crlf
-*.rc text eol=crlf
-*.ico binary
