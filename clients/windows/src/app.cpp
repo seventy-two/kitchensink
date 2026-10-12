@@ -983,8 +983,9 @@ void App::dragDrop() {
 // chips lays stats out as small blocks filled with their tone's colour:
 // the label (which may be several lines) above the value and any detail
 // below, all one size so they line up. If they nearly fit on one line,
-// they narrow to do so, shortening text that's too wide; otherwise they
-// flow onto more lines.
+// they narrow to do so, shortening details that are too wide, though a chip
+// whose label or value wouldn't fit keeps its own width; if labels or
+// values would still be cut short, they flow onto more lines.
 void App::chips(const std::vector<Stat>& stats, float width) {
     if (stats.empty()) return;
     const Palette& p = Colours();
@@ -992,14 +993,20 @@ void App::chips(const std::vector<Stat>& stats, float width) {
     ImVec2 pad(6 * scale_, 4 * scale_);
     float gap = 4 * scale_;
 
-    // One size for all, from the widest and tallest of each part.
+    // One size for all, from the widest and tallest of each part. need is
+    // what each chip's label and value take: a chip that can't fit them
+    // in the shared width gets its own, e.g. a five-figure day by the
+    // watchlist's percentages.
     float w = 0, labelH = 0, valueH = 0, detailH = 0;
     float beside = 0;  // the widest label or value with an icon by it
     bool icons = false;
-    for (const Stat& s : stats) {
+    std::vector<float> need(stats.size());
+    for (size_t i = 0; i < stats.size(); i++) {
+        const Stat& s = stats[i];
         ImGui::PushFont(fonts_.caption);
         ImVec2 l = ImGui::CalcTextSize(s.label.c_str());
         w = std::max(w, l.x);
+        need[i] = l.x;
         labelH = std::max(labelH, l.y);
         if (!s.detail.empty()) {
             ImVec2 d = ImGui::CalcTextSize(s.detail.c_str());
@@ -1010,6 +1017,7 @@ void App::chips(const std::vector<Stat>& stats, float width) {
         ImGui::PushFont(fonts_.heading);
         ImVec2 v = ImGui::CalcTextSize(s.value.c_str());
         w = std::max(w, v.x);
+        need[i] = std::max(need[i], v.x);
         // An icon, if any, goes right of the label and value, as tall as
         // both if there's room, as tall as the value at least.
         if (IsWeatherIcon(s.icon)) {
@@ -1018,29 +1026,66 @@ void App::chips(const std::vector<Stat>& stats, float width) {
             beside = std::max({beside, v.x, ImGui::CalcTextSize(s.label.c_str()).x});
             ImGui::PopFont();
             w = std::max(w, v.x + gap + v.y * 1.2f);
+            need[i] = std::max(need[i], v.x + gap + v.y * 1.2f);
         }
         if (!s.value.empty()) valueH = std::max(valueH, v.y);
         ImGui::PopFont();
     }
     if (icons) w = std::max(w, beside + gap + labelH + valueH);
     w += pad.x * 2;
-    float oneRow = (width - gap * float(stats.size() - 1)) / float(stats.size());
-    if (w > oneRow && oneRow >= 44 * scale_) w = oneRow;
-    w = std::min(w, width);
-    float inner = w - pad.x * 2;
+    for (float& n : need) n = std::min(n + pad.x * 2, width);
+    const size_t n = stats.size();
+    float oneRow = (width - gap * float(n - 1)) / float(n);
+    // Each chip's width: the shared one, or its own if it needs more.
+    std::vector<float> ws(n, std::min(w, width));
+    if (w > oneRow && oneRow >= 44 * scale_) {
+        // All on one row: the chips that need more than an equal share
+        // take it, and the rest share what's left.
+        float share = oneRow;
+        for (size_t pass = 0; pass < n; pass++) {
+            float taken = 0;
+            size_t wide = 0;
+            for (float x : need)
+                if (x > share) taken += x, wide++;
+            if (wide == n) break;
+            float next = (width - gap * float(n - 1) - taken) / float(n - wide);
+            if (next == share) break;
+            share = next;
+        }
+        // If that still leaves a label or value cut short, they flow onto
+        // more lines at their full width instead.
+        float total = gap * float(n - 1);
+        for (float x : need) total += std::max(share, x);
+        if (share >= 44 * scale_ && total <= width + 0.5f) {
+            w = share;
+            for (size_t i = 0; i < n; i++) ws[i] = std::max(share, need[i]);
+        }
+    }
     float h = pad.y * 2 + labelH + valueH + detailH;
-    float iconSize = std::round(std::clamp(inner - beside - gap, valueH * 1.2f, labelH + valueH));
+    float iconSize = std::round(std::clamp(w - pad.x * 2 - beside - gap, valueH * 1.2f, labelH + valueH));
 
-    // A pixel out to the left: a faint block's edge looks further in than
-    // the bright text it lines up with in other panels.
+    // Where each chip goes, wrapping onto new rows; row[i] is whether chip
+    // i starts one. A pixel out to the left: a faint block's edge looks
+    // further in than the bright text it lines up with in other panels.
     ImVec2 origin = ImGui::GetCursorScreenPos();
     origin.x -= std::round(scale_);
-    int perRow = std::max(1, int((width + gap) / (w + gap)));
+    std::vector<ImVec2> at(n);
+    std::vector<bool> row(n);
+    {
+        float x = 0, y = 0;
+        for (size_t i = 0; i < n; i++) {
+            if (x > 0 && x + ws[i] > width + 0.5f) x = 0, y += h + gap;
+            row[i] = x == 0;
+            at[i] = ImVec2(origin.x + x, origin.y + y);
+            x += ws[i] + gap;
+        }
+    }
     bool levels = std::any_of(stats.begin(), stats.end(), [](const Stat& s) { return s.hasLevel; });
     ImGui::BeginGroup();
-    for (size_t i = 0; i < stats.size(); i++) {
+    for (size_t i = 0; i < n; i++) {
         const Stat& s = stats[i];
-        ImVec2 a(origin.x + float(i % perRow) * (w + gap), origin.y + float(i / perRow) * (h + gap));
+        ImVec2 a = at[i];
+        float w = ws[i], inner = w - pad.x * 2;
         ImVec4 tone = ToneColour(s.tone);
         bool coloured = s.tone == Tone::Good || s.tone == Tone::Bad || s.tone == Tone::Warn || s.tone == Tone::Accent;
         dl->AddRectFilled(a, ImVec2(a.x + w, a.y + h), u32(coloured ? fade(tone, 0.2f) : p.frame));
@@ -1048,10 +1093,10 @@ void App::chips(const std::vector<Stat>& stats, float width) {
             // The levels as one faint chart behind the row: through the
             // middle of each block at its own level, and at each edge
             // halfway to its neighbour's.
-            auto at = [&](size_t j) { return stats[j].level; };
-            float mid = at(i);
-            float left = i % perRow == 0 ? mid : (at(i - 1) + mid) / 2;
-            float right = i + 1 == stats.size() || (i + 1) % perRow == 0 ? mid : (at(i + 1) + mid) / 2;
+            auto lv = [&](size_t j) { return stats[j].level; };
+            float mid = lv(i);
+            float left = row[i] ? mid : (lv(i - 1) + mid) / 2;
+            float right = i + 1 == n || row[i + 1] ? mid : (lv(i + 1) + mid) / 2;
             constexpr int steps = 10;
             ImVec2 pts[steps * 2 + 1];
             for (int k = 0; k <= steps * 2; k++) {
