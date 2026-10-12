@@ -27,6 +27,8 @@ struct Config {
     OledCare oled;
     // A black cat asleep above the Recent column.
     bool cat = false;
+    // Events cleared from the Recent column.
+    Model::Cleared cleared;
     // Hides private figures, e.g. a portfolio's value, from the panels.
     bool hidePrivate = false;
     // In the compact layout, monitors opened or closed by hand. The rest

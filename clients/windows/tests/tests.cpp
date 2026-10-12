@@ -333,6 +333,46 @@ static void testModel() {
         m.AddEvent(e);
     }
     CHECK_EQ(m.Events().size(), Model::kMaxEvents);
+
+    // Clearing: one, then all; neither comes back when history is replayed,
+    // but newer events still arrive.
+    Model c;
+    for (int i = 1; i <= 4; i++) {
+        e.id = i;
+        c.AddEvent(e);
+    }
+    c.Clear(3);
+    CHECK_EQ(c.Events().size(), size_t(3));
+    e.id = 3;
+    CHECK(!c.AddEvent(e));
+    CHECK(c.GetCleared().ids.count(3));
+    c.ClearAll();
+    CHECK(c.Events().empty());
+    CHECK_EQ(c.GetCleared().through, int64_t(4));
+    CHECK(c.GetCleared().ids.empty());
+    e.id = 2;
+    CHECK(!c.AddEvent(e));
+    e.id = 5;
+    CHECK(c.AddEvent(e));
+    CHECK_EQ(c.LastEventID(), int64_t(5));
+
+    // After a restart: what was cleared before is dropped, the rest kept.
+    Model r;
+    for (int i = 1; i <= 6; i++) {
+        e.id = i;
+        r.AddEvent(e);
+    }
+    Model::Cleared saved;
+    saved.through = 2;
+    saved.ids = {1, 5};
+    r.SetCleared(saved);
+    CHECK_EQ(r.Events().size(), size_t(3));
+    CHECK_EQ(r.Events().front().id, int64_t(6));
+    CHECK_EQ(r.Events().back().id, int64_t(3));
+    CHECK_EQ(r.GetCleared().ids.size(), size_t(1));
+    for (int i = 100; i < 100 + int(Model::kMaxCleared) + 10; i++) r.Clear(i);
+    CHECK_EQ(r.GetCleared().ids.size(), Model::kMaxCleared);
+    CHECK(!r.GetCleared().ids.count(5));
 }
 
 static void testSse() {

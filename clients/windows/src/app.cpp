@@ -124,6 +124,7 @@ App::App(HWND hwnd, ID3D11Device* device, std::function<void()> wake,
       notify_(std::move(notify)) {
     // Idle dimming counts from launch, not from 1970.
     lastActivity_ = now();
+    model_.SetCleared(config_.cleared);
     client_->Start(config_.url, config_.token);
     if (config_.url.empty() || config_.token.empty()) openSettings();
 }
@@ -1432,13 +1433,33 @@ void App::overlayScrollbar() {
 
 void App::feed() {
     const Palette& p = Colours();
+    const ImGuiIO& io = ImGui::GetIO();
     ImGui::PushFont(fonts_.heading);
     ImGui::TextUnformatted("Recent");
     ImGui::PopFont();
-    ImGui::Dummy(ImVec2(0, 2 * scale_));
     const auto& events = model_.Events();
+    // Clear all, at the heading's right.
+    if (!events.empty()) {
+        ImGui::SameLine();
+        float bw = ImGui::GetFrameHeight();
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - bw - 15 * scale_ + (bw - std::round(22 * scale_)) / 2);
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
+        ImGui::PushFont(fonts_.chrome);
+        bool all = ImGui::Button(icon::Close, ImVec2(bw, bw));
+        ImGui::PopFont();
+        ImGui::PopStyleColor(2);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Clear all");
+        if (all) {
+            model_.ClearAll();
+            config_.cleared = model_.GetCleared();
+            SaveConfig(config_);
+            return;
+        }
+    }
+    ImGui::Dummy(ImVec2(0, 2 * scale_));
     if (events.empty()) {
-        mutedText("Nothing yet.");
+        mutedText("Nothing new.");
         return;
     }
     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -1446,7 +1467,8 @@ void App::feed() {
     int64_t t = now();
     size_t shown = 0;
     // Clicks on the scrollbar aren't for the card under it.
-    bool onBar = feedBarHeld_ || feedBar_.Contains(ImGui::GetIO().MousePos);
+    bool onBar = feedBarHeld_ || feedBar_.Contains(io.MousePos);
+    int64_t clear = 0;
     for (const auto& e : events) {
         if (++shown > 150) break;
         ImGui::PushID(int(e.id));
@@ -1474,16 +1496,41 @@ void App::feed() {
         ImGui::SetCursorScreenPos(start);
         ImGui::InvisibleButton("##event", ImVec2(width, end.y - start.y));
 
+        bool over = ImGui::IsItemHovered() && !onBar;
+        // An x in the top-right corner, while the card's hovered, clears it.
+        float xs = std::round(22 * scale_);
+        // Clear of the scrollbar, which shows over the right edge on hover.
+        float edge = end.x - 15 * scale_;
+        ImRect x(ImVec2(edge - xs, start.y + 3 * scale_), ImVec2(edge, start.y + 3 * scale_ + xs));
+        bool overX = over && x.Contains(io.MousePos);
+        if (over) {
+            if (overX) dl->AddRectFilled(x.Min, x.Max, u32(p.frame), 4 * scale_);
+            ImGui::PushFont(fonts_.chrome);
+            ImVec2 g = ImGui::CalcTextSize(icon::Close);
+            dl->AddText(ImVec2(std::round(x.GetCenter().x - g.x / 2), std::round(x.GetCenter().y - g.y / 2)),
+                        u32(overX ? p.text : p.muted), icon::Close);
+            ImGui::PopFont();
+            if (overX) ImGui::SetTooltip("Clear");
+        }
+
         dl->ChannelsSetCurrent(0);
-        bool hovered = ImGui::IsItemHovered() && !e.url.empty() && !onBar;
+        bool hovered = over && !overX && !e.url.empty();
         dl->AddRectFilled(start, end, u32(hovered ? p.hover : p.card));
         if (e.priority == Priority::High && !e.quiet)
             dl->AddRectFilled(start, ImVec2(start.x + 3 * scale_, end.y), u32(p.accent));
         if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-        if (ImGui::IsItemClicked() && !onBar) OpenURL(e.url);
+        if (ImGui::IsItemClicked() && !onBar) {
+            if (overX) clear = e.id;
+            else OpenURL(e.url);
+        }
         dl->ChannelsMerge();
         ImGui::Dummy(ImVec2(0, 1 * scale_));
         ImGui::PopID();
+    }
+    if (clear != 0) {
+        model_.Clear(clear);
+        config_.cleared = model_.GetCleared();
+        SaveConfig(config_);
     }
 }
 

@@ -290,12 +290,35 @@ bool Model::AddEvent(Event e) {
     for (const auto& x : events_)
         if (x.id == e.id) return false;
     lastEventID_ = std::max(lastEventID_, e.id);
+    if (e.id <= cleared_.through || cleared_.ids.count(e.id)) return false;
     // Keep newest first; events nearly always arrive in order.
     auto it = events_.begin();
     while (it != events_.end() && it->id > e.id) ++it;
     events_.insert(it, std::move(e));
     while (events_.size() > kMaxEvents) events_.pop_back();
     return true;
+}
+
+void Model::Clear(int64_t id) {
+    events_.erase(std::remove_if(events_.begin(), events_.end(), [&](const Event& e) { return e.id == id; }), events_.end());
+    if (id <= cleared_.through) return;
+    cleared_.ids.insert(id);
+    while (cleared_.ids.size() > kMaxCleared) cleared_.ids.erase(cleared_.ids.begin());
+}
+
+void Model::ClearAll() {
+    events_.clear();
+    cleared_.through = std::max(cleared_.through, lastEventID_);
+    cleared_.ids.erase(cleared_.ids.begin(), cleared_.ids.upper_bound(cleared_.through));
+}
+
+void Model::SetCleared(Cleared c) {
+    cleared_ = std::move(c);
+    cleared_.ids.erase(cleared_.ids.begin(), cleared_.ids.upper_bound(cleared_.through));
+    while (cleared_.ids.size() > kMaxCleared) cleared_.ids.erase(cleared_.ids.begin());
+    events_.erase(std::remove_if(events_.begin(), events_.end(),
+                                 [&](const Event& e) { return e.id <= cleared_.through || cleared_.ids.count(e.id); }),
+                  events_.end());
 }
 
 std::string Model::TitleOf(const std::string& monitor) const {

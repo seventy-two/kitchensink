@@ -83,6 +83,12 @@ Config LoadConfig() {
     }
     c.hidePrivate = j.value("hidePrivate", false);
     c.cat = j.value("cat", false);
+    if (auto it = j.find("cleared"); it != j.end() && it->is_object()) {
+        c.cleared.through = it->value("through", int64_t(0));
+        if (auto ids = it->find("ids"); ids != it->end() && ids->is_array())
+            for (const auto& id : *ids)
+                if (id.is_number_integer()) c.cleared.ids.insert(id.get<int64_t>());
+    }
     auto ids = [&](const char* key, std::set<std::string>& out) {
         if (auto it = j.find(key); it != j.end() && it->is_array())
             for (const auto& id : *it)
@@ -105,6 +111,7 @@ bool SaveConfig(const Config& c) {
         {"oled", {{"shift", c.oled.shift}, {"black", c.oled.black}, {"dim", c.oled.dim}, {"swap", c.oled.swap}}},
         {"hidePrivate", c.hidePrivate},
         {"cat", c.cat},
+        {"cleared", {{"through", c.cleared.through}, {"ids", c.cleared.ids}}},
         {"expanded", c.expanded},
         {"collapsed", c.collapsed},
         {"order", c.order},

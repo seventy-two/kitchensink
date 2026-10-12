@@ -175,8 +175,22 @@ public:
     void EndSync();
 
     void ApplySnapshot(Snapshot s);
-    // AddEvent stores an event and reports whether it was new.
+    // AddEvent stores an event and reports whether it was new. Cleared
+    // ones aren't stored again, e.g. when history is replayed.
     bool AddEvent(Event e);
+
+    // Clear removes an event from Recent; ClearAll removes every one so
+    // far. They stay cleared through reconnects and, via Cleared and
+    // SetCleared, restarts.
+    void Clear(int64_t id);
+    void ClearAll();
+    // Cleared is what's been cleared: every event up to through, and ids.
+    struct Cleared {
+        int64_t through = 0;
+        std::set<int64_t> ids;
+    };
+    const Cleared& GetCleared() const { return cleared_; }
+    void SetCleared(Cleared c);
 
     const std::vector<Snapshot>& Snapshots() const { return snapshots_; }
     // Events are newest first.
@@ -186,6 +200,8 @@ public:
     std::string TitleOf(const std::string& monitor) const;
 
     static constexpr size_t kMaxEvents = 300;
+    // At most this many single cleared events are remembered, the newest.
+    static constexpr size_t kMaxCleared = 500;
 
 private:
     std::vector<Snapshot> snapshots_;
@@ -193,6 +209,7 @@ private:
     int64_t lastEventID_ = 0;
     bool syncing_ = false;
     std::set<std::string> synced_;
+    Cleared cleared_;
 };
 
 }  // namespace ks
