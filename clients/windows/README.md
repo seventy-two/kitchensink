@@ -42,12 +42,13 @@ result is a single `kitchensink.exe` with nothing to install.
 - An eye button in the title bar, there when a monitor sends private
   figures (a portfolio's value and gains), hides or shows them at a click:
   their blocks and summary chips go, and it's remembered.
-- **OLED care** (in settings, off by default) guards OLED screens against
-  burn-in: the contents move round a 6px circle every three minutes, the
-  theme goes true black with dimmer text and fainter borders, everything
-  dims after ten minutes without the mouse over the window (until hovered,
-  or for two minutes after something new), and the Recent column swaps
-  sides every other hour.
+- **OLED care** (in settings, each part off by default) guards OLED
+  screens against burn-in: **Shift** moves the contents round a 6px circle
+  every three minutes, **True black** is a black theme with dimmer text
+  and fainter borders, **Dim when idle** dims everything after ten minutes
+  without the mouse over the window (until hovered, or for two minutes
+  after something new), and **Swap sides** moves the Recent column across
+  every other hour.
 - Follows the Windows light or dark app theme (set `KITCHENSINK_THEME` to
   `light` or `dark` to override) and per-monitor DPI.
 - Settings live in `%APPDATA%\kitchensink\config.json`; the token is

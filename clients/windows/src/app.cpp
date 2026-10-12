@@ -134,13 +134,13 @@ App::~App() {
 
 void App::SetScale(float scale) {
     scale_ = scale;
-    ApplyTheme(dark_, scale_, compact_, config_.oled);
+    ApplyTheme(dark_, scale_, compact_, config_.oled.black);
     fonts_ = LoadFonts(scale_);
 }
 
 void App::SetDark(bool dark) {
     dark_ = dark;
-    ApplyTheme(dark_, scale_, compact_, config_.oled);
+    ApplyTheme(dark_, scale_, compact_, config_.oled.black);
 }
 
 void App::Pump() {
@@ -214,7 +214,7 @@ void App::Frame() {
     ImGuiIO& io = ImGui::GetIO();
     if (bool c = UseCompact(compact_, io.DisplaySize.x, io.DisplaySize.y, scale_); c != compact_) {
         compact_ = c;
-        ApplyTheme(dark_, scale_, compact_, config_.oled);
+        ApplyTheme(dark_, scale_, compact_, config_.oled.black);
     }
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(io.DisplaySize);
@@ -229,8 +229,8 @@ void App::Frame() {
     // for it. The window itself stays full size, so nothing behind it (the
     // panels being measured) shows round the edge.
     int64_t t = now();
-    float margin = config_.oled ? std::round(6 * scale_) : 0;
-    auto [dx, dy] = config_.oled ? OledShift(t, margin) : std::pair<float, float>{0.0f, 0.0f};
+    float margin = config_.oled.shift ? std::round(6 * scale_) : 0;
+    auto [dx, dy] = config_.oled.shift ? OledShift(t, margin) : std::pair<float, float>{0.0f, 0.0f};
     ImGui::SetCursorPos(ImVec2(margin + dx, margin + dy));
     ImGui::BeginChild("##contents", ImVec2(io.DisplaySize.x - margin * 2, io.DisplaySize.y - margin * 2),
                       ImGuiChildFlags_AlwaysUseWindowPadding,
@@ -252,7 +252,7 @@ void App::Frame() {
         empty(state == ConnState::Offline ? "Can't reach the server." : "Connecting…", state == ConnState::Offline);
     } else {
         // OLED care swaps the side column's side every other hour.
-        bool feedFirst = feedW > 0 && config_.oled && OledSwapSides(t);
+        bool feedFirst = feedW > 0 && config_.oled.swap && OledSwapSides(t);
         auto drawFeed = [&] {
             ImGui::BeginChild("##feed", ImVec2(feedW, 0), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
             feed();
@@ -277,7 +277,7 @@ void App::Frame() {
     // OLED care dims everything when the mouse hasn't been over the window
     // for a while; it's back as soon as it is.
     if (ImGui::IsMousePosValid() || settingsOpen_) lastActivity_ = t;
-    if (config_.oled && OledDim(t, lastActivity_, wakeUntil_))
+    if (config_.oled.dim && OledDim(t, lastActivity_, wakeUntil_))
         ImGui::GetForegroundDrawList()->AddRectFilled(ImVec2(0, 0), io.DisplaySize, IM_COL32(0, 0, 0, 153));
     busy_ = ImGui::IsAnyItemActive() || ImGui::GetIO().WantTextInput || settingsOpen_;
     ImGui::End();
@@ -1433,12 +1433,20 @@ void App::settings() {
     ImGui::Combo("##priority", &priorityChoice_, kPriorityNames, IM_ARRAYSIZE(kPriorityNames));
     ImGui::EndDisabled();
     ImGui::Checkbox("Start with Windows", &startChoice_);
-    ImGui::Checkbox("OLED care", &oledChoice_);
-    ImGui::SameLine();
-    ImGui::PushFont(fonts_.caption);
-    ImGui::AlignTextToFramePadding();
-    mutedText("shifts, dims and blacks things out against burn-in");
-    ImGui::PopFont();
+    ImGui::Dummy(ImVec2(0, 4 * scale_));
+    mutedText("OLED care, against burn-in");
+    auto care = [&](const char* label, bool* on, const char* what) {
+        ImGui::Checkbox(label, on);
+        ImGui::SameLine();
+        ImGui::PushFont(fonts_.caption);
+        ImGui::AlignTextToFramePadding();
+        mutedText(what);
+        ImGui::PopFont();
+    };
+    care("Shift", &oledChoice_.shift, "moves everything a few pixels every three minutes");
+    care("True black", &oledChoice_.black, "a black theme with dimmer text and borders");
+    care("Dim when idle", &oledChoice_.dim, "after ten minutes without the mouse over the window");
+    care("Swap sides", &oledChoice_.swap, "moves the Recent column across every other hour");
     ImGui::Dummy(ImVec2(0, 8 * scale_));
 
     bool configured = !config_.url.empty() && !config_.token.empty();
@@ -1466,7 +1474,7 @@ void App::settings() {
         config_ = c;
         SaveConfig(config_);
         SetStartWithWindows(startChoice_);
-        ApplyTheme(dark_, scale_, compact_, config_.oled);
+        ApplyTheme(dark_, scale_, compact_, config_.oled.black);
         if (reconnect) {
             model_ = Model();
             client_->Start(config_.url, config_.token);

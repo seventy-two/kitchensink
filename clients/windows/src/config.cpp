@@ -74,7 +74,13 @@ Config LoadConfig() {
     c.token = unprotect(j.value("token", ""));
     c.minPriority = ParsePriority(j.value("minPriority", "normal"));
     c.notify = j.value("notify", true);
-    c.oled = j.value("oled", false);
+    // "oled" was once one switch for all of OLED care.
+    if (auto it = j.find("oled"); it != j.end() && it->is_boolean()) {
+        bool on = it->get<bool>();
+        c.oled = {on, on, on, on};
+    } else if (it != j.end() && it->is_object()) {
+        c.oled = {it->value("shift", false), it->value("black", false), it->value("dim", false), it->value("swap", false)};
+    }
     c.hidePrivate = j.value("hidePrivate", false);
     auto ids = [&](const char* key, std::set<std::string>& out) {
         if (auto it = j.find(key); it != j.end() && it->is_array())
@@ -95,7 +101,7 @@ bool SaveConfig(const Config& c) {
         {"token", protect(c.token)},
         {"minPriority", priorityName(c.minPriority)},
         {"notify", c.notify},
-        {"oled", c.oled},
+        {"oled", {{"shift", c.oled.shift}, {"black", c.oled.black}, {"dim", c.oled.dim}, {"swap", c.oled.swap}}},
         {"hidePrivate", c.hidePrivate},
         {"expanded", c.expanded},
         {"collapsed", c.collapsed},

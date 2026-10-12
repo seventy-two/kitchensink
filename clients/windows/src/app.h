@@ -135,7 +135,7 @@ private:
     int priorityChoice_ = 1;
     bool notifyChoice_ = true;
     bool startChoice_ = false;
-    bool oledChoice_ = false;
+    OledCare oledChoice_;
 
     // OLED care: when the mouse was last over the window, and until when
     // something new keeps it bright (Unix seconds).

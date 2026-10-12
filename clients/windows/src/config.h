@@ -10,15 +10,21 @@
 
 namespace ks {
 
+// OledCare guards OLED screens against burn-in, each part on its own.
+struct OledCare {
+    bool shift = false;  // move everything round a small circle every three minutes
+    bool black = false;  // a true-black theme with dimmer text and fainter borders
+    bool dim = false;    // dim after ten minutes without the mouse over the window
+    bool swap = false;   // swap the Recent column's side every other hour
+};
+
 struct Config {
     std::string url;    // e.g. https://example.com/kitchensink
     std::string token;
     // Events below this priority don't raise a Windows notification.
     Priority minPriority = Priority::Normal;
     bool notify = true;
-    // OLED care: pixel orbit, a true-black theme, dimming when idle and
-    // swapping the side column's side, against burn-in.
-    bool oled = false;
+    OledCare oled;
     // Hides private figures, e.g. a portfolio's value, from the panels.
     bool hidePrivate = false;
     // In the compact layout, monitors opened or closed by hand. The rest
