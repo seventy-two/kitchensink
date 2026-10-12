@@ -502,12 +502,22 @@ static void testCat() {
         CHECK(asleep > frames * 3 / 4);
         (void)turned;  // depends on where she happens to go
     }
-    // She never jumps: from one frame to the next she moves a little.
-    for (double t = 0; t < 3 * kEpisode; t += 0.05) {
-        Cat a = CatAt(t, 150), b = CatAt(t + 0.05, 150);
-        CHECK(std::fabs(a.x - b.x) < 3);
-        CHECK(std::fabs(a.pose.head.y - b.pose.head.y) < 3);
+    // She never jumps: from one frame to the next she moves a little, and
+    // only turns round by turning, at the end of which she faces the other
+    // way. Over many episodes, including ones she doesn't walk in.
+    for (float half : {60.0f, 150.0f}) {
+        for (double t = 0; t < 40 * kEpisode; t += 0.05) {
+            Cat a = CatAt(t, half), b = CatAt(t + 0.05, half);
+            CHECK(std::fabs(a.x - b.x) < 3);
+            CHECK(std::fabs(a.pose.head.y - b.pose.head.y) < 3);
+            if (a.facing != b.facing) CHECK(a.turn > 0.9f);
+        }
     }
+    // Asked out of order, e.g. after a jump in time, she's the same.
+    Cat later = CatAt(37 * kEpisode + 3, 150);
+    CatAt(2 * kEpisode, 150);
+    Cat again = CatAt(37 * kEpisode + 3, 150);
+    CHECK(later.x == again.x && later.facing == again.facing);
 }
 
 int main() {

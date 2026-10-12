@@ -110,6 +110,31 @@ void breathing(CatPose& p, double t, float asleep) {
     }
 }
 
+// Rest is where she settles at the end of an episode, and which way she
+// faces there.
+struct Rest {
+    float x = 0, facing = 1;
+};
+
+// restAfter is where she is after episode k, played from the first: she
+// only walks to her next spot when it's far enough, so where she is and
+// which way she faces depend on every episode before. The last answer is
+// kept, so each frame takes a step at most.
+Rest restAfter(long long k, float room) {
+    static long long lastK = -2;
+    static float lastRoom = -1;
+    static Rest last;
+    long long from = -1;
+    Rest r{spot(-1) * room, 1};
+    if (room == lastRoom && lastK >= -1 && lastK <= k) from = lastK, r = last;
+    for (long long j = from + 1; j <= k; j++) {
+        float to = spot(j) * room;
+        if (std::fabs(to - r.x) >= kMinWalk) r.facing = sign(to - r.x), r.x = to;
+    }
+    lastK = k, lastRoom = room, last = r;
+    return r;
+}
+
 }  // namespace
 
 Cat CatAt(double t, float half) {
@@ -120,8 +145,9 @@ Cat CatAt(double t, float half) {
     long long k = (long long)std::floor(s / kEpisode);
     float u = float(s - double(k) * kEpisode);
 
-    float from = spot(k - 1) * room, to = spot(k) * room;
-    float facing = sign(from - spot(k - 2) * room);
+    Rest rest = restAfter(k - 1, room);
+    float from = rest.x, to = spot(k) * room;
+    float facing = rest.facing;
     float walkTo = sign(to - from);
     bool walks = std::fabs(to - from) >= kMinWalk;
     float walk = walks ? std::fabs(to - from) / kSpeed : 0;
