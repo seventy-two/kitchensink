@@ -48,9 +48,8 @@ result is a single `kitchensink.exe` with nothing to install.
   arches her back, sometimes wanders to another spot, and curls up again.
   Asleep she needs ten frames a second, awake about thirty, and none while
   the window's minimised or dimmed.
-- Scrollbars (the Recent column's, the panels column's and a panel's cut
-  short to fit) only show while the mouse is over them, thin and over the
-  content, so they don't take width from it.
+- There are no scrollbars: the Recent column, the panels column and a
+  panel cut short to fit scroll with the mouse wheel.
 - Hovering a Recent card shows an × that clears it; the × by the heading
   (shown while the mouse is over the column) clears them all. Cleared events stay cleared after a restart (they're
   remembered in `config.json` as `cleared`), and only for this install.
