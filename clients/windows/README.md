@@ -51,7 +51,7 @@ result is a single `kitchensink.exe` with nothing to install.
 - The Recent column's scrollbar only shows while the mouse is over it,
   thin and over the cards, so it doesn't take width from them.
 - Hovering a Recent card shows an × that clears it; the × by the heading
-  clears them all. Cleared events stay cleared after a restart (they're
+  (shown while the mouse is over the column) clears them all. Cleared events stay cleared after a restart (they're
   remembered in `config.json` as `cleared`), and only for this install.
 - **OLED care** (in settings, each part off by default) guards OLED
   screens against burn-in: **Shift** moves the contents round a 6px circle

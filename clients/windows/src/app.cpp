@@ -261,6 +261,7 @@ void App::Frame() {
         auto drawFeed = [&] {
             ImGui::BeginGroup();
             if (config_.cat) cat(feedW);
+            feedHeading(feedW);
             // Its scrollbar only shows on hover, over the content, so the
             // cards reach the same distance from both edges.
             ImGui::BeginChild("##feed", ImVec2(feedW, 0), ImGuiChildFlags_None,
@@ -269,6 +270,7 @@ void App::Frame() {
             overlayScrollbar();
             ImGui::EndChild();
             ImGui::EndGroup();
+            feedRect_ = ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
         };
         if (feedFirst) {
             drawFeed();
@@ -1431,33 +1433,43 @@ void App::overlayScrollbar() {
     }
 }
 
-void App::feed() {
+// feedHeading is the Recent column's heading, above its scrolling cards,
+// with an x at the right to clear them all while the mouse is over the
+// column.
+void App::feedHeading(float width) {
     const Palette& p = Colours();
     const ImGuiIO& io = ImGui::GetIO();
+    ImVec2 at = ImGui::GetCursorScreenPos();
     ImGui::PushFont(fonts_.heading);
     ImGui::TextUnformatted("Recent");
     ImGui::PopFont();
-    const auto& events = model_.Events();
-    // Clear all, at the heading's right.
-    if (!events.empty()) {
-        ImGui::SameLine();
-        float bw = ImGui::GetFrameHeight();
-        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - bw - 15 * scale_ + (bw - std::round(22 * scale_)) / 2);
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-        ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
-        ImGui::PushFont(fonts_.chrome);
-        bool all = ImGui::Button(icon::Close, ImVec2(bw, bw));
-        ImGui::PopFont();
-        ImGui::PopStyleColor(2);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Clear all");
-        if (all) {
-            model_.ClearAll();
-            config_.cleared = model_.GetCleared();
-            SaveConfig(config_);
-            return;
-        }
-    }
+    float h = ImGui::GetItemRectSize().y;
     ImGui::Dummy(ImVec2(0, 2 * scale_));
+    if (model_.Events().empty() || !feedRect_.Contains(io.MousePos)) return;
+
+    float xs = std::round(22 * scale_);
+    ImRect x(ImVec2(at.x + width - xs, std::round(at.y + (h - xs) / 2)), ImVec2(at.x + width, std::round(at.y + (h + xs) / 2)));
+    bool over = x.Contains(io.MousePos) && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    if (over) dl->AddRectFilled(x.Min, x.Max, u32(p.frame), 4 * scale_);
+    ImGui::PushFont(fonts_.chrome);
+    ImVec2 g = ImGui::CalcTextSize(icon::Close);
+    dl->AddText(ImVec2(std::round(x.GetCenter().x - g.x / 2), std::round(x.GetCenter().y - g.y / 2)),
+                u32(over ? p.text : p.muted), icon::Close);
+    ImGui::PopFont();
+    if (!over) return;
+    ImGui::SetTooltip("Clear all");
+    if (io.MouseClicked[0]) {
+        model_.ClearAll();
+        config_.cleared = model_.GetCleared();
+        SaveConfig(config_);
+    }
+}
+
+void App::feed() {
+    const Palette& p = Colours();
+    const ImGuiIO& io = ImGui::GetIO();
+    const auto& events = model_.Events();
     if (events.empty()) {
         mutedText("Nothing new.");
         return;

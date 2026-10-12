@@ -86,6 +86,7 @@ private:
     void list(const Block& b);
     void checklist(const std::string& monitor, const Block& b);
     void mediaBlock(const Block& b);
+    void feedHeading(float width);
     void feed();
     void cat(float width);
     void overlayScrollbar();
@@ -127,6 +128,7 @@ private:
     // The Recent column's scrollbar, shown on hover over its content: the
     // strip it takes clicks in (last frame's) and whether it's held.
     ImRect feedBar_;
+    ImRect feedRect_;  // the Recent column, last frame
     bool feedBarHeld_ = false;
     float feedBarGrab_ = 0;
 
