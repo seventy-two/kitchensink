@@ -122,6 +122,8 @@ App::App(HWND hwnd, ID3D11Device* device, std::function<void()> wake,
       local_(std::make_unique<LocalStats>(wake)),
       media_(std::make_unique<MediaWatcher>(wake, images_.get())),
       notify_(std::move(notify)) {
+    // Idle dimming counts from launch, not from 1970.
+    lastActivity_ = now();
     client_->Start(config_.url, config_.token);
     if (config_.url.empty() || config_.token.empty()) openSettings();
 }
