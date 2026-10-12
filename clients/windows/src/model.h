@@ -25,6 +25,7 @@ struct Stat {
     // top fixes the sparkline's scale, e.g. 100 for a percentage; 0 fits
     // it to the series.
     float top = 0;
+    bool isPrivate = false;  // a personal figure, e.g. money, hidden on request
 };
 
 struct Column {
@@ -62,6 +63,7 @@ struct Media {
 struct Block {
     std::string type, title, text;
     std::string addHint;  // a checklist takes new items when set
+    bool isPrivate = false;  // personal figures, hidden on request
     Media media;
     std::vector<Stat> stats;
     std::vector<Column> columns;
@@ -89,6 +91,12 @@ struct Event {
 };
 
 Snapshot ParseSnapshot(const nlohmann::json& j);
+
+// HasPrivate says whether a snapshot has any private blocks or stats.
+bool HasPrivate(const Snapshot& s);
+// WithoutPrivate is a snapshot with its private blocks and stats left out,
+// for when the user has hidden them.
+Snapshot WithoutPrivate(Snapshot s);
 Event ParseEvent(const nlohmann::json& j);
 Priority ParsePriority(const std::string& s);
 

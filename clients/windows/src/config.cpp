@@ -75,6 +75,7 @@ Config LoadConfig() {
     c.minPriority = ParsePriority(j.value("minPriority", "normal"));
     c.notify = j.value("notify", true);
     c.oled = j.value("oled", false);
+    c.hidePrivate = j.value("hidePrivate", false);
     auto ids = [&](const char* key, std::set<std::string>& out) {
         if (auto it = j.find(key); it != j.end() && it->is_array())
             for (const auto& id : *it)
@@ -95,6 +96,7 @@ bool SaveConfig(const Config& c) {
         {"minPriority", priorityName(c.minPriority)},
         {"notify", c.notify},
         {"oled", c.oled},
+        {"hidePrivate", c.hidePrivate},
         {"expanded", c.expanded},
         {"collapsed", c.collapsed},
         {"order", c.order},

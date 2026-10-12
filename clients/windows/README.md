@@ -39,6 +39,9 @@ result is a single `kitchensink.exe` with nothing to install.
   and double-click to maximise.
 - Closing the window keeps it running in the tray; **Quit** is in the tray
   icon's menu. It can start with Windows (minimised to the tray).
+- An eye button in the title bar, there when a monitor sends private
+  figures (a portfolio's value and gains), hides or shows them at a click:
+  their blocks and summary chips go, and it's remembered.
 - **OLED care** (in settings, off by default) guards OLED screens against
   burn-in: the contents move round a 6px circle every three minutes, the
   theme goes true black with dimmer text and fainter borders, everything

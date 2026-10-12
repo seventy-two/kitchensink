@@ -188,6 +188,9 @@ type Block struct {
 	Text    string    `json:"text,omitempty"`
 	// AddHint is the placeholder for a checklist's box for new items.
 	AddHint string `json:"addHint,omitempty"`
+	// Private marks personal figures, e.g. money, which clients can hide
+	// on request.
+	Private bool `json:"private,omitempty"`
 }
 
 // Stat is a labelled value in a stats block.
@@ -196,6 +199,8 @@ type Stat struct {
 	Value  string `json:"value"`
 	Detail string `json:"detail,omitempty"`
 	Tone   Tone   `json:"tone,omitempty"`
+	// Private marks a personal figure, which clients can hide on request.
+	Private bool `json:"private,omitempty"`
 	// Series, if set, is drawn as a sparkline.
 	Series []float64 `json:"series,omitempty"`
 }

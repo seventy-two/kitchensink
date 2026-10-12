@@ -19,6 +19,8 @@ struct Config {
     // OLED care: pixel orbit, a true-black theme, dimming when idle and
     // swapping the side column's side, against burn-in.
     bool oled = false;
+    // Hides private figures, e.g. a portfolio's value, from the panels.
+    bool hidePrivate = false;
     // In the compact layout, monitors opened or closed by hand. The rest
     // open by themselves while there's room.
     std::set<std::string> expanded, collapsed;

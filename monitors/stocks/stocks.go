@@ -39,6 +39,9 @@ type Config struct {
 	MovePct *float64 `json:"movePct"`
 	// Targets notify when a symbol's price crosses above or below a level.
 	Targets map[string]Target `json:"targets"`
+	// Portfolio adds an estimate of an account's value and the day's gain
+	// or loss, from the same quotes. It's marked private for clients.
+	Portfolio *Portfolio `json:"portfolio"`
 	// QuoteURL and ChartURL replace CNBC's endpoints, for tests.
 	QuoteURL string `json:"quoteURL"`
 	ChartURL string `json:"chartURL"`
@@ -53,6 +56,7 @@ type Target struct {
 // Monitor is the stocks monitor.
 type Monitor struct {
 	cfg     Config
+	extra   map[string]bool // upper case: symbols fetched only for the portfolio
 	movePct float64
 	rank    map[string]int // holding symbol, upper case, to its place
 }
@@ -83,7 +87,14 @@ func New(raw json.RawMessage) (*Monitor, error) {
 	if c.ChartURL == "" {
 		c.ChartURL = defaultChartURL
 	}
-	m := &Monitor{cfg: c, movePct: 5, rank: rank}
+	m := &Monitor{cfg: c, movePct: 5, rank: rank, extra: map[string]bool{}}
+	if c.Portfolio != nil {
+		for _, s := range c.Portfolio.symbols() {
+			if !slices.ContainsFunc(c.Symbols, func(o string) bool { return strings.EqualFold(o, s) }) {
+				m.extra[strings.ToUpper(s)] = true
+			}
+		}
+	}
 	if c.MovePct != nil {
 		m.movePct = *c.MovePct
 	}
@@ -117,7 +128,7 @@ type quoteResponse struct {
 
 func (m *Monitor) fetch(ctx context.Context, client *http.Client) ([]quote, error) {
 	q := url.Values{
-		"symbols":       {strings.Join(m.cfg.Symbols, "|")},
+		"symbols":       {strings.Join(m.fetched(), "|")},
 		"requestMethod": {"itv"},
 		"noform":        {"1"},
 		"partnerId":     {"2"},
@@ -158,10 +169,27 @@ func (m *Monitor) fetch(ctx context.Context, client *http.Client) ([]quote, erro
 // past, so a target notifies once per crossing.
 const crossedKey = "crossed"
 
+// fetched is every symbol to quote: the watchlist, then any more the
+// portfolio needs.
+func (m *Monitor) fetched() []string {
+	out := slices.Clone(m.cfg.Symbols)
+	for s := range m.extra {
+		out = append(out, s)
+	}
+	slices.Sort(out[len(m.cfg.Symbols):])
+	return out
+}
+
 func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, error) {
-	quotes, err := m.fetch(ctx, env.HTTP)
+	all, err := m.fetch(ctx, env.HTTP)
 	if err != nil {
 		return monitor.Result{}, err
+	}
+	var quotes []quote
+	for _, q := range all {
+		if !m.extra[strings.ToUpper(q.Symbol)] {
+			quotes = append(quotes, q)
+		}
 	}
 
 	crossed := map[string]bool{}
@@ -182,12 +210,31 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		symbols = append(symbols, q.Symbol)
 	}
 	weekAgo := m.weekAgo(ctx, env, symbols)
-	return monitor.Result{
+	res := monitor.Result{
 		Blocks:       []monitor.Block{m.table(quotes, weekAgo)},
 		Summary:      m.summary(quotes),
 		SummaryStyle: monitor.SummaryChips,
 		Events:       events,
-	}, nil
+	}
+	if p := m.cfg.Portfolio; p != nil {
+		bySymbol := map[string]quote{}
+		for _, q := range all {
+			bySymbol[strings.ToUpper(q.Symbol)] = q
+		}
+		now := env.Now()
+		e := p.estimate(bySymbol, now)
+		var days []day
+		if _, err := env.State.Get(daysKey, &days); err != nil {
+			return monitor.Result{}, err
+		}
+		days = record(days, e, now)
+		if err := env.State.Set(daysKey, days); err != nil {
+			return monitor.Result{}, err
+		}
+		res.Blocks = append(portfolioBlocks(e, days, now), res.Blocks...)
+		res.Summary = append([]monitor.Stat{portfolioStat(e)}, res.Summary...)
+	}
+	return res, nil
 }
 
 // moversLen is how many symbols the summary shows.

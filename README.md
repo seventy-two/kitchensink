@@ -45,6 +45,32 @@ sacks, safeties and scores. Plays called back for penalties don't count.
 Its summary is a chip per league with your live matchup score; `names`
 gives leagues shorter names by ID. Rosters are read again every six hours.
 
+### Portfolio
+
+The `stocks` monitor can also estimate an account's value and the day's
+gain or loss from the same quotes: give it a `portfolio` with `cash` and
+`positions`. Each position has `units` of a CNBC `symbol`, priced live and
+converted to pounds (USD at CNBC's GBP/USD rate, London prices in pence),
+or a fixed `value` in pounds for anything CNBC doesn't quote, e.g. a fund,
+which moves by a `symbol`'s daily percentage if one is given (an index for
+a tracker). Only moves from today's session count, so before the open
+it's £0; like a broker's own figure it leaves out currency moves. The
+panel shows the value, today's gain, the positions moving it most and
+recent days (kept for 30), and the summary leads with today's gain. It's
+all marked private, for clients to hide.
+
+```json
+"portfolio": {
+  "cash": 120.50,
+  "positions": [
+    { "symbol": "AAPL", "units": 10 },
+    { "symbol": "BP.-GB", "units": 200 },
+    { "name": "FTSE 250 tracker", "symbol": ".FTMC", "value": 1500 },
+    { "name": "Managed fund", "value": 800 }
+  ]
+}
+```
+
 ### Calendars
 
 The `calendar` monitor merges any number of ICS feeds into one view of the
@@ -134,7 +160,8 @@ stats (as in a `stats` block) worth seeing at a glance, which clients show
 instead of the blocks when space is short, and `summaryStyle`: empty for
 label/value/detail tiles, or `chips` for small blocks of the same, filled
 with each stat's tone (the watchlist's daily moves, the hourly forecast,
-today's NFL games). Every monitor is
+today's NFL games). A stat or block marked `private` holds personal
+figures, e.g. money, which clients can hide. Every monitor is
 drawn from the same few block types, so clients need no per-monitor code:
 
 | Block `type` | Fields |

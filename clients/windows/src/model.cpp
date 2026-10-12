@@ -34,10 +34,16 @@ const json& array(const json& j, const char* key) {
     return *it;
 }
 
+bool flag(const json& j, const char* key) {
+    auto it = j.find(key);
+    return it != j.end() && it->is_boolean() && it->get<bool>();
+}
+
 Stat parseStat(const json& j) {
     Stat st{str(j, "label"), str(j, "value"), str(j, "detail"), tone(j), {}};
     for (const auto& v : array(j, "series"))
         if (v.is_number()) st.series.push_back(v.get<float>());
+    st.isPrivate = flag(j, "private");
     return st;
 }
 
@@ -64,6 +70,7 @@ Block parseBlock(const json& j) {
                            tone(i), str(i, "id"), done != i.end() && done->is_boolean() && done->get<bool>()});
     }
     b.addHint = str(j, "addHint");
+    b.isPrivate = flag(j, "private");
     return b;
 }
 
@@ -180,6 +187,25 @@ bool UseCompact(bool compact, float width, float height, float scale) {
     constexpr float kHeight = 1100, kWidth = 900, kSlack = 40;
     float slack = compact ? kSlack : -kSlack;
     return height < (kHeight + slack) * scale || width < (kWidth + slack) * scale;
+}
+
+bool HasPrivate(const Snapshot& s) {
+    auto stat = [](const Stat& st) { return st.isPrivate; };
+    return std::any_of(s.summary.begin(), s.summary.end(), stat) ||
+           std::any_of(s.blocks.begin(), s.blocks.end(), [&](const Block& b) {
+               return b.isPrivate || std::any_of(b.stats.begin(), b.stats.end(), stat);
+           });
+}
+
+Snapshot WithoutPrivate(Snapshot s) {
+    auto stat = [](const Stat& st) { return st.isPrivate; };
+    s.summary.erase(std::remove_if(s.summary.begin(), s.summary.end(), stat), s.summary.end());
+    for (auto& b : s.blocks) b.stats.erase(std::remove_if(b.stats.begin(), b.stats.end(), stat), b.stats.end());
+    // A stats block left with nothing goes too.
+    s.blocks.erase(std::remove_if(s.blocks.begin(), s.blocks.end(),
+                                  [](const Block& b) { return b.isPrivate || (b.type == "stats" && b.stats.empty()); }),
+                   s.blocks.end());
+    return s;
 }
 
 Event ParseEvent(const json& j) {

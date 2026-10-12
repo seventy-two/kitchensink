@@ -354,7 +354,35 @@ static void testSse() {
     CHECK_EQ(out[2].event, std::string("message"));
 }
 
+static void testPrivate() {
+    Snapshot s = ParseSnapshot(nlohmann::json::parse(R"({
+        "monitor": "stocks",
+        "summary": [{"label": "Today", "value": "+£10", "private": true}, {"label": "AMD", "value": "+1%"}],
+        "blocks": [
+            {"type": "stats", "private": true, "stats": [{"label": "Portfolio", "value": "£1,000"}]},
+            {"type": "stats", "stats": [{"label": "Mine", "value": "£5", "private": true}, {"label": "Public", "value": "1"}]},
+            {"type": "stats", "stats": [{"label": "Only mine", "value": "£5", "private": true}]},
+            {"type": "table", "private": true, "columns": [{"title": "Day"}]},
+            {"type": "table", "columns": [{"title": "Symbol"}]}
+        ]})"));
+    CHECK(HasPrivate(s));
+    CHECK(s.blocks[0].isPrivate);
+    CHECK(s.summary[0].isPrivate);
+
+    Snapshot hidden = WithoutPrivate(s);
+    CHECK(!HasPrivate(hidden));
+    CHECK_EQ(hidden.summary.size(), size_t(1));
+    CHECK_EQ(hidden.summary[0].label, std::string("AMD"));
+    CHECK_EQ(hidden.blocks.size(), size_t(2));
+    CHECK_EQ(hidden.blocks[0].stats.size(), size_t(1));
+    CHECK_EQ(hidden.blocks[0].stats[0].label, std::string("Public"));
+    CHECK_EQ(hidden.blocks[1].columns[0].title, std::string("Symbol"));
+
+    CHECK(!HasPrivate(ParseSnapshot(nlohmann::json::parse(R"({"blocks": [{"type": "text", "text": "hi"}]})"))));
+}
+
 int main() {
+    testPrivate();
     testParseTime();
     testAgo();
     testParseSnapshot();

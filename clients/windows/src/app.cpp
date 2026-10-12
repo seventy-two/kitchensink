@@ -287,7 +287,7 @@ std::vector<Snapshot> App::panels() const {
     std::vector<Snapshot> out;
     if (!localPanels_.empty()) out.push_back(localPanels_.front());
     if (!mediaPanel_.blocks.empty()) out.push_back(mediaPanel_);
-    out.insert(out.end(), model_.Snapshots().begin(), model_.Snapshots().end());
+    for (const Snapshot& s : model_.Snapshots()) out.push_back(config_.hidePrivate ? WithoutPrivate(s) : s);
     if (localPanels_.size() > 1) out.push_back(localPanels_.back());
     if (config_.order.empty()) return out;
     std::vector<std::string> ids;
@@ -382,6 +382,34 @@ void App::header() {
     if (open) openSettings();
     noDrag_.push_back(ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax()));
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Settings");
+
+    // Hide or show private figures, e.g. a portfolio, at a click: only
+    // there when a monitor sends some.
+    const auto& snaps = model_.Snapshots();
+    if (std::any_of(snaps.begin(), snaps.end(), [](const Snapshot& s) { return HasPrivate(s); })) {
+        float ew = ImGui::CalcTextSize(icon::View).x + ImGui::GetStyle().FramePadding.x * 2;
+        ImGui::SameLine();
+        ImGui::SetCursorPos(ImVec2(left - origin.x - 8 * scale_ - bw - 4 * scale_ - ew, mid - ImGui::GetFrameHeight() / 2));
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_Text, config_.hidePrivate ? p.muted : p.text);
+        bool toggle = ImGui::Button(icon::View);
+        ImGui::PopStyleColor(2);
+        // Struck through while hidden: Windows 10's icon font has no such
+        // eye.
+        if (config_.hidePrivate) {
+            ImVec2 a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax(), c((a.x + b.x) / 2, (a.y + b.y) / 2);
+            float r = 7 * scale_;
+            ImGui::GetWindowDrawList()->AddLine(ImVec2(c.x - r, c.y - r + 2 * scale_), ImVec2(c.x + r, c.y + r + 2 * scale_),
+                                                u32(p.muted), 1.5f * scale_);
+        }
+        noDrag_.push_back(ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax()));
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", config_.hidePrivate ? "Show private figures" : "Hide private figures");
+        if (toggle) {
+            config_.hidePrivate = !config_.hidePrivate;
+            SaveConfig(config_);
+        }
+    }
     ImGui::SetCursorPosY(captionH_ + (compact_ ? 2 : 8) * scale_);
 }
 
