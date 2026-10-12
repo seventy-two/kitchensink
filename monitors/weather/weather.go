@@ -159,10 +159,8 @@ type hour struct {
 	label, temp string
 	sky         string // e.g. "Cloudy"
 	icon        string
-	// conditions is the sky, or the chance of rain when it's likely.
-	conditions string
-	rainProb   float64
-	tone       monitor.Tone
+	rainProb    float64
+	tone        monitor.Tone
 }
 
 // hourly reads the hourly forecast: the first hour is now, at the current
@@ -176,13 +174,10 @@ func (m *Monitor) hourly(f *forecast) []hour {
 		}
 		day := i < len(h.IsDay) && h.IsDay[i] == 1
 		sky := brief(h.Code[i], day)
-		x := hour{label: clock(t), temp: fmt.Sprintf("%.0f°", h.Temperature[i]), sky: sky, icon: icon(h.Code[i], day), conditions: sky, rainProb: h.RainProb[i]}
+		x := hour{label: clock(t), temp: fmt.Sprintf("%.0f°", h.Temperature[i]), sky: sky, icon: icon(h.Code[i], day), rainProb: h.RainProb[i]}
 		if i == 0 {
 			x.label = "Now"
 			x.temp = fmt.Sprintf("%.0f°", f.Current.Temperature)
-		}
-		if h.RainProb[i] >= 30 {
-			x.conditions = fmt.Sprintf("%.0f%% rain", h.RainProb[i])
 		}
 		switch {
 		case m.gustMPH > 0 && h.Gusts[i] >= m.gustMPH:
@@ -195,11 +190,12 @@ func (m *Monitor) hourly(f *forecast) []hour {
 	return out
 }
 
-// summary is the hourly forecast, an hour to a chip.
+// summary is the hourly forecast, an hour to a chip: the sky as an icon,
+// and the chance of rain as a chart behind them.
 func (m *Monitor) summary(f *forecast) []monitor.Stat {
 	var out []monitor.Stat
 	for _, h := range m.hourly(f) {
-		out = append(out, monitor.Stat{Label: h.label, Value: h.temp, Detail: h.conditions, Tone: h.tone, Icon: h.icon})
+		out = append(out, monitor.Stat{Label: h.label, Value: h.temp, Tone: h.tone, Icon: h.icon, Level: h.rainProb / 100})
 	}
 	return out
 }

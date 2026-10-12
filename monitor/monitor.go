@@ -212,6 +212,9 @@ type Stat struct {
 	// weather's: sun, moon, sun-cloud, moon-cloud, cloud, fog, drizzle,
 	// rain, showers, snow and storm, and ignore names they don't know.
 	Icon string `json:"icon,omitempty"`
+	// Level, from 0 to 1, is drawn faintly behind the stat as a chart
+	// joined to its neighbours', e.g. the chance of rain each hour.
+	Level float64 `json:"level,omitempty"`
 }
 
 // Align is a table column's alignment.

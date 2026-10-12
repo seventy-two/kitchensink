@@ -462,8 +462,12 @@ static void testWeatherIcons() {
     Recorder none;
     DrawWeatherIcon(none, "tornado", {0, 0}, 50, col);
     CHECK_EQ(none.shapes, 0);
-    Stat s = ParseSnapshot(nlohmann::json::parse(R"({"summary": [{"label": "13:00", "value": "18°", "icon": "rain"}]})")).summary[0];
-    CHECK_EQ(s.icon, std::string("rain"));
+    Snapshot snap = ParseSnapshot(nlohmann::json::parse(
+        R"({"summary": [{"label": "13:00", "value": "18°", "icon": "rain", "level": 0.6}, {"level": 3}, {}]})"));
+    CHECK_EQ(snap.summary[0].icon, std::string("rain"));
+    CHECK(std::fabs(snap.summary[0].level - 0.6f) < 1e-6f);
+    CHECK_EQ(snap.summary[1].level, 1.0f);  // clamped
+    CHECK_EQ(snap.summary[2].level, 0.0f);
 }
 
 static void testCat() {

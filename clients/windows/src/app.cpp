@@ -1007,6 +1007,7 @@ void App::chips(const std::vector<Stat>& stats, float width) {
         ImGui::PopFont();
         ImGui::PushFont(fonts_.heading);
         ImVec2 v = ImGui::CalcTextSize(s.value.c_str());
+        w = std::max(w, v.x);
         // An icon, if any, goes right of the label and value, as tall as
         // both if there's room, as tall as the value at least.
         if (IsWeatherIcon(s.icon)) {
@@ -1030,6 +1031,7 @@ void App::chips(const std::vector<Stat>& stats, float width) {
 
     ImVec2 origin = ImGui::GetCursorScreenPos();
     int perRow = std::max(1, int((width + gap) / (w + gap)));
+    bool levels = std::any_of(stats.begin(), stats.end(), [](const Stat& s) { return s.level > 0; });
     ImGui::BeginGroup();
     for (size_t i = 0; i < stats.size(); i++) {
         const Stat& s = stats[i];
@@ -1037,6 +1039,30 @@ void App::chips(const std::vector<Stat>& stats, float width) {
         ImVec4 tone = ToneColour(s.tone);
         bool coloured = s.tone == Tone::Good || s.tone == Tone::Bad || s.tone == Tone::Warn || s.tone == Tone::Accent;
         dl->AddRectFilled(a, ImVec2(a.x + w, a.y + h), u32(coloured ? fade(tone, 0.2f) : p.frame));
+        if (levels) {
+            // The levels as one faint chart behind the row: through the
+            // middle of each block at its own level, and at each edge
+            // halfway to its neighbour's.
+            auto at = [&](size_t j) { return stats[j].level; };
+            float mid = at(i);
+            float left = i % perRow == 0 ? mid : (at(i - 1) + mid) / 2;
+            float right = i + 1 == stats.size() || (i + 1) % perRow == 0 ? mid : (at(i + 1) + mid) / 2;
+            constexpr int steps = 10;
+            ImVec2 pts[steps * 2 + 1];
+            for (int k = 0; k <= steps * 2; k++) {
+                float u = float(k) / (steps * 2);
+                float from = k <= steps ? left : mid, to = k <= steps ? mid : right;
+                float e = (1 - std::cos(float(k <= steps ? k : k - steps) / steps * 3.14159265f)) / 2;  // eased
+                pts[k] = ImVec2(a.x + u * w, a.y + h - (from + (to - from) * e) * h);
+            }
+            ImU32 fill = u32(fade(p.accent, 0.13f)), line = u32(fade(p.accent, 0.5f));
+            for (int k = 0; k < steps * 2; k++) {
+                if (pts[k].y >= a.y + h - 0.5f && pts[k + 1].y >= a.y + h - 0.5f) continue;
+                ImVec2 quad[4] = {pts[k], pts[k + 1], ImVec2(pts[k + 1].x, a.y + h), ImVec2(pts[k].x, a.y + h)};
+                dl->AddConvexPolyFilled(quad, 4, fill);
+                dl->AddLine(pts[k], pts[k + 1], line, 1.25f * scale_);
+            }
+        }
         ImGui::PushFont(fonts_.caption);
         ImGui::SetCursorScreenPos(ImVec2(a.x + pad.x, a.y + pad.y));
         ImGui::TextColored(s.tone == Tone::Muted ? p.muted : p.text, "%s", fitLines(s.label, inner).c_str());
