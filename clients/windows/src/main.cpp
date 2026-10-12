@@ -222,7 +222,9 @@ LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wParam, LPARAM lParam) {
             DefWindowProcW(h, msg, wParam, lParam);
             // A maximised window hangs over the screen edges by its frame
             // width, so the top needs the same inset as the sides.
-            params->rgrc[0].top = before.top + (IsZoomed(h) ? params->rgrc[0].left - before.left : 0);
+            // Otherwise a pixel of frame is left at the top, where Windows
+            // draws the border line it draws on the other sides.
+            params->rgrc[0].top = before.top + (IsZoomed(h) ? params->rgrc[0].left - before.left : 1);
             return 0;
         }
         break;
