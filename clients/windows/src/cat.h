@@ -27,13 +27,15 @@ struct CatPose {
     float yawn = 0;  // 0 to 1
 };
 
-// Cat is her at one moment: her pose, where she is along the floor and
-// which way she faces (1 right, -1 left, between while turning round), and
-// how asleep she is (1 fast asleep, for her breathing and Z's).
+// Cat is her at one moment: her pose, where she is along the floor, which
+// way she faces (1 right, -1 left), how far she's turned round from there
+// (0 to 1, her head leading, towards the viewer) and how asleep she is (1
+// fast asleep, for her breathing and Z's).
 struct Cat {
     CatPose pose;
     float x = 0;
     float facing = 1;
+    float turn = 0;
     float asleep = 1;
 };
 

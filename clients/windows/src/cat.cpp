@@ -79,7 +79,7 @@ float sign(float v) { return v < 0 ? -1.0f : 1.0f; }
 
 // Lengths of each part of waking up, in seconds.
 constexpr float kWake = 1.4f, kToBow = 0.8f, kBowHold = 1.4f, kToArch = 0.9f, kArchHold = 0.9f, kToStand = 0.7f,
-                kTurn = 0.5f, kPause = 0.5f, kLieDown = 1.8f;
+                kTurn = 1.3f, kPause = 0.5f, kLieDown = 1.8f;
 constexpr float kSpeed = 22;   // units a second, walking
 constexpr float kStride = 20;  // units a step cycle
 constexpr float kMinWalk = 10; // closer than this, she doesn't bother
@@ -152,9 +152,9 @@ Cat CatAt(double t, float half) {
     } else if (k = part(kToStand); k < 1) {
         c.pose = blend(kArch, kStand, smooth(k)), c.asleep = 0;
     } else if (turn > 0 && (k = part(turn)) < 1) {
-        // Turning round: she narrows to nothing and comes back the other way.
-        c.pose = kStand, c.asleep = 0;
-        c.facing = facing * std::cos(kPi * smooth(k));
+        // Turning round, towards the viewer: see DrawCat.
+        c.pose = kStand, c.asleep = 0, c.turn = k;
+        walking(c.pose, 2 * kPi * k, t);  // stepping round
     } else if (walk > 0 && (k = part(walk)) < 1) {
         c.pose = kStand, c.asleep = 0, c.facing = walkTo;
         float gone = std::fabs(to - from) * k;
@@ -181,24 +181,40 @@ constexpr Rgba kFur{17, 17, 21}, kRim{92, 98, 112, 170}, kEye{206, 216, 84}, kPu
     kLid{120, 124, 136, 220}, kMouth{176, 84, 100}, kWhisker{150, 154, 166, 110}, kZ{150, 156, 172},
     kShadow{0, 0, 0, 55};
 
-// Painter maps her pose onto the canvas, mirrored for which way she faces.
+// Painter maps her pose onto the canvas, mirrored for which way she
+// faces, and turned round about the vertical: pose x is how far forward a
+// point is, and l how far to her side nearer the viewer. While she turns
+// round, her head leads and her hips follow, so each point turns by an
+// angle between theirs, from how far forward it is.
 struct Painter {
     Canvas& c;
     Vec2f floor;
     float x, facing, size;
-    Vec2f m(Vec2f p) const { return {floor.x + (x + p.x * facing) * size, floor.y + p.y * size}; }
-    float w(float r) const { return r * size; }
-    void circle(Vec2f p, float r, Rgba col) const { c.Circle(m(p), w(r), col); }
-    void line(Vec2f a, Vec2f b, float t, Rgba col) const { c.Line(m(a), m(b), w(t), col); }
-    void limb(Vec2f a, Vec2f b, float t, Rgba col) const {
-        line(a, b, t, col);
-        circle(a, t / 2, col);
-        circle(b, t / 2, col);
+    float headTurn = 0, hipsTurn = 0;  // radians, 0 to pi
+
+    float angle(float f) const { return lerpf(hipsTurn, headTurn, std::clamp((f + 13) / 38, 0.0f, 1.0f)); }
+    Vec2f m(Vec2f p, float l = 0) const {
+        float a = angle(p.x);
+        return {floor.x + (x + facing * (p.x * std::cos(a) - l * std::sin(a))) * size, floor.y + p.y * size};
     }
-    void poly(std::initializer_list<Vec2f> pts, Rgba col) const {
+    // depth is how far towards the viewer a point is, beside a centre at
+    // forward f0.
+    float depth(float f, float l, float f0) const {
+        float a = angle(f0);
+        return (f - f0) * std::sin(a) + l * std::cos(a);
+    }
+    float w(float r) const { return r * size; }
+    void circle(Vec2f p, float r, Rgba col, float l = 0) const { c.Circle(m(p, l), w(r), col); }
+    void line(Vec2f a, Vec2f b, float t, Rgba col, float l = 0) const { c.Line(m(a, l), m(b, l), w(t), col); }
+    void limb(Vec2f a, Vec2f b, float t, Rgba col, float l = 0) const {
+        line(a, b, t, col, l);
+        circle(a, t / 2, col, l);
+        circle(b, t / 2, col, l);
+    }
+    void poly(std::initializer_list<Vec2f> pts, Rgba col, float l = 0) const {
         Vec2f out[8];
         int n = 0;
-        for (Vec2f p : pts) out[n++] = m(p);
+        for (Vec2f p : pts) out[n++] = m(p, l);
         // Mirroring reverses the winding, which ImGui doesn't mind.
         c.Polygon(out, n, col);
     }
@@ -208,8 +224,9 @@ struct Painter {
 // g units all round: once wide for her rim, then in black over it.
 void silhouette(const Painter& d, const CatPose& p, float g, Rgba col) {
     // Far legs, then the tail, behind the body.
-    d.limb(p.joint[1], p.paw[1], 4.6f + 2 * g, col);
-    d.limb(p.joint[3], p.paw[3], 5.2f + 2 * g, col);
+    // One colour throughout, so what's in front of what doesn't matter.
+    d.limb(p.joint[1], p.paw[1], 4.6f + 2 * g, col, -3.5f);
+    d.limb(p.joint[3], p.paw[3], 5.2f + 2 * g, col, -4);
     for (int i = 0; i + 1 < CatPose::kTailPoints; i++) {
         float t = 4.4f - 1.4f * float(i) / (CatPose::kTailPoints - 1);
         d.limb(p.tail[i], p.tail[i + 1], t + 2 * g, col);
@@ -226,14 +243,15 @@ void silhouette(const Painter& d, const CatPose& p, float g, Rgba col) {
     d.circle(p.hips, p.rHips + g, col);
     join(p.chest, p.rChest, p.mid, p.rMid);
     join(p.mid, p.rMid, p.hips, p.rHips);
-    d.limb(p.joint[0], p.paw[0], 4.6f + 2 * g, col);
-    d.limb(p.joint[2], p.paw[2], 5.2f + 2 * g, col);
+    d.limb(p.joint[0], p.paw[0], 4.6f + 2 * g, col, 3.5f);
+    d.limb(p.joint[2], p.paw[2], 5.2f + 2 * g, col, 4);
     // Neck, head, muzzle and ears.
     d.limb(lerp(p.chest, p.head, 0.35f), lerp(p.chest, p.head, 0.8f), 8 + 2 * g, col);
     auto head = [&](Vec2f v) { return add(p.head, rotate(v, p.headTilt)); };
     d.circle(p.head, p.rHead + g, col);
     d.circle(head({6, 2.5f}), 4.6f + g, col);
     for (float e : {-3.5f, 3.0f}) {
+        float l = e < 0 ? -3.4f : 3.4f;  // side by side, seen face on
         Vec2f base1 = head({e - 3.6f, -5}), base2 = head({e + 3.6f, -5}), tip = head({e + 1.2f, -13.5f});
         Vec2f mid = scale(add(add(base1, base2), tip), 1.0f / 3);
         auto grow = [&](Vec2f v) {
@@ -241,23 +259,38 @@ void silhouette(const Painter& d, const CatPose& p, float g, Rgba col) {
             float len = std::max(0.001f, std::hypot(off.x, off.y));
             return add(v, scale(off, g / len * 1.4f));
         };
-        d.poly({grow(base1), grow(tip), grow(base2)}, col);
+        d.poly({grow(base1), grow(tip), grow(base2)}, col, l);
     }
 }
 
 void face(const Painter& d, const CatPose& p) {
     auto head = [&](Vec2f v) { return add(p.head, rotate(v, p.headTilt)); };
-    Vec2f eye = head({3.8f, -1.2f});
-    if (p.eyes > 0.15f) {
-        d.c.Ellipse(d.m(eye), d.w(1.9f), d.w(2.4f * p.eyes), 0, kEye);
-        d.c.Ellipse(d.m(eye), d.w(0.55f), d.w(2.0f * p.eyes), 0, kPupil);
-    } else {
-        // Closed: a sleepy curve.
-        d.line(head({2.2f, -0.6f}), head({3.8f, 0.2f}), 0.8f, kLid);
-        d.line(head({3.8f, 0.2f}), head({5.4f, -0.6f}), 0.8f, kLid);
+    // Both eyes, the far one hidden behind her head unless she's turned
+    // towards the viewer, and narrower the more side on each is.
+    for (float l : {2.6f, -2.6f}) {
+        Vec2f eye = head({3.8f, -1.2f});
+        float k = std::clamp((d.depth(eye.x, l, p.head.x) + 0.5f) / 3, 0.0f, 1.0f);
+        if (k <= 0) continue;
+        if (p.eyes > 0.15f) {
+            d.c.Ellipse(d.m(eye, l), d.w(1.9f * (0.5f + 0.5f * k)), d.w(2.4f * p.eyes), 0, kEye);
+            d.c.Ellipse(d.m(eye, l), d.w(0.55f), d.w(2.0f * p.eyes), 0, kPupil);
+        } else {
+            // Closed: a sleepy curve.
+            d.line(head({2.2f, -0.6f}), head({3.8f, 0.2f}), 0.8f, kLid, l);
+            d.line(head({3.8f, 0.2f}), head({5.4f, -0.6f}), 0.8f, kLid, l);
+        }
     }
     if (p.yawn > 0.3f) d.c.Ellipse(d.m(head({8.5f, 4.6f})), d.w(1.4f), d.w(2.4f * p.yawn), 0, kMouth);
-    for (float dy : {-0.6f, 1.0f}) d.line(head({9, 2 + dy}), head({15, 1 + dy * 2.2f}), 0.45f, kWhisker);
+    // Whiskers both sides, fanning out, the far ones only once she's
+    // turned enough to show them.
+    bool far = std::sin(d.angle(p.head.x)) > 0.25f;
+    for (float side : {1.0f, -1.0f}) {
+        if (side < 0 && !far) continue;
+        for (float dy : {-0.6f, 1.0f}) {
+            Vec2f a = head({9, 2 + dy}), b = head({15, 1 + dy * 2.2f});
+            d.c.Line(d.m(a, side * 1.5f), d.m(b, side * 6), d.w(0.45f), kWhisker);
+        }
+    }
 }
 
 // zs float up from her head while she's asleep: a small z, rising, growing
@@ -283,10 +316,15 @@ void zs(const Painter& d, const Cat& cat, double t) {
 
 void DrawCat(Canvas& c, const Cat& cat, double t, Vec2f floor, float size) {
     Painter d{c, floor, cat.x, cat.facing, size};
-    d.c.Ellipse(d.m({0, 0.5f}), d.w(26 * std::max(0.25f, std::fabs(cat.facing))), d.w(2.6f), 0, kShadow);
+    // Turning round, her head comes round first, towards the viewer, and
+    // her hips follow.
+    d.headTurn = kPi * smooth(cat.turn * 1.4f);
+    d.hipsTurn = kPi * smooth(cat.turn * 1.4f - 0.4f);
+    float across = std::fabs(std::cos((d.headTurn + d.hipsTurn) / 2));
+    d.c.Ellipse(d.m({0, 0.5f}), d.w(26 * std::max(0.55f, across)), d.w(2.6f + 0.8f * (1 - across)), 0, kShadow);
     silhouette(d, cat.pose, 1.1f, kRim);
     silhouette(d, cat.pose, 0, kFur);
-    if (std::fabs(cat.facing) > 0.3f) face(d, cat.pose);
+    face(d, cat.pose);
     zs(d, cat, t);
 }
 

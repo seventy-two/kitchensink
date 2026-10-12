@@ -486,7 +486,7 @@ static void testCat() {
             for (const Vec2f& paw : c.pose.paw) CHECK(paw.y <= 0.01f);
             CHECK(std::isfinite(c.x) && std::fabs(c.facing) <= 1);
             walked = walked || std::fabs(c.x - lastX) > 0.01f;
-            turned = turned || std::fabs(c.facing) < 0.5f;
+            turned = turned || (c.turn > 0.4f && c.turn < 0.6f);
             yawned = yawned || c.pose.yawn > 0.9f;
             asleep += c.asleep >= 1;
             lastX = c.x;
