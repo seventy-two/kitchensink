@@ -1029,7 +1029,10 @@ void App::chips(const std::vector<Stat>& stats, float width) {
     float h = pad.y * 2 + labelH + valueH + detailH;
     float iconSize = std::round(std::clamp(inner - beside - gap, valueH * 1.2f, labelH + valueH));
 
+    // A pixel out to the left: a faint block's edge looks further in than
+    // the bright text it lines up with in other panels.
     ImVec2 origin = ImGui::GetCursorScreenPos();
+    origin.x -= std::round(scale_);
     int perRow = std::max(1, int((width + gap) / (w + gap)));
     bool levels = std::any_of(stats.begin(), stats.end(), [](const Stat& s) { return s.hasLevel; });
     ImGui::BeginGroup();
