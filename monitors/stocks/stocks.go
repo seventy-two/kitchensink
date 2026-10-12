@@ -33,7 +33,8 @@ type Config struct {
 	// of the biggest movers. Any not in Symbols are watched too.
 	Holdings []string `json:"holdings"`
 	// MovePct notifies each time a symbol's daily move passes another
-	// multiple of it, so 5 notifies at 5%, 10%, 15%... either way. 0 turns
+	// multiple of it, so 5 notifies at 5%, 10%, 15%... either way, while
+	// its market is open. With Holdings set, only holdings notify. 0 turns
 	// move alerts off. It defaults to 5.
 	MovePct *float64 `json:"movePct"`
 	// Targets notify when a symbol's price crosses above or below a level.
@@ -228,9 +229,13 @@ func (m *Monitor) held(q quote) bool {
 
 // moveEvents notifies for each multiple of movePct the day's move has
 // passed. Keys include the trading day, so each level fires once a day.
+// Only the regular session counts: before the open CNBC still shows the
+// last session's move, and its day can come back wrong, which once
+// notified Friday's moves again on Monday morning. With holdings set,
+// other symbols are only watched.
 func (m *Monitor) moveEvents(q quote) []monitor.Event {
 	pct, ok := parsePct(q.ChangePct)
-	if !ok || m.movePct <= 0 {
+	if !ok || m.movePct <= 0 || q.MarketStatus != "REG_MKT" || len(m.rank) > 0 && !m.held(q) {
 		return nil
 	}
 	steps := int(math.Abs(pct) / m.movePct)

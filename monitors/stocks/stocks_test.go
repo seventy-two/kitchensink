@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -59,8 +60,19 @@ func TestPollTable(t *testing.T) {
 	assert.Empty(t, res.Events, "no move reaches the default 5%")
 }
 
+// openQuotes is the quotes fixture with every market in its regular
+// session, saved to a temporary file.
+func openQuotes(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile("testdata/quotes.json")
+	require.NoError(t, err)
+	path := filepath.Join(t.TempDir(), "quotes.json")
+	require.NoError(t, os.WriteFile(path, []byte(strings.ReplaceAll(string(b), `"POST_MKT"`, `"REG_MKT"`)), 0o600))
+	return path
+}
+
 func TestMoveEvents(t *testing.T) {
-	srv := monitortest.Serve(t, "testdata/quotes.json")
+	srv := monitortest.Serve(t, openQuotes(t))
 	m := newMonitor(t, srv.URL, map[string]any{"movePct": 1})
 	res, err := m.Poll(context.Background(), monitortest.Env(now))
 	require.NoError(t, err)
@@ -87,6 +99,20 @@ func TestMoveEvents(t *testing.T) {
 	res, err = off.Poll(context.Background(), monitortest.Env(now))
 	require.NoError(t, err)
 	assert.Empty(t, res.Events)
+
+	held := newMonitor(t, srv.URL, map[string]any{"movePct": 1, "holdings": []string{"tsla"}})
+	res, err = held.Poll(context.Background(), monitortest.Env(now))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"move:TSLA:2026-10-09:up2"}, monitortest.Keys(res.Events), "only holdings notify")
+}
+
+func TestMovesOnlyInTheSession(t *testing.T) {
+	// AAPL and TSLA have closed; the FTSE is open.
+	srv := monitortest.Serve(t, "testdata/quotes.json")
+	m := newMonitor(t, srv.URL, map[string]any{"movePct": 1})
+	res, err := m.Poll(context.Background(), monitortest.Env(now))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"move:.FTSE:2026-10-09:up1"}, monitortest.Keys(res.Events))
 }
 
 func TestTargetsNotifyOncePerCrossing(t *testing.T) {
