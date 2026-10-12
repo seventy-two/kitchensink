@@ -95,11 +95,25 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	if nerr == nil {
 		out.Events = append(out.Events, n.Events...)
 	}
+	// Blocks: the fantasy matchups, the NFL's scores, then the plays.
+	var fantasyBlocks, nflBlocks []monitor.Block
+	if m.lastFantasy != nil {
+		fantasyBlocks = m.lastFantasy.Blocks
+	}
+	if m.lastNFL != nil {
+		nflBlocks = m.lastNFL.Blocks
+	}
+	if len(fantasyBlocks) > 0 {
+		out.Blocks = append(out.Blocks, fantasyBlocks[0])
+	}
+	out.Blocks = append(out.Blocks, nflBlocks...)
+	if len(fantasyBlocks) > 1 {
+		out.Blocks = append(out.Blocks, fantasyBlocks[1:]...)
+	}
 	for _, r := range []*monitor.Result{m.lastFantasy, m.lastNFL} {
 		if r == nil {
 			continue
 		}
-		out.Blocks = append(out.Blocks, r.Blocks...)
 		out.Summary = append(out.Summary, r.Summary...)
 		out.Timely = out.Timely || r.Timely
 		if r.Next > 0 && (out.Next == 0 || r.Next < out.Next) {

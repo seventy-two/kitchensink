@@ -53,8 +53,9 @@ configs as `nfl` and `fantasy`) as one panel. Its summary is a chip per
 fantasy league, then at most `games` (default 4) of the week's games, on
 one line each: the followed teams' first, then today's games with any of
 your fantasy players in them, live ones first, then those to come, then
-those over. Its panel holds both monitors' blocks, and each keeps its own
-state (under `nfl/` and `fantasy/`).
+those over. Its panel is the fantasy matchups, the NFL's week of scores,
+then your players' plays, and each part keeps its own state (under `nfl/`
+and `fantasy/`).
 
 ### Portfolio
 
