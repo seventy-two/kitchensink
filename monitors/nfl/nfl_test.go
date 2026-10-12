@@ -167,3 +167,38 @@ func TestTouchdownHeldForTry(t *testing.T) {
 	clock = clock.Add(30 * time.Second)
 	assert.Equal(t, []string{"score:1:15-14"}, poll("15", "14"), "and stays out")
 }
+
+func TestPrefer(t *testing.T) {
+	srv := monitortest.Serve(t, "testdata/scoreboard.json")
+	poll := func(teams, prefer []string, most int) []monitor.Stat {
+		t.Helper()
+		m := newMonitor(t, srv.URL, map[string]any{"teams": teams})
+		m.Prefer(prefer, most)
+		res, err := m.Poll(context.Background(), monitortest.Env(now))
+		require.NoError(t, err)
+		assert.Equal(t, monitor.SummaryChips, res.SummaryStyle)
+		return res.Summary
+	}
+	labels := func(stats []monitor.Stat) []string {
+		var out []string
+		for _, s := range stats {
+			out = append(out, s.Label)
+		}
+		return out
+	}
+
+	// Only today's games with preferred teams in them.
+	got := poll(nil, []string{"jax"}, 4)
+	assert.Equal(t, []monitor.Stat{{Label: "PHI @ JAX", Detail: "14:30"}}, got)
+
+	// Live before those to come, then those over; at most most.
+	assert.Equal(t, []string{"CHI @ GB", "PHI @ JAX"}, labels(poll(nil, []string{"JAX", "GB", "DAL"}, 2)))
+
+	// A followed team's game comes first, even from earlier in the week.
+	got = poll([]string{"TB"}, []string{"JAX"}, 4)
+	assert.Equal(t, []string{"TB @ DAL", "PHI @ JAX"}, labels(got))
+	assert.Equal(t, monitor.Stat{Label: "TB @ DAL", Value: "24–16", Detail: "Final", Tone: monitor.ToneAccent}, got[0])
+
+	// Nothing preferred or followed: no games.
+	assert.Empty(t, poll(nil, []string{}, 4))
+}

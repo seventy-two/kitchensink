@@ -36,19 +36,17 @@
       }
     },
     {
-      "type": "nfl",
-      "title": "NFL",
-      "interval": "30m",
-      "config": { "teams": ["CHI"], "timezone": "Europe/London" }
-    },
-    {
-      "type": "fantasy",
-      "title": "Fantasy",
+      "type": "football",
+      "title": "Football",
       "interval": "5m",
       "config": {
-        "sleeperUser": "your-sleeper-name",
-        "espn": [{ "leagueId": "123456", "s2": "${ESPN_S2}", "swid": "${ESPN_SWID}" }],
-        "names": { "123456": "Work" }
+        "nfl": { "teams": ["CHI"], "timezone": "Europe/London" },
+        "fantasy": {
+          "sleeperUser": "your-sleeper-name",
+          "espn": [{ "leagueId": "123456", "s2": "${ESPN_S2}", "swid": "${ESPN_SWID}" }],
+          "names": { "123456": "Work" }
+        },
+        "games": 4
       }
     },
     {

@@ -58,7 +58,14 @@ type Config struct {
 type Monitor struct {
 	cfg  Config
 	live time.Duration
+	// teams are the NFL teams the user has players or a defence on, as of
+	// the last poll.
+	teams []string
 }
+
+// Teams are the NFL teams the user has players or a defence on, as of the
+// last poll, by abbreviation.
+func (m *Monitor) Teams() []string { return m.teams }
 
 // New builds the monitor from its JSON config.
 func New(raw json.RawMessage) (*Monitor, error) {
@@ -152,6 +159,11 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	for t := range r.Defences {
 		watched[t] = true
 	}
+	m.teams = m.teams[:0]
+	for t := range watched {
+		m.teams = append(m.teams, t)
+	}
+	sort.Strings(m.teams)
 
 	var events []monitor.Event
 	var next time.Duration

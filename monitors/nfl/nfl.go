@@ -47,6 +47,22 @@ type Monitor struct {
 	scores bool
 	zone   *time.Location
 	live   time.Duration
+	// prefer and most, if set by Prefer, choose the summary's games.
+	prefer map[string]bool
+	most   int
+}
+
+// Prefer narrows the summary to a few games, for sharing a panel, each
+// with its teams on one line: the
+// followed teams' games this week, then today's games with any of teams
+// in them, live ones first, then those to come, then those over. At most
+// most are shown.
+func (m *Monitor) Prefer(teams []string, most int) {
+	m.prefer = map[string]bool{}
+	for _, t := range teams {
+		m.prefer[strings.ToUpper(t)] = true
+	}
+	m.most = most
 }
 
 // New builds the monitor from its JSON config.
@@ -202,7 +218,9 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		events = append(events, m.gameEvents(g, held[g.id])...)
 	}
 	summary, style := m.today(games, env.Now())
-	if summary == nil {
+	if m.prefer != nil {
+		summary, style = m.chosen(games, env.Now()), monitor.SummaryChips
+	} else if summary == nil {
 		summary, style = m.summary(week, games), monitor.SummaryTiles
 	}
 	return monitor.Result{
@@ -412,25 +430,78 @@ func (m *Monitor) today(games []game, now time.Time) ([]monitor.Stat, monitor.Su
 	sort.SliceStable(todays, func(i, j int) bool { return todays[i].kickoff.Before(todays[j].kickoff) })
 	var out []monitor.Stat
 	for _, g := range todays {
-		s := monitor.Stat{Label: g.away + "\n" + g.home, Value: g.awayScore + "–" + g.homeScore}
-		switch g.state {
-		case "pre":
-			// Kick-off small, with no value: the channel is in the table.
-			s.Value = ""
-			s.Detail = g.kickoff.In(m.zone).Format("15:04")
-		case "in":
-			s.Detail = clock(g.detail)
-			s.Tone = monitor.ToneWarn
-		case "post":
-			s.Detail = "Final"
-			s.Tone = monitor.ToneMuted
-		}
-		if m.followed(g) {
-			s.Tone = monitor.ToneAccent
-		}
-		out = append(out, s)
+		out = append(out, m.chip(g, true, false))
 	}
 	return out, monitor.SummaryChips
+}
+
+// chip is a game's chip: the teams, stacked or on one line, then the
+// kick-off time, small in place of a value (with the day, if it isn't
+// today), the score and clock, or the final score.
+func (m *Monitor) chip(g game, stacked, day bool) monitor.Stat {
+	sep := " @ "
+	if stacked {
+		sep = "\n"
+	}
+	s := monitor.Stat{Label: g.away + sep + g.home, Value: g.awayScore + "–" + g.homeScore}
+	switch g.state {
+	case "pre":
+		layout := "15:04"
+		if day {
+			layout = "Mon 15:04"
+		}
+		s.Value, s.Detail = "", g.kickoff.In(m.zone).Format(layout)
+	case "in":
+		s.Detail = clock(g.detail)
+		s.Tone = monitor.ToneWarn
+	case "post":
+		s.Detail = "Final"
+		s.Tone = monitor.ToneMuted
+	}
+	if m.followed(g) {
+		s.Tone = monitor.ToneAccent
+	}
+	return s
+}
+
+// chosen is the summary narrowed by Prefer.
+func (m *Monitor) chosen(games []game, now time.Time) []monitor.Stat {
+	day := now.In(newYork).Format("2006-01-02")
+	rank := func(g game) int {
+		today := g.kickoff.In(newYork).Format("2006-01-02") == day || g.state == "in"
+		switch {
+		case m.followed(g):
+			return 0
+		case !today || !m.prefer[g.home] && !m.prefer[g.away]:
+			return -1
+		case g.state == "in":
+			return 1
+		case g.state == "pre":
+			return 2
+		}
+		return 3
+	}
+	var picked []game
+	for _, g := range games {
+		if rank(g) >= 0 {
+			picked = append(picked, g)
+		}
+	}
+	sort.SliceStable(picked, func(i, j int) bool {
+		if ri, rj := rank(picked[i]), rank(picked[j]); ri != rj {
+			return ri < rj
+		}
+		return picked[i].kickoff.Before(picked[j].kickoff)
+	})
+	if m.most > 0 && len(picked) > m.most {
+		picked = picked[:m.most]
+	}
+	var out []monitor.Stat
+	for _, g := range picked {
+		// On one line: sharing a panel, chips are wider anyway.
+		out = append(out, m.chip(g, false, g.kickoff.In(newYork).Format("2006-01-02") != day))
+	}
+	return out
 }
 
 // clock shortens a live game's status for a chip: "7:42 - 2nd · 2nd & 6

@@ -24,6 +24,7 @@ notification for each event.
 | `todo` | a to-do list kept on the server, changed from clients | nothing; ticked tasks clear after `clearAfter` (default `24h`) |
 | `fantasy` | Sleeper and ESPN fantasy leagues, and ESPN's play-by-play | notable plays by players on any of your teams: touchdowns, big gains, turnovers, long or missed kicks, and your defences' takeaways, sacks and scores |
 | `calendar` | iCalendar (ICS) feeds, e.g. Google or Outlook | each timed event, `remindMinutes` (default 10) before it starts |
+| `football` | `nfl` and `fantasy` together as one panel (see below) | what each of them notifies |
 
 Each monitor also returns a dashboard panel and a short summary (shown when
 space is short), polls on its own interval and can ask to be polled sooner
@@ -44,6 +45,16 @@ fumbles lost, 50+ yard and missed kicks, and your defences' takeaways,
 sacks, safeties and scores. Plays called back for penalties don't count.
 Its summary is a chip per league with your live matchup score; `names`
 gives leagues shorter names by ID. Rosters are read again every six hours.
+
+### Football
+
+The `football` monitor runs an `nfl` and a `fantasy` monitor (their
+configs as `nfl` and `fantasy`) as one panel. Its summary is a chip per
+fantasy league, then at most `games` (default 4) of the week's games, on
+one line each: the followed teams' first, then today's games with any of
+your fantasy players in them, live ones first, then those to come, then
+those over. Its panel holds both monitors' blocks, and each keeps its own
+state (under `nfl/` and `fantasy/`).
 
 ### Portfolio
 
