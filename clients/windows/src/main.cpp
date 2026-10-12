@@ -182,25 +182,29 @@ void trayMenu() {
     }
 }
 
-// hitTest finds what part of the window a point is over. The standard
-// resize borders on the sides and bottom stay; the top one sits inside the
-// title bar the app draws.
-LRESULT hitTest(HWND h, WPARAM wParam, LPARAM lParam) {
-    LRESULT hit = DefWindowProcW(h, WM_NCHITTEST, wParam, lParam);
-    if (hit != HTCLIENT) return hit;
+// hitTest finds what part of the window a point is over. There's no
+// frame, so the resize borders are a band inside the window's own edges.
+LRESULT hitTest(HWND h, LPARAM lParam) {
     POINT pt{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
     ScreenToClient(h, &pt);
     if (!IsZoomed(h)) {
+        RECT rc;
+        GetClientRect(h, &rc);
         UINT dpi = GetDpiForWindow(h);
-        int band = GetSystemMetricsForDpi(SM_CYFRAME, dpi);
-        if (pt.y < band) {
-            RECT rc;
-            GetClientRect(h, &rc);
-            int corner = band + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi) * 2;
-            if (pt.x < corner) return HTTOPLEFT;
-            if (pt.x >= rc.right - corner) return HTTOPRIGHT;
-            return HTTOP;
-        }
+        int band = GetSystemMetricsForDpi(SM_CXFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+        int corner = band * 2;
+        bool left = pt.x < band, right = pt.x >= rc.right - band;
+        bool top = pt.y < band, bottom = pt.y >= rc.bottom - band;
+        bool nearLeft = pt.x < corner, nearRight = pt.x >= rc.right - corner;
+        bool nearTop = pt.y < corner, nearBottom = pt.y >= rc.bottom - corner;
+        if ((top && nearLeft) || (left && nearTop)) return HTTOPLEFT;
+        if ((top && nearRight) || (right && nearTop)) return HTTOPRIGHT;
+        if ((bottom && nearLeft) || (left && nearBottom)) return HTBOTTOMLEFT;
+        if ((bottom && nearRight) || (right && nearBottom)) return HTBOTTOMRIGHT;
+        if (top) return HTTOP;
+        if (bottom) return HTBOTTOM;
+        if (left) return HTLEFT;
+        if (right) return HTRIGHT;
     }
     if (app && app->InCaption(float(pt.x), float(pt.y))) return HTCAPTION;
     return HTCLIENT;
@@ -215,20 +219,21 @@ LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
     case WM_NCCALCSIZE:
         if (wParam) {
-            // Keep the standard frame except the title bar, so the window
-            // still resizes, snaps and has a shadow like any other.
+            // No frame at all: the window is all client area, with no
+            // border lines. It keeps the frame's styles so it still
+            // resizes, snaps and has a shadow like any other.
             auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam);
-            RECT before = params->rgrc[0];
-            DefWindowProcW(h, msg, wParam, lParam);
-            // A maximised window hangs over the screen edges by its frame
-            // width, so the top needs the same inset as the sides.
-            // Otherwise a pixel of frame is left at the top, where Windows
-            // draws the border line it draws on the other sides.
-            params->rgrc[0].top = before.top + (IsZoomed(h) ? params->rgrc[0].left - before.left : 1);
+            if (IsZoomed(h)) {
+                // A maximised window hangs over the screen edges by its
+                // frame width, so inset it by that on every side.
+                RECT before = params->rgrc[0];
+                DefWindowProcW(h, msg, wParam, lParam);
+                params->rgrc[0].top = before.top + (params->rgrc[0].left - before.left);
+            }
             return 0;
         }
         break;
-    case WM_NCHITTEST: return hitTest(h, wParam, lParam);
+    case WM_NCHITTEST: return hitTest(h, lParam);
     case WM_SIZE:
         if (wParam != SIZE_MINIMIZED) {
             resizeW = LOWORD(lParam);
@@ -322,7 +327,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR cmdLine, int) {
     float scale = ImGui_ImplWin32_GetDpiScaleForMonitor(MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY));
     hwnd = CreateWindowExW(0, kClassName, L"kitchensink", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
                            int(1360 * scale), int(860 * scale), nullptr, nullptr, instance, nullptr);
-    // Recalculate the frame now WM_NCCALCSIZE has removed the title bar.
+    // A sliver of DWM frame under the client area keeps the shadow; the
+    // app paints over it, so it doesn't show.
+    MARGINS margins{0, 0, 0, 1};
+    DwmExtendFrameIntoClientArea(hwnd, &margins);
+    // Recalculate the frame now WM_NCCALCSIZE has removed it.
     SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
     taskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
     if (!createDevice()) {
