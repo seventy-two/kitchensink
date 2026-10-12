@@ -123,6 +123,22 @@ func TestFormatPounds(t *testing.T) {
 	assert.Equal(t, "£0", signedPounds(0.2))
 }
 
+func TestShortPounds(t *testing.T) {
+	for v, want := range map[float64]string{
+		9_999.4:    "+£9,999",
+		-9_999.6:   "−£10k",
+		-14_123:    "−£14.1k",
+		20_010:     "+£20k",
+		99_960:     "+£100k",
+		215_400:    "+£215k",
+		999_600:    "+£1m",
+		-1_234_567: "−£1.2m",
+		0.2:        "£0",
+	} {
+		assert.Equal(t, want, shortPounds(v), "%v", v)
+	}
+}
+
 func TestPortfolioPoll(t *testing.T) {
 	var asked string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

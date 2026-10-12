@@ -243,13 +243,38 @@ func portfolioBlocks(e estimate, days []day, now time.Time) []monitor.Block {
 	return blocks
 }
 
-// portfolioStat is the summary's chip for the day.
+// portfolioStat is the summary's chip for the day. Chips share one width
+// with the watchlist's percentages, so big moves are shortened.
 func portfolioStat(e estimate) monitor.Stat {
 	if !e.Traded {
 		return monitor.Stat{Label: "Today", Value: "—", Tone: monitor.ToneMuted, Private: true}
 	}
-	return monitor.Stat{Label: "Today", Value: signedPounds(e.Gain), Tone: toneOfFloat(e.Gain), Private: true}
+	return monitor.Stat{Label: "Today", Value: shortPounds(e.Gain), Tone: toneOfFloat(e.Gain), Private: true}
 }
+
+// shortPounds is signedPounds in thousands or millions once it reaches
+// five figures, e.g. "−£14.1k", "+£215k", "+£1.2m".
+func shortPounds(v float64) string {
+	a := math.Abs(v)
+	var s string
+	switch {
+	case math.Round(a) < 10_000:
+		return signedPounds(v)
+	case math.Round(a/100) < 1_000:
+		s = trimZero(fmt.Sprintf("%.1f", a/1_000)) + "k"
+	case math.Round(a/1_000) < 1_000:
+		s = fmt.Sprintf("%.0fk", a/1_000)
+	default:
+		s = trimZero(fmt.Sprintf("%.1f", a/1_000_000)) + "m"
+	}
+	if v < 0 {
+		return "−£" + s
+	}
+	return "+£" + s
+}
+
+// trimZero drops a ".0", so £20k rather than £20.0k.
+func trimZero(s string) string { return strings.TrimSuffix(s, ".0") }
 
 func toneOfFloat(v float64) monitor.Tone {
 	switch {
