@@ -89,7 +89,17 @@ private:
     void feedHeading(float width);
     void feed();
     void cat(float width);
-    void overlayScrollbar();
+    // OverlayBar is a scrollbar drawn over a child window's right edge on
+    // hover: the strip it takes clicks in (last frame's), and whether and
+    // where it's held.
+    struct OverlayBar {
+        ImRect strip;
+        bool held = false;
+        float grab = 0;
+        bool Over(ImVec2 mouse) const { return held || strip.Contains(mouse); }
+    };
+    void overlayScrollbar(OverlayBar& bar);
+    void shieldBar(const OverlayBar& bar);
     void empty(const char* message, bool settingsButton);
     void settings();
     void openSettings();
@@ -125,12 +135,11 @@ private:
     std::unordered_map<std::string, double> refreshing_;
     bool busy_ = false;
     unsigned long frameInterval_ = 0, catInterval_ = 0;
-    // The Recent column's scrollbar, shown on hover over its content: the
-    // strip it takes clicks in (last frame's) and whether it's held.
-    ImRect feedBar_;
+    // Scrollbars shown on hover: the Recent column's, the panels column's
+    // and each panel's that's cut short to fit.
+    OverlayBar feedBar_, cardsBar_;
+    std::unordered_map<std::string, OverlayBar> bodyBars_;
     ImRect feedRect_;  // the Recent column, last frame
-    bool feedBarHeld_ = false;
-    float feedBarGrab_ = 0;
 
     // Checklist ticks shown before the server confirms them, by
     // "monitor/item", with when they were made; a snapshot replaces them.

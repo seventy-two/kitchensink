@@ -48,7 +48,7 @@ result is a single `kitchensink.exe` with nothing to install.
   arches her back, sometimes wanders to another spot, and curls up again.
   Asleep she needs ten frames a second, awake about thirty, and none while
   the window's minimised or dimmed.
-- The Recent column's scrollbar only shows while the mouse is over it,
+- Scrollbars (the Recent column's, the panels column's and a panel cut short to fit) only show while the mouse is over them,
   thin and over the cards, so it doesn't take width from them.
 - Hovering a Recent card shows an × that clears it; the × by the heading
   (shown while the mouse is over the column) clears them all. Cleared events stay cleared after a restart (they're

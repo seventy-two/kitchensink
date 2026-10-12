@@ -306,7 +306,7 @@ void App::Frame() {
             ImGui::BeginChild("##feed", ImVec2(feedW, 0), ImGuiChildFlags_None,
                               ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar);
             feed();
-            overlayScrollbar();
+            overlayScrollbar(feedBar_);
             ImGui::EndChild();
             ImGui::EndGroup();
             feedRect_ = ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
@@ -315,8 +315,13 @@ void App::Frame() {
             drawFeed();
             ImGui::SameLine(0, gap);
         }
-        ImGui::BeginChild("##cards", ImVec2(cardsW, 0), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
+        // Like Recent's, its scrollbar only shows on hover, over the panels,
+        // so they don't narrow when it's needed.
+        ImGui::BeginChild("##cards", ImVec2(cardsW, 0), ImGuiChildFlags_None,
+                          ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar);
+        shieldBar(cardsBar_);
         cards(ImGui::GetContentRegionAvail().x);
+        overlayScrollbar(cardsBar_);
         ImGui::EndChild();
         if (feedW > 0 && !feedFirst) {
             ImGui::SameLine(0, gap);
@@ -869,10 +874,14 @@ float App::compactCard(const Snapshot& s, float width, Show show, float body, bo
 
         ImGui::SetCursorScreenPos(top);
         bool clip = show == Show::Clipped;
+        // Cut short, it scrolls, with its scrollbar over it on hover rather
+        // than narrowing it.
         ImGui::BeginChild("##body", ImVec2(avail - strip, clip ? body : 0),
                           clip ? ImGuiChildFlags_None : ImGuiChildFlags_AutoResizeY,
-                          ImGuiWindowFlags_NoBackground |
-                              (clip ? 0 : ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse));
+                          ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar |
+                              (clip ? 0 : ImGuiWindowFlags_NoScrollWithMouse));
+        OverlayBar* bar = clip && clicked ? &bodyBars_[s.monitor] : nullptr;
+        if (bar) shieldBar(*bar);
         if (!s.subtitle.empty()) {
             ImGui::PushFont(fonts_.caption);
             wrapped(s.subtitle, p.muted);
@@ -889,6 +898,7 @@ float App::compactCard(const Snapshot& s, float width, Show show, float body, bo
             block(s.monitor, s.blocks[i]);
             ImGui::PopID();
         }
+        if (bar) overlayScrollbar(*bar);
         ImGui::EndChild();
         float bottom = std::max(ImGui::GetItemRectMax().y, top.y + lineH);
         ImGui::SetCursorScreenPos(ImVec2(top.x, bottom));
@@ -1470,14 +1480,14 @@ void App::cat(float width) {
 // current child window while the mouse is over it, in place of ImGui's,
 // which takes width from the content all the time. It can be dragged, or
 // clicked to jump. Call it last, before EndChild.
-void App::overlayScrollbar() {
+void App::overlayScrollbar(OverlayBar& bar) {
     const ImGuiIO& io = ImGui::GetIO();
     ImGuiWindow* w = ImGui::GetCurrentWindow();
     float maxY = ImGui::GetScrollMaxY();
     ImRect r = w->InnerRect;
-    feedBar_ = ImRect();
+    bar.strip = ImRect();
     if (maxY <= 0) {
-        feedBarHeld_ = false;
+        bar.held = false;
         return;
     }
     float track = r.GetHeight();
@@ -1489,20 +1499,36 @@ void App::overlayScrollbar() {
 
     bool overContent = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
     bool overStrip = overContent && strip.Contains(io.MousePos);
-    if (feedBarHeld_) {
-        if (!io.MouseDown[0]) feedBarHeld_ = false;
-        else ImGui::SetScrollY(std::clamp((io.MousePos.y - feedBarGrab_ - r.Min.y) / (track - thumbH), 0.0f, 1.0f) * maxY);
+    if (bar.held) {
+        if (!io.MouseDown[0]) bar.held = false;
+        else ImGui::SetScrollY(std::clamp((io.MousePos.y - bar.grab - r.Min.y) / (track - thumbH), 0.0f, 1.0f) * maxY);
     } else if (overStrip && io.MouseClicked[0]) {
         // On the thumb, drag it from where it was caught; elsewhere, jump
         // there and drag from its middle.
-        feedBarGrab_ = thumb.Contains(io.MousePos) ? io.MousePos.y - thumb.Min.y : thumbH / 2;
-        feedBarHeld_ = true;
+        bar.grab = thumb.Contains(io.MousePos) ? io.MousePos.y - thumb.Min.y : thumbH / 2;
+        bar.held = true;
     }
-    if (overContent || feedBarHeld_) {
+    if (overContent || bar.held) {
         const Palette& p = Colours();
-        w->DrawList->AddRectFilled(thumb.Min, thumb.Max, u32(overStrip || feedBarHeld_ ? p.muted : p.border), barW / 2);
-        feedBar_ = strip;
+        // On top: the panels column's content is child windows, drawn over
+        // its own draw list.
+        ImDrawList* dl = ImGui::GetForegroundDrawList();
+        dl->PushClipRect(r.Min, r.Max);
+        dl->AddRectFilled(thumb.Min, thumb.Max, u32(overStrip || bar.held ? p.muted : p.border), barW / 2);
+        dl->PopClipRect();
+        bar.strip = strip;
     }
+}
+
+// shieldBar keeps clicks on a scrollbar from reaching what's under it, by
+// putting an item over its strip ahead of the content: ImGui gives the
+// mouse to the first item submitted. Call it first, after BeginChild.
+void App::shieldBar(const OverlayBar& bar) {
+    if (!bar.Over(ImGui::GetIO().MousePos) || bar.strip.GetWidth() <= 0) return;
+    ImVec2 at = ImGui::GetCursorScreenPos();
+    ImGui::SetCursorScreenPos(bar.strip.Min);
+    ImGui::InvisibleButton("##bar", bar.strip.GetSize());
+    ImGui::SetCursorScreenPos(at);
 }
 
 // feedHeading is the Recent column's heading, above its scrolling cards,
@@ -1551,7 +1577,7 @@ void App::feed() {
     int64_t t = now();
     size_t shown = 0;
     // Clicks on the scrollbar aren't for the card under it.
-    bool onBar = feedBarHeld_ || feedBar_.Contains(io.MousePos);
+    bool onBar = feedBar_.Over(io.MousePos);
     int64_t clear = 0;
     for (const auto& e : events) {
         if (++shown > 150) break;
