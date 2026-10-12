@@ -11,6 +11,8 @@ notification for each event.
   [server-sent events](https://html.spec.whatwg.org/multipage/server-sent-events.html)
   stream.
 - **Windows dashboard**: native C++ (Win32, Dear ImGui), in `clients/windows`.
+- **Android app** for phones, tablets and Android TV: Kotlin and Jetpack
+  Compose, in `clients/android`.
 - Optional **ntfy** notifier, for phones without a kitchensink client.
 
 ## Monitors

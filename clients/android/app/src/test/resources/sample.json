@@ -1,0 +1,999 @@
+{
+ "monitors": [
+  {
+   "monitor": "calendar",
+   "kind": "calendar",
+   "title": "Calendar",
+   "updated": "2026-10-12T14:52:03Z",
+   "blocks": [
+    {
+     "type": "table",
+     "title": "Today · Monday 12 October",
+     "columns": [
+      {
+       "title": ""
+      },
+      {
+       "title": "",
+       "fill": true
+      }
+     ],
+     "rows": [
+      [
+       {
+        "text": "19:15–20:15",
+        "tone": "muted"
+       },
+       {
+        "text": "Five-a-side",
+        "detail": "Powerleague · pitch 4"
+       }
+      ]
+     ]
+    },
+    {
+     "type": "table",
+     "title": "Tomorrow · Tuesday 13 October",
+     "columns": [
+      {
+       "title": ""
+      },
+      {
+       "title": "",
+       "fill": true
+      }
+     ],
+     "rows": [
+      [
+       {
+        "text": "All day",
+        "tone": "muted"
+       },
+       {
+        "text": "Gig",
+        "detail": "Some band · doors 19:00 · The Fleece, Bristol"
+       }
+      ],
+      [
+       {
+        "text": "09:30–10:00",
+        "tone": "muted"
+       },
+       {
+        "text": "Dentist"
+       }
+      ]
+     ]
+    }
+   ],
+   "summary": [
+    {
+     "label": "19:15",
+     "value": "Five-a-side"
+    },
+    {
+     "label": "Tomorrow",
+     "value": "Gig"
+    }
+   ]
+  },
+  {
+   "monitor": "todo",
+   "kind": "todo",
+   "title": "To do",
+   "updated": "2026-10-12T14:52:03Z",
+   "blocks": [
+    {
+     "type": "checklist",
+     "addHint": "Add a task…",
+     "items": [
+      {
+       "id": "a",
+       "title": "Bins out",
+       "done": true
+      },
+      {
+       "id": "b",
+       "title": "Book the MOT"
+      },
+      {
+       "id": "c",
+       "title": "Return the parcel"
+      }
+     ]
+    }
+   ],
+   "summary": [
+    {
+     "label": "To do",
+     "value": "2 left"
+    }
+   ]
+  },
+  {
+   "monitor": "stocks",
+   "kind": "stocks",
+   "title": "Watchlist",
+   "updated": "2026-10-12T14:52:03Z",
+   "timely": true,
+   "summaryStyle": "chips",
+   "blocks": [
+    {
+     "type": "stats",
+     "private": true,
+     "stats": [
+      {
+       "label": "Portfolio",
+       "value": "£12,345"
+      },
+      {
+       "label": "Today",
+       "value": "−£123",
+       "detail": "-1.00%",
+       "tone": "bad"
+      }
+     ]
+    },
+    {
+     "type": "table",
+     "title": "Moving it most today",
+     "private": true,
+     "columns": [
+      {
+       "title": "",
+       "fill": true
+      },
+      {
+       "title": "",
+       "align": "right"
+      }
+     ],
+     "rows": [
+      [
+       {
+        "text": "ACME"
+       },
+       {
+        "text": "−£80",
+        "tone": "bad"
+       }
+      ],
+      [
+       {
+        "text": "GLOBEX"
+       },
+       {
+        "text": "+£12",
+        "tone": "good"
+       }
+      ]
+     ]
+    },
+    {
+     "type": "table",
+     "columns": [
+      {
+       "title": "Symbol"
+      },
+      {
+       "title": "Name"
+      },
+      {
+       "title": "Last",
+       "align": "right"
+      },
+      {
+       "title": "Change",
+       "align": "right"
+      },
+      {
+       "title": "%",
+       "align": "right"
+      },
+      {
+       "title": "1w",
+       "align": "right"
+      }
+     ],
+     "rows": [
+      [
+       {
+        "text": "ACME",
+        "tone": "accent",
+        "url": "https://example.com/ACME"
+       },
+       {
+        "text": "Acme Corporation",
+        "tone": "muted"
+       },
+       {
+        "text": "225.67"
+       },
+       {
+        "text": "-3.61",
+        "tone": "bad"
+       },
+       {
+        "text": "-1.57%",
+        "tone": "bad"
+       },
+       {
+        "text": "-5.54%",
+        "tone": "bad"
+       }
+      ],
+      [
+       {
+        "text": "GLOBEX",
+        "tone": "accent",
+        "url": "https://example.com/GLOBEX"
+       },
+       {
+        "text": "Globex Inc.",
+        "tone": "muted"
+       },
+       {
+        "text": "587.86"
+       },
+       {
+        "text": "+2.25",
+        "tone": "good"
+       },
+       {
+        "text": "+0.38%",
+        "tone": "good"
+       },
+       {
+        "text": "+1.95%",
+        "tone": "good"
+       }
+      ],
+      [
+       {
+        "text": "INITECH",
+        "tone": "accent",
+        "url": "https://example.com/INITECH"
+       },
+       {
+        "text": "Initech Holdings plc",
+        "tone": "muted"
+       },
+       {
+        "text": "98.10"
+       },
+       {
+        "text": "-0.40",
+        "tone": "bad"
+       },
+       {
+        "text": "-0.41%",
+        "tone": "bad"
+       },
+       {
+        "text": "+0.20%",
+        "tone": "good"
+       }
+      ],
+      [
+       {
+        "text": ".FTSE",
+        "tone": "accent",
+        "url": "https://example.com/.FTSE"
+       },
+       {
+        "text": "FTSE 100 Index",
+        "tone": "muted"
+       },
+       {
+        "text": "9,402.1"
+       },
+       {
+        "text": "+11.2",
+        "tone": "good"
+       },
+       {
+        "text": "+0.12%",
+        "tone": "good"
+       },
+       {
+        "text": "+0.84%",
+        "tone": "good"
+       }
+      ]
+     ]
+    }
+   ],
+   "summary": [
+    {
+     "label": "Today",
+     "value": "−£123",
+     "tone": "bad",
+     "private": true
+    },
+    {
+     "label": "ACME",
+     "value": "-1.6%",
+     "tone": "bad"
+    },
+    {
+     "label": "GLOBEX",
+     "value": "+0.4%",
+     "tone": "good"
+    },
+    {
+     "label": "INITECH",
+     "value": "-0.4%",
+     "tone": "bad"
+    },
+    {
+     "label": "FTSE",
+     "value": "+0.1%",
+     "tone": "good"
+    }
+   ]
+  },
+  {
+   "monitor": "football",
+   "kind": "football",
+   "title": "Football",
+   "updated": "2026-10-12T14:52:03Z",
+   "summaryStyle": "chips",
+   "blocks": [
+    {
+     "type": "table",
+     "columns": [
+      {
+       "title": "League"
+      },
+      {
+       "title": "You",
+       "align": "right"
+      },
+      {
+       "title": "Them",
+       "align": "right"
+      },
+      {
+       "title": "Opponent",
+       "fill": true
+      }
+     ],
+     "rows": [
+      [
+       {
+        "text": "Dynasty"
+       },
+       {
+        "text": "101.7",
+        "tone": "bad"
+       },
+       {
+        "text": "157.0"
+       },
+       {
+        "text": "Gridiron Gnomes",
+        "tone": "muted"
+       }
+      ],
+      [
+       {
+        "text": "Work"
+       },
+       {
+        "text": "71.0",
+        "tone": "good"
+       },
+       {
+        "text": "66.1"
+       },
+       {
+        "text": "Taco Corp",
+        "tone": "muted"
+       }
+      ]
+     ]
+    },
+    {
+     "type": "table",
+     "title": "Week 5",
+     "columns": [
+      {
+       "title": "Away"
+      },
+      {
+       "title": "",
+       "align": "right"
+      },
+      {
+       "title": "Home"
+      },
+      {
+       "title": "",
+       "align": "right"
+      },
+      {
+       "title": "Status",
+       "fill": true
+      }
+     ],
+     "rows": [
+      [
+       {
+        "text": "Bills"
+       },
+       {
+        "text": ""
+       },
+       {
+        "text": "Rams"
+       },
+       {
+        "text": ""
+       },
+       {
+        "text": "Tue 01:15 ESPN",
+        "tone": "muted"
+       }
+      ],
+      [
+       {
+        "text": "Colts",
+        "tone": "accent"
+       },
+       {
+        "text": "22"
+       },
+       {
+        "text": "Steelers"
+       },
+       {
+        "text": "34",
+        "tone": "good"
+       },
+       {
+        "text": "Final"
+       }
+      ],
+      [
+       {
+        "text": "Eagles"
+       },
+       {
+        "text": "17"
+       },
+       {
+        "text": "Jaguars"
+       },
+       {
+        "text": "19",
+        "tone": "good"
+       },
+       {
+        "text": "Final"
+       }
+      ],
+      [
+       {
+        "text": "Giants"
+       },
+       {
+        "text": "27"
+       },
+       {
+        "text": "Commanders"
+       },
+       {
+        "text": "27"
+       },
+       {
+        "text": "Final/OT"
+       }
+      ]
+     ]
+    },
+    {
+     "type": "table",
+     "title": "Plays",
+     "columns": [
+      {
+       "title": ""
+      },
+      {
+       "title": "",
+       "fill": true
+      }
+     ],
+     "rows": [
+      [
+       {
+        "text": "Q4 2:01",
+        "tone": "muted"
+       },
+       {
+        "text": "Touchdown: 51-yard catch",
+        "detail": "PHI @ JAX · Dynasty"
+       }
+      ],
+      [
+       {
+        "text": "Q3 9:44",
+        "tone": "muted"
+       },
+       {
+        "text": "Interception thrown",
+        "tone": "bad",
+        "detail": "IND @ PIT · Work"
+       }
+      ]
+     ]
+    }
+   ],
+   "summary": [
+    {
+     "label": "Dynasty",
+     "value": "102–157",
+     "tone": "bad"
+    },
+    {
+     "label": "Work",
+     "value": "71–66",
+     "tone": "good"
+    },
+    {
+     "label": "IND @ PIT",
+     "value": "22–34",
+     "detail": "Final",
+     "tone": "bad"
+    },
+    {
+     "label": "BUF @ LAR",
+     "value": "01:15",
+     "tone": "muted"
+    }
+   ]
+  },
+  {
+   "monitor": "weather",
+   "kind": "weather",
+   "title": "Weather",
+   "updated": "2026-10-12T14:52:03Z",
+   "summaryStyle": "chips",
+   "blocks": [
+    {
+     "type": "stats",
+     "title": "Bristol",
+     "stats": [
+      {
+       "label": "Now",
+       "value": "20°C",
+       "detail": "Drizzle",
+       "icon": "drizzle"
+      },
+      {
+       "label": "Feels like",
+       "value": "19°C"
+      },
+      {
+       "label": "Wind",
+       "value": "7 mph",
+       "detail": "gusts 15"
+      },
+      {
+       "label": "Rain, next 2h",
+       "value": "1.0 mm",
+       "tone": "accent",
+       "series": [
+        0.1,
+        0.1,
+        0.2,
+        0.4,
+        0.3,
+        0.2,
+        0,
+        0
+       ]
+      }
+     ]
+    },
+    {
+     "type": "table",
+     "columns": [
+      {
+       "title": ""
+      },
+      {
+       "title": "Now",
+       "align": "right"
+      },
+      {
+       "title": "16:00",
+       "align": "right"
+      },
+      {
+       "title": "17:00",
+       "align": "right"
+      },
+      {
+       "title": "18:00",
+       "align": "right"
+      },
+      {
+       "title": "19:00",
+       "align": "right"
+      },
+      {
+       "title": "20:00",
+       "align": "right"
+      },
+      {
+       "title": "21:00",
+       "align": "right"
+      },
+      {
+       "title": "22:00",
+       "align": "right"
+      },
+      {
+       "title": "23:00",
+       "align": "right"
+      },
+      {
+       "title": "00:00",
+       "align": "right"
+      },
+      {
+       "title": "01:00",
+       "align": "right"
+      },
+      {
+       "title": "02:00",
+       "align": "right"
+      }
+     ],
+     "rows": [
+      [
+       {
+        "text": "Temp",
+        "tone": "muted"
+       },
+       {
+        "text": "20°"
+       },
+       {
+        "text": "19°"
+       },
+       {
+        "text": "18°"
+       },
+       {
+        "text": "18°"
+       },
+       {
+        "text": "17°"
+       },
+       {
+        "text": "17°"
+       },
+       {
+        "text": "16°"
+       },
+       {
+        "text": "16°"
+       },
+       {
+        "text": "15°"
+       },
+       {
+        "text": "15°"
+       },
+       {
+        "text": "14°"
+       },
+       {
+        "text": "14°"
+       }
+      ],
+      [
+       {
+        "text": "Rain",
+        "tone": "muted"
+       },
+       {
+        "text": "19%"
+       },
+       {
+        "text": "45%"
+       },
+       {
+        "text": "80%"
+       },
+       {
+        "text": "60%"
+       },
+       {
+        "text": "30%"
+       },
+       {
+        "text": "12%"
+       },
+       {
+        "text": "2%"
+       },
+       {
+        "text": "0%"
+       },
+       {
+        "text": "0%"
+       },
+       {
+        "text": "5%"
+       },
+       {
+        "text": "10%"
+       },
+       {
+        "text": "40%"
+       }
+      ]
+     ]
+    },
+    {
+     "type": "table",
+     "columns": [
+      {
+       "title": "Day"
+      },
+      {
+       "title": "Weather"
+      },
+      {
+       "title": "High",
+       "align": "right"
+      },
+      {
+       "title": "Low",
+       "align": "right"
+      },
+      {
+       "title": "Rain",
+       "align": "right"
+      }
+     ],
+     "rows": [
+      [
+       {
+        "text": "Today"
+       },
+       {
+        "text": "Drizzle",
+        "tone": "muted"
+       },
+       {
+        "text": "20°"
+       },
+       {
+        "text": "13°"
+       },
+       {
+        "text": "63%"
+       }
+      ],
+      [
+       {
+        "text": "Tomorrow"
+       },
+       {
+        "text": "Rain",
+        "tone": "muted"
+       },
+       {
+        "text": "18°"
+       },
+       {
+        "text": "14°"
+       },
+       {
+        "text": "79%"
+       }
+      ],
+      [
+       {
+        "text": "Wednesday"
+       },
+       {
+        "text": "Overcast",
+        "tone": "muted"
+       },
+       {
+        "text": "18°"
+       },
+       {
+        "text": "11°"
+       },
+       {
+        "text": "1%"
+       }
+      ]
+     ]
+    }
+   ],
+   "summary": [
+    {
+     "label": "Now",
+     "value": "20°",
+     "icon": "cloud",
+     "level": 0.19
+    },
+    {
+     "label": "16:00",
+     "value": "19°",
+     "icon": "drizzle",
+     "level": 0.45
+    },
+    {
+     "label": "17:00",
+     "value": "18°",
+     "icon": "rain",
+     "level": 0.8
+    },
+    {
+     "label": "18:00",
+     "value": "18°",
+     "icon": "showers",
+     "level": 0.6
+    },
+    {
+     "label": "19:00",
+     "value": "17°",
+     "icon": "sun-cloud",
+     "level": 0.3
+    },
+    {
+     "label": "20:00",
+     "value": "17°",
+     "icon": "moon-cloud",
+     "level": 0.12
+    },
+    {
+     "label": "21:00",
+     "value": "16°",
+     "icon": "moon",
+     "level": 0.02
+    },
+    {
+     "label": "22:00",
+     "value": "16°",
+     "icon": "cloud",
+     "level": 0
+    },
+    {
+     "label": "23:00",
+     "value": "15°",
+     "icon": "fog",
+     "level": 0
+    },
+    {
+     "label": "00:00",
+     "value": "15°",
+     "icon": "cloud",
+     "level": 0.05
+    },
+    {
+     "label": "01:00",
+     "value": "14°",
+     "icon": "snow",
+     "level": 0.1
+    },
+    {
+     "label": "02:00",
+     "value": "14°",
+     "icon": "storm",
+     "level": 0.4
+    }
+   ]
+  },
+  {
+   "monitor": "autotrader",
+   "kind": "autotrader",
+   "title": "AutoTrader",
+   "updated": "2026-10-12T14:52:03Z",
+   "timely": true,
+   "subtitle": "Hatchback · Automatic · up to £14,000 · 2021 on",
+   "error": "AutoTrader said 503; showing the last good results",
+   "blocks": [
+    {
+     "type": "list",
+     "title": "3 listed",
+     "items": [
+      {
+       "title": "2021 Example Hatch 2.0 SE",
+       "subtitle": "£13,495",
+       "detail": "24,100 miles · Petrol · Automatic · 12 miles away",
+       "tone": "good",
+       "image": "x"
+      },
+      {
+       "title": "2022 Example Hatch 2.0 Sport",
+       "subtitle": "£13,990",
+       "detail": "18,750 miles · Petrol · Automatic · 30 miles away",
+       "image": "x"
+      },
+      {
+       "title": "2021 Example Hatch 1.5 GT",
+       "subtitle": "£12,750",
+       "detail": "31,200 miles · Hybrid · Automatic",
+       "tone": "warn"
+      }
+     ]
+    }
+   ],
+   "summary": [
+    {
+     "label": "Listed",
+     "value": "3"
+    },
+    {
+     "label": "Newest",
+     "value": "£13,495",
+     "detail": "2021 SE"
+    },
+    {
+     "label": "Cheapest",
+     "value": "£12,750",
+     "detail": "2021 GT"
+    }
+   ]
+  }
+ ],
+ "events": [
+  {
+   "id": 30,
+   "monitor": "football",
+   "time": "2026-10-12T14:50:00Z",
+   "title": "Touchdown: 51-yard catch",
+   "body": "PHI @ JAX · credited to Dynasty",
+   "priority": "high"
+  },
+  {
+   "id": 29,
+   "monitor": "stocks",
+   "time": "2026-10-12T14:31:00Z",
+   "title": "ACME down 3% today",
+   "body": "225.67 (−1.57%)"
+  },
+  {
+   "id": 28,
+   "monitor": "weather",
+   "time": "2026-10-12T13:58:00Z",
+   "title": "Rain within the hour",
+   "body": "Drizzle from 16:00, 45% chance"
+  },
+  {
+   "id": 27,
+   "monitor": "calendar",
+   "time": "2026-10-12T12:20:00Z",
+   "title": "Lunch with Sam in 10 minutes"
+  },
+  {
+   "id": 26,
+   "monitor": "autotrader",
+   "time": "2026-10-12T10:02:00Z",
+   "title": "New: 2021 Example Hatch 2.0 SE",
+   "body": "£13,495 · 24,100 miles"
+  },
+  {
+   "id": 25,
+   "monitor": "football",
+   "time": "2026-10-11T21:30:00Z",
+   "title": "Final: Colts 22 – 34 Steelers",
+   "quiet": true
+  },
+  {
+   "id": 24,
+   "monitor": "stocks",
+   "time": "2026-10-11T15:00:00Z",
+   "title": "GLOBEX crossed 580",
+   "body": "Your target"
+  }
+ ]
+}

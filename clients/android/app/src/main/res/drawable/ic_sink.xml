@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A sink and tap, on a 108dp adaptive icon canvas (the middle 66dp shows). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Tap -->
+    <path android:fillColor="#E6E8EC" android:pathData="M49,30h10v4h-3v6h-4v-6h-3z" />
+    <path android:fillColor="#E6E8EC" android:pathData="M52,38h12a4,4 0,0 1,4 4v4h-4v-4h-12z" />
+    <!-- Drop -->
+    <path android:fillColor="#5AA8FF" android:pathData="M66,49c0,0 3,4 3,6a3,3 0,0 1,-6 0c0,-2 3,-6 3,-6z" />
+    <!-- Basin -->
+    <path android:fillColor="#5AA8FF" android:pathData="M32,58h44v4a14,14 0,0 1,-14 14h-16a14,14 0,0 1,-14 -14z" />
+</vector>
