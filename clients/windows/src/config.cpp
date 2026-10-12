@@ -82,6 +82,7 @@ Config LoadConfig() {
         c.oled = {it->value("shift", false), it->value("black", false), it->value("dim", false), it->value("swap", false)};
     }
     c.hidePrivate = j.value("hidePrivate", false);
+    c.dancer = j.value("dancer", false);
     auto ids = [&](const char* key, std::set<std::string>& out) {
         if (auto it = j.find(key); it != j.end() && it->is_array())
             for (const auto& id : *it)
@@ -103,6 +104,7 @@ bool SaveConfig(const Config& c) {
         {"notify", c.notify},
         {"oled", {{"shift", c.oled.shift}, {"black", c.oled.black}, {"dim", c.oled.dim}, {"swap", c.oled.swap}}},
         {"hidePrivate", c.hidePrivate},
+        {"dancer", c.dancer},
         {"expanded", c.expanded},
         {"collapsed", c.collapsed},
         {"order", c.order},

@@ -57,6 +57,9 @@ public:
     // Busy reports whether the UI needs frames drawn continuously, e.g.
     // while typing.
     bool Busy() const { return busy_; }
+    // Animating says whether something on screen is moving and wants steady
+    // frames: the dancer.
+    bool Animating() const { return animating_; }
 
 private:
     void header();
@@ -84,6 +87,7 @@ private:
     void checklist(const std::string& monitor, const Block& b);
     void mediaBlock(const Block& b);
     void feed();
+    void dancer(float width);
     void empty(const char* message, bool settingsButton);
     void settings();
     void openSettings();
@@ -118,6 +122,7 @@ private:
     std::unordered_map<std::string, float> heights_;  // card heights last frame
     std::unordered_map<std::string, double> refreshing_;
     bool busy_ = false;
+    bool animating_ = false, dancerShown_ = false;
 
     // Checklist ticks shown before the server confirms them, by
     // "monitor/item", with when they were made; a snapshot replaces them.
@@ -136,6 +141,7 @@ private:
     bool notifyChoice_ = true;
     bool startChoice_ = false;
     OledCare oledChoice_;
+    bool dancerChoice_ = false;
 
     // OLED care: when the mouse was last over the window, and until when
     // something new keeps it bright (Unix seconds).

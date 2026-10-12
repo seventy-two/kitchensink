@@ -42,6 +42,12 @@ result is a single `kitchensink.exe` with nothing to install.
 - An eye button in the title bar, there when a monitor sends private
   figures (a portfolio's value and gains), hides or shows them at a click:
   their blocks and summary chips go, and it's remembered.
+- **Dancing Miku** (in settings, off by default): a chibi Miku, drawn in
+  code, dances above the Recent column at 128 BPM through four routines
+  (side steps, waving, Ievan Polkka with a leek, hops), twin-tails
+  swinging after her and notes drifting up. She asks for about 30 frames a
+  second while she's on screen, and rests while the window's minimised or
+  dimmed.
 - **OLED care** (in settings, each part off by default) guards OLED
   screens against burn-in: **Shift** moves the contents round a 6px circle
   every three minutes, **True black** is a black theme with dimmer text
@@ -67,7 +73,7 @@ parts (the data model and the server-sent events parser) also build and
 test on Linux:
 
 ```sh
-g++ -std=c++17 -I src -I third_party tests/tests.cpp src/model.cpp src/sse.cpp src/local.cpp && ./a.out
+g++ -std=c++17 -I src -I third_party tests/tests.cpp src/model.cpp src/sse.cpp src/local.cpp src/dancer.cpp && ./a.out
 ```
 
 ## Layout

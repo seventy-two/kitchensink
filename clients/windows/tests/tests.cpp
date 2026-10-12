@@ -1,9 +1,12 @@
 // Tests for the dashboard's portable code. Build and run with build.bat, or
-// on Linux: g++ -std=c++17 -I src -I third_party tests/tests.cpp src/model.cpp src/sse.cpp src/local.cpp
+// on Linux: g++ -std=c++17 -I src -I third_party tests/tests.cpp src/model.cpp src/sse.cpp src/local.cpp src/dancer.cpp
 #include <cstdio>
 #include <set>
 #include <string>
 
+#include <cmath>
+
+#include "../src/dancer.h"
 #include "../src/local.h"
 #include "../src/model.h"
 #include "../src/sse.h"
@@ -381,7 +384,61 @@ static void testPrivate() {
     CHECK(!HasPrivate(ParseSnapshot(nlohmann::json::parse(R"({"blocks": [{"type": "text", "text": "hi"}]})"))));
 }
 
+// Recorder is a canvas that keeps the bounds of what's drawn.
+struct Recorder : Canvas {
+    float minX = 1e9f, maxX = -1e9f, minY = 1e9f, maxY = -1e9f;
+    int shapes = 0;
+    void see(Vec2f p, float rx, float ry) {
+        minX = std::min(minX, p.x - rx), maxX = std::max(maxX, p.x + rx);
+        minY = std::min(minY, p.y - ry), maxY = std::max(maxY, p.y + ry);
+        shapes++;
+    }
+    void see(Vec2f p, float r) { see(p, r, r); }
+    void Circle(Vec2f c, float r, Rgba) override { see(c, r); }
+    // Rotated ellipses are small, nearly round or barely turned: their
+    // radii do.
+    void Ellipse(Vec2f c, float rx, float ry, float, Rgba) override { see(c, rx, ry); }
+    void Line(Vec2f a, Vec2f b, float w, Rgba) override { see(a, w / 2), see(b, w / 2); }
+    void Polygon(const Vec2f* p, int n, Rgba) override {
+        for (int i = 0; i < n; i++) see(p[i], 0);
+    }
+};
+
+static void testDancer() {
+    // Over a whole loop (four routines of eight beats) she stays on the
+    // stage: feet on or above the floor, all of her inside the space the
+    // app gives her (132 units tall, 4 of them below the floor, and at
+    // least 300 / 1.1 wide).
+    double loop = 4 * 8 * 60 / kBpm;
+    bool hopped = false, leek = false, blinked = false;
+    for (double t = 0; t < loop; t += 1.0 / 30) {
+        Pose p = Dance(t);
+        for (int i = 0; i < 2; i++) {
+            CHECK(p.foot[i].y <= 0.01f);
+            CHECK(std::isfinite(p.hand[i].x) && std::isfinite(p.hand[i].y));
+        }
+        hopped = hopped || p.foot[0].y < -6;
+        leek = leek || p.leek;
+        blinked = blinked || p.blink;
+        CHECK(p.mouth >= 0 && p.mouth <= 1);
+        Recorder r;
+        DrawDancer(r, p, Notes(t), {0, 0}, 1);
+        CHECK(r.shapes > 50);
+        CHECK(r.maxY <= 6);
+        CHECK(r.minY >= -128);
+        CHECK(r.minX >= -120 && r.maxX <= 120);
+    }
+    CHECK(hopped);
+    CHECK(leek);
+    CHECK(blinked);
+    // It loops seamlessly.
+    Pose a = Dance(1.3), b = Dance(1.3 + loop);
+    CHECK(std::fabs(a.hand[1].x - b.hand[1].x) < 0.01f && std::fabs(a.hand[1].y - b.hand[1].y) < 0.01f);
+    for (const Note& n : Notes(2.5)) CHECK(n.alpha >= 0 && n.alpha <= 1);
+}
+
 int main() {
+    testDancer();
     testPrivate();
     testParseTime();
     testAgo();

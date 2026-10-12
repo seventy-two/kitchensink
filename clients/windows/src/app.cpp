@@ -11,6 +11,7 @@
 
 #include "imgui.h"
 #include "imgui_internal.h"
+#include "dancer.h"
 #include "local.h"
 
 namespace ks {
@@ -254,9 +255,12 @@ void App::Frame() {
         // OLED care swaps the side column's side every other hour.
         bool feedFirst = feedW > 0 && config_.oled.swap && OledSwapSides(t);
         auto drawFeed = [&] {
+            ImGui::BeginGroup();
+            if (config_.dancer) dancer(feedW);
             ImGui::BeginChild("##feed", ImVec2(feedW, 0), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
             feed();
             ImGui::EndChild();
+            ImGui::EndGroup();
         };
         if (feedFirst) {
             drawFeed();
@@ -273,12 +277,16 @@ void App::Frame() {
 
     ImGui::EndChild();
     settings();
+    bool dancing = dancerShown_;
+    dancerShown_ = false;
 
     // OLED care dims everything when the mouse hasn't been over the window
     // for a while; it's back as soon as it is.
     if (ImGui::IsMousePosValid() || settingsOpen_) lastActivity_ = t;
-    if (config_.oled.dim && OledDim(t, lastActivity_, wakeUntil_))
-        ImGui::GetForegroundDrawList()->AddRectFilled(ImVec2(0, 0), io.DisplaySize, IM_COL32(0, 0, 0, 153));
+    bool dimmed = config_.oled.dim && OledDim(t, lastActivity_, wakeUntil_);
+    if (dimmed) ImGui::GetForegroundDrawList()->AddRectFilled(ImVec2(0, 0), io.DisplaySize, IM_COL32(0, 0, 0, 153));
+    // She rests while the window's dimmed.
+    animating_ = dancing && !dimmed;
     busy_ = ImGui::IsAnyItemActive() || ImGui::GetIO().WantTextInput || settingsOpen_;
     ImGui::End();
 }
@@ -1336,6 +1344,46 @@ void App::list(const Block& b) {
     }
 }
 
+namespace {
+
+// DrawListCanvas draws the dancer with ImGui.
+class DrawListCanvas : public Canvas {
+public:
+    explicit DrawListCanvas(ImDrawList* dl) : dl_(dl) {}
+    void Circle(Vec2f c, float r, Rgba col) override { dl_->AddCircleFilled(v(c), r, u(col)); }
+    void Ellipse(Vec2f c, float rx, float ry, float rot, Rgba col) override {
+        dl_->AddEllipseFilled(v(c), ImVec2(rx, ry), u(col), rot);
+    }
+    void Line(Vec2f a, Vec2f b, float thickness, Rgba col) override { dl_->AddLine(v(a), v(b), u(col), thickness); }
+    void Polygon(const Vec2f* points, int n, Rgba col) override {
+        ImVec2 pts[16];
+        n = std::min(n, 16);
+        for (int i = 0; i < n; i++) pts[i] = v(points[i]);
+        dl_->AddConvexPolyFilled(pts, n, u(col));
+    }
+
+private:
+    static ImVec2 v(Vec2f p) { return ImVec2(p.x, p.y); }
+    static ImU32 u(Rgba c) { return IM_COL32(c.r, c.g, c.b, c.a); }
+    ImDrawList* dl_;
+};
+
+}  // namespace
+
+// dancer draws Miku dancing across the top of the Recent column.
+void App::dancer(float width) {
+    float h = std::round((compact_ ? 120 : 140) * scale_);
+    ImVec2 at = ImGui::GetCursorScreenPos();
+    ImGui::Dummy(ImVec2(width, h));
+    // The pose is in units about 126 tall, standing on y = 0, with a few
+    // below for her shadow.
+    float size = h / 132;
+    DrawListCanvas canvas(ImGui::GetWindowDrawList());
+    double t = ImGui::GetTime();
+    DrawDancer(canvas, Dance(t), Notes(t), Vec2f{at.x + width / 2, at.y + h - 4 * size}, size);
+    dancerShown_ = true;
+}
+
 void App::feed() {
     const Palette& p = Colours();
     ImGui::PushFont(fonts_.heading);
@@ -1398,6 +1446,7 @@ void App::openSettings() {
     notifyChoice_ = config_.notify;
     startChoice_ = StartsWithWindows();
     oledChoice_ = config_.oled;
+    dancerChoice_ = config_.dancer;
     settingsOpen_ = true;
 }
 
@@ -1447,6 +1496,13 @@ void App::settings() {
     care("True black", &oledChoice_.black, "a black theme with dimmer text and borders");
     care("Dim when idle", &oledChoice_.dim, "after ten minutes without the mouse over the window");
     care("Swap sides", &oledChoice_.swap, "moves the Recent column across every other hour");
+    ImGui::Dummy(ImVec2(0, 4 * scale_));
+    ImGui::Checkbox("Dancing Miku", &dancerChoice_);
+    ImGui::SameLine();
+    ImGui::PushFont(fonts_.caption);
+    ImGui::AlignTextToFramePadding();
+    mutedText("above the Recent column");
+    ImGui::PopFont();
     ImGui::Dummy(ImVec2(0, 8 * scale_));
 
     bool configured = !config_.url.empty() && !config_.token.empty();
@@ -1469,6 +1525,7 @@ void App::settings() {
         c.token = tokenBuf_;
         c.notify = notifyChoice_;
         c.oled = oledChoice_;
+        c.dancer = dancerChoice_;
         c.minPriority = kPriorities[std::clamp(priorityChoice_, 0, 2)];
         bool reconnect = c.url != config_.url || c.token != config_.token;
         config_ = c;
