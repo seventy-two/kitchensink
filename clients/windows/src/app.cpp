@@ -1368,9 +1368,23 @@ void App::table(const Block& b) {
 
     ImGuiTableFlags flags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg | ImGuiTableFlags_NoPadOuterX;
     if (!ImGui::BeginTable("##table", int(cols), flags)) return;
-    for (size_t c = 0; c < cols; c++)
-        ImGui::TableSetupColumn(b.columns[c].title.c_str(),
-                                int(c) == stretch ? ImGuiTableColumnFlags_WidthStretch : ImGuiTableColumnFlags_WidthFixed);
+    // The rest are as wide as their widest text, measured here: ImGui's own
+    // fitting can settle narrower than the text, cutting it off.
+    for (size_t c = 0; c < cols; c++) {
+        if (int(c) == stretch) {
+            ImGui::TableSetupColumn(b.columns[c].title.c_str(), ImGuiTableColumnFlags_WidthStretch);
+            continue;
+        }
+        ImGui::PushFont(fonts_.caption);
+        float w = ImGui::CalcTextSize(b.columns[c].title.c_str()).x;
+        for (const auto& r : b.rows)
+            if (c < r.size() && !r[c].detail.empty() && b.columns[c].align != Align::Left)
+                w = std::max(w, ImGui::CalcTextSize(r[c].detail.c_str()).x);
+        ImGui::PopFont();
+        for (const auto& r : b.rows)
+            if (c < r.size()) w = std::max(w, ImGui::CalcTextSize(r[c].text.c_str()).x);
+        ImGui::TableSetupColumn(b.columns[c].title.c_str(), ImGuiTableColumnFlags_WidthFixed, std::ceil(w));
+    }
 
     bool headers = std::any_of(b.columns.begin(), b.columns.end(), [](const Column& c) { return !c.title.empty(); });
     if (headers) {
