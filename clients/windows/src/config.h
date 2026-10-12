@@ -25,8 +25,8 @@ struct Config {
     Priority minPriority = Priority::Normal;
     bool notify = true;
     OledCare oled;
-    // A chibi Miku dancing above the Recent column.
-    bool dancer = false;
+    // A black cat asleep above the Recent column.
+    bool cat = false;
     // Hides private figures, e.g. a portfolio's value, from the panels.
     bool hidePrivate = false;
     // In the compact layout, monitors opened or closed by hand. The rest

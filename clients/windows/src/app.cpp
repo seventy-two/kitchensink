@@ -11,7 +11,7 @@
 
 #include "imgui.h"
 #include "imgui_internal.h"
-#include "dancer.h"
+#include "cat.h"
 #include "local.h"
 
 namespace ks {
@@ -212,6 +212,7 @@ bool App::NotificationClicked() {
 }
 
 void App::Frame() {
+    catInterval_ = 0;  // until she's drawn
     ImGuiIO& io = ImGui::GetIO();
     if (bool c = UseCompact(compact_, io.DisplaySize.x, io.DisplaySize.y, scale_); c != compact_) {
         compact_ = c;
@@ -256,9 +257,13 @@ void App::Frame() {
         bool feedFirst = feedW > 0 && config_.oled.swap && OledSwapSides(t);
         auto drawFeed = [&] {
             ImGui::BeginGroup();
-            if (config_.dancer) dancer(feedW);
-            ImGui::BeginChild("##feed", ImVec2(feedW, 0), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
+            if (config_.cat) cat(feedW);
+            // Its scrollbar only shows on hover, over the content, so the
+            // cards reach the same distance from both edges.
+            ImGui::BeginChild("##feed", ImVec2(feedW, 0), ImGuiChildFlags_None,
+                              ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar);
             feed();
+            overlayScrollbar();
             ImGui::EndChild();
             ImGui::EndGroup();
         };
@@ -277,16 +282,14 @@ void App::Frame() {
 
     ImGui::EndChild();
     settings();
-    bool dancing = dancerShown_;
-    dancerShown_ = false;
 
     // OLED care dims everything when the mouse hasn't been over the window
     // for a while; it's back as soon as it is.
     if (ImGui::IsMousePosValid() || settingsOpen_) lastActivity_ = t;
     bool dimmed = config_.oled.dim && OledDim(t, lastActivity_, wakeUntil_);
     if (dimmed) ImGui::GetForegroundDrawList()->AddRectFilled(ImVec2(0, 0), io.DisplaySize, IM_COL32(0, 0, 0, 153));
-    // She rests while the window's dimmed.
-    animating_ = dancing && !dimmed;
+    // The cat isn't drawn while the window's dimmed.
+    frameInterval_ = dimmed ? 0 : catInterval_;
     busy_ = ImGui::IsAnyItemActive() || ImGui::GetIO().WantTextInput || settingsOpen_;
     ImGui::End();
 }
@@ -1346,7 +1349,7 @@ void App::list(const Block& b) {
 
 namespace {
 
-// DrawListCanvas draws the dancer with ImGui.
+// DrawListCanvas draws the cat with ImGui.
 class DrawListCanvas : public Canvas {
 public:
     explicit DrawListCanvas(ImDrawList* dl) : dl_(dl) {}
@@ -1370,18 +1373,59 @@ private:
 
 }  // namespace
 
-// dancer draws Miku dancing across the top of the Recent column.
-void App::dancer(float width) {
-    float h = std::round((compact_ ? 120 : 140) * scale_);
+// cat draws the black cat along the top of the Recent column.
+void App::cat(float width) {
+    float size = 1.1f * scale_;
+    // Her space is 68 units tall: 64 above the floor (an arched tail),
+    // 4 below (rounded paws and her rim).
+    float h = std::round(68 * size);
     ImVec2 at = ImGui::GetCursorScreenPos();
     ImGui::Dummy(ImVec2(width, h));
-    // The pose is in units about 126 tall, standing on y = 0, with a few
-    // below for her shadow.
-    float size = h / 132;
-    DrawListCanvas canvas(ImGui::GetWindowDrawList());
     double t = ImGui::GetTime();
-    DrawDancer(canvas, Dance(t), Notes(t), Vec2f{at.x + width / 2, at.y + h - 4 * size}, size);
-    dancerShown_ = true;
+    Cat c = CatAt(t, width / 2 / size);
+    DrawListCanvas canvas(ImGui::GetWindowDrawList());
+    DrawCat(canvas, c, t, Vec2f{at.x + width / 2, at.y + h - 4 * size}, size);
+    // Asleep, her breathing and Z's are slow: ten frames a second will do.
+    catInterval_ = c.asleep >= 1 ? 100 : 33;
+}
+
+// overlayScrollbar draws a thin scrollbar over the right edge of the
+// current child window while the mouse is over it, in place of ImGui's,
+// which takes width from the content all the time. It can be dragged, or
+// clicked to jump. Call it last, before EndChild.
+void App::overlayScrollbar() {
+    const ImGuiIO& io = ImGui::GetIO();
+    ImGuiWindow* w = ImGui::GetCurrentWindow();
+    float maxY = ImGui::GetScrollMaxY();
+    ImRect r = w->InnerRect;
+    feedBar_ = ImRect();
+    if (maxY <= 0) {
+        feedBarHeld_ = false;
+        return;
+    }
+    float track = r.GetHeight();
+    float thumbH = std::max(32 * scale_, track * track / (track + maxY));
+    float thumbY = r.Min.y + (track - thumbH) * ImGui::GetScrollY() / maxY;
+    float barW = 6 * scale_, inset = 2 * scale_;
+    ImRect thumb(ImVec2(r.Max.x - inset - barW, thumbY), ImVec2(r.Max.x - inset, thumbY + thumbH));
+    ImRect strip(ImVec2(r.Max.x - inset - barW - 6 * scale_, r.Min.y), r.Max);
+
+    bool overContent = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
+    bool overStrip = overContent && strip.Contains(io.MousePos);
+    if (feedBarHeld_) {
+        if (!io.MouseDown[0]) feedBarHeld_ = false;
+        else ImGui::SetScrollY(std::clamp((io.MousePos.y - feedBarGrab_ - r.Min.y) / (track - thumbH), 0.0f, 1.0f) * maxY);
+    } else if (overStrip && io.MouseClicked[0]) {
+        // On the thumb, drag it from where it was caught; elsewhere, jump
+        // there and drag from its middle.
+        feedBarGrab_ = thumb.Contains(io.MousePos) ? io.MousePos.y - thumb.Min.y : thumbH / 2;
+        feedBarHeld_ = true;
+    }
+    if (overContent || feedBarHeld_) {
+        const Palette& p = Colours();
+        w->DrawList->AddRectFilled(thumb.Min, thumb.Max, u32(overStrip || feedBarHeld_ ? p.muted : p.border), barW / 2);
+        feedBar_ = strip;
+    }
 }
 
 void App::feed() {
@@ -1399,6 +1443,8 @@ void App::feed() {
     float pad = (compact_ ? 7 : 10) * scale_;
     int64_t t = now();
     size_t shown = 0;
+    // Clicks on the scrollbar aren't for the card under it.
+    bool onBar = feedBarHeld_ || feedBar_.Contains(ImGui::GetIO().MousePos);
     for (const auto& e : events) {
         if (++shown > 150) break;
         ImGui::PushID(int(e.id));
@@ -1427,12 +1473,12 @@ void App::feed() {
         ImGui::InvisibleButton("##event", ImVec2(width, end.y - start.y));
 
         dl->ChannelsSetCurrent(0);
-        bool hovered = ImGui::IsItemHovered() && !e.url.empty();
+        bool hovered = ImGui::IsItemHovered() && !e.url.empty() && !onBar;
         dl->AddRectFilled(start, end, u32(hovered ? p.hover : p.card));
         if (e.priority == Priority::High && !e.quiet)
             dl->AddRectFilled(start, ImVec2(start.x + 3 * scale_, end.y), u32(p.accent));
         if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-        if (ImGui::IsItemClicked()) OpenURL(e.url);
+        if (ImGui::IsItemClicked() && !onBar) OpenURL(e.url);
         dl->ChannelsMerge();
         ImGui::Dummy(ImVec2(0, 1 * scale_));
         ImGui::PopID();
@@ -1446,7 +1492,7 @@ void App::openSettings() {
     notifyChoice_ = config_.notify;
     startChoice_ = StartsWithWindows();
     oledChoice_ = config_.oled;
-    dancerChoice_ = config_.dancer;
+    catChoice_ = config_.cat;
     settingsOpen_ = true;
 }
 
@@ -1497,11 +1543,11 @@ void App::settings() {
     care("Dim when idle", &oledChoice_.dim, "after ten minutes without the mouse over the window");
     care("Swap sides", &oledChoice_.swap, "moves the Recent column across every other hour");
     ImGui::Dummy(ImVec2(0, 4 * scale_));
-    ImGui::Checkbox("Dancing Miku", &dancerChoice_);
+    ImGui::Checkbox("Cat", &catChoice_);
     ImGui::SameLine();
     ImGui::PushFont(fonts_.caption);
     ImGui::AlignTextToFramePadding();
-    mutedText("above the Recent column");
+    mutedText("a black cat asleep above the Recent column");
     ImGui::PopFont();
     ImGui::Dummy(ImVec2(0, 8 * scale_));
 
@@ -1525,7 +1571,7 @@ void App::settings() {
         c.token = tokenBuf_;
         c.notify = notifyChoice_;
         c.oled = oledChoice_;
-        c.dancer = dancerChoice_;
+        c.cat = catChoice_;
         c.minPriority = kPriorities[std::clamp(priorityChoice_, 0, 2)];
         bool reconnect = c.url != config_.url || c.token != config_.token;
         config_ = c;

@@ -347,14 +347,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR cmdLine, int) {
     }
 
     // Draw only when something happens: input, data from the server, or
-    // once a second so "updated 3m ago" stays current; about 30 times a
-    // second while the dancer's on screen.
+    // once a second so "updated 3m ago" stays current; more often while the
+    // cat's moving.
     bool running = true;
     while (running) {
         bool visible = IsWindowVisible(hwnd) && !IsIconic(hwnd);
         DWORD timeout = !visible                               ? INFINITE
                         : (framesWanted > 0 || app->Busy()) ? 0
-                        : app->Animating()                  ? 33  // about 30 frames a second
+                        : app->FrameInterval() > 0          ? app->FrameInterval()
                                                             : 1000;
         timeout = std::min<DWORD>(timeout, app->FlushIn());
         MsgWaitForMultipleObjectsEx(0, nullptr, timeout, QS_ALLINPUT, MWMO_INPUTAVAILABLE);

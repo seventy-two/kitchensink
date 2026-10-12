@@ -1,12 +1,12 @@
 // Tests for the dashboard's portable code. Build and run with build.bat, or
-// on Linux: g++ -std=c++17 -I src -I third_party tests/tests.cpp src/model.cpp src/sse.cpp src/local.cpp src/dancer.cpp
+// on Linux: g++ -std=c++17 -I src -I third_party tests/tests.cpp src/model.cpp src/sse.cpp src/local.cpp src/cat.cpp
 #include <cstdio>
 #include <set>
 #include <string>
 
 #include <cmath>
 
-#include "../src/dancer.h"
+#include "../src/cat.h"
 #include "../src/local.h"
 #include "../src/model.h"
 #include "../src/sse.h"
@@ -404,41 +404,46 @@ struct Recorder : Canvas {
     }
 };
 
-static void testDancer() {
-    // Over a whole loop (four routines of eight beats) she stays on the
-    // stage: feet on or above the floor, all of her inside the space the
-    // app gives her (132 units tall, 4 of them below the floor, and at
-    // least 300 / 1.1 wide).
-    double loop = 4 * 8 * 60 / kBpm;
-    bool hopped = false, leek = false, blinked = false;
-    for (double t = 0; t < loop; t += 1.0 / 30) {
-        Pose p = Dance(t);
-        for (int i = 0; i < 2; i++) {
-            CHECK(p.foot[i].y <= 0.01f);
-            CHECK(std::isfinite(p.hand[i].x) && std::isfinite(p.hand[i].y));
+static void testCat() {
+    // Over two whole episodes, at a narrow and a wide column, she stays on
+    // the floor and inside her space: 68 units tall (4 below the floor) and
+    // the column's width. She sleeps most of the time, but wakes, yawns,
+    // walks and turns round.
+    for (float half : {120.0f, 150.0f}) {
+        bool walked = false, turned = false, yawned = false;
+        int asleep = 0, frames = 0;
+        float lastX = CatAt(0, half).x;
+        for (double t = 0; t < 2 * kEpisode; t += 1.0 / 20, frames++) {
+            Cat c = CatAt(t, half);
+            for (const Vec2f& paw : c.pose.paw) CHECK(paw.y <= 0.01f);
+            CHECK(std::isfinite(c.x) && std::fabs(c.facing) <= 1);
+            walked = walked || std::fabs(c.x - lastX) > 0.01f;
+            turned = turned || std::fabs(c.facing) < 0.5f;
+            yawned = yawned || c.pose.yawn > 0.9f;
+            asleep += c.asleep >= 1;
+            lastX = c.x;
+            Recorder r;
+            DrawCat(r, c, t, {0, 0}, 1);
+            CHECK(r.shapes > 30);
+            CHECK(r.maxY <= 4);
+            CHECK(r.minY >= -64);
+            CHECK(r.minX >= -half && r.maxX <= half);
         }
-        hopped = hopped || p.foot[0].y < -6;
-        leek = leek || p.leek;
-        blinked = blinked || p.blink;
-        CHECK(p.mouth >= 0 && p.mouth <= 1);
-        Recorder r;
-        DrawDancer(r, p, Notes(t), {0, 0}, 1);
-        CHECK(r.shapes > 50);
-        CHECK(r.maxY <= 6);
-        CHECK(r.minY >= -128);
-        CHECK(r.minX >= -120 && r.maxX <= 120);
+        CHECK(walked);
+        CHECK(yawned);
+        CHECK(asleep > frames * 3 / 4);
+        (void)turned;  // depends on where she happens to go
     }
-    CHECK(hopped);
-    CHECK(leek);
-    CHECK(blinked);
-    // It loops seamlessly.
-    Pose a = Dance(1.3), b = Dance(1.3 + loop);
-    CHECK(std::fabs(a.hand[1].x - b.hand[1].x) < 0.01f && std::fabs(a.hand[1].y - b.hand[1].y) < 0.01f);
-    for (const Note& n : Notes(2.5)) CHECK(n.alpha >= 0 && n.alpha <= 1);
+    // She never jumps: from one frame to the next she moves a little.
+    for (double t = 0; t < 3 * kEpisode; t += 0.05) {
+        Cat a = CatAt(t, 150), b = CatAt(t + 0.05, 150);
+        CHECK(std::fabs(a.x - b.x) < 3);
+        CHECK(std::fabs(a.pose.head.y - b.pose.head.y) < 3);
+    }
 }
 
 int main() {
-    testDancer();
+    testCat();
     testPrivate();
     testParseTime();
     testAgo();

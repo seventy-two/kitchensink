@@ -42,12 +42,14 @@ result is a single `kitchensink.exe` with nothing to install.
 - An eye button in the title bar, there when a monitor sends private
   figures (a portfolio's value and gains), hides or shows them at a click:
   their blocks and summary chips go, and it's remembered.
-- **Dancing Miku** (in settings, off by default): a chibi Miku, drawn in
-  code, dances above the Recent column at 128 BPM through four routines
-  (side steps, waving, Ievan Polkka with a leek, hops), twin-tails
-  swinging after her and notes drifting up. She asks for about 30 frames a
-  second while she's on screen, and rests while the window's minimised or
-  dimmed.
+- **Cat** (in settings, off by default): a black cat, drawn in code,
+  sleeps curled up above the Recent column, breathing, with the odd tail
+  twitch and Z's. Every 100 seconds or so she wakes, stretches, yawns,
+  arches her back, sometimes wanders to another spot, and curls up again.
+  Asleep she needs ten frames a second, awake about thirty, and none while
+  the window's minimised or dimmed.
+- The Recent column's scrollbar only shows while the mouse is over it,
+  thin and over the cards, so it doesn't take width from them.
 - **OLED care** (in settings, each part off by default) guards OLED
   screens against burn-in: **Shift** moves the contents round a 6px circle
   every three minutes, **True black** is a black theme with dimmer text
@@ -73,7 +75,7 @@ parts (the data model and the server-sent events parser) also build and
 test on Linux:
 
 ```sh
-g++ -std=c++17 -I src -I third_party tests/tests.cpp src/model.cpp src/sse.cpp src/local.cpp src/dancer.cpp && ./a.out
+g++ -std=c++17 -I src -I third_party tests/tests.cpp src/model.cpp src/sse.cpp src/local.cpp src/cat.cpp && ./a.out
 ```
 
 ## Layout
