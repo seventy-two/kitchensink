@@ -105,10 +105,25 @@ func TestSummary(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, monitor.SummaryChips, res.SummaryStyle)
 	require.Len(t, res.Summary, 12, "an hour to a chip")
-	assert.Equal(t, monitor.Stat{Label: "Now", Value: "13°", Detail: "Clear"}, res.Summary[0], "now is the current temperature")
-	assert.Equal(t, monitor.Stat{Label: "19:00", Value: "13°", Detail: "Part cloud"}, res.Summary[1])
-	assert.Equal(t, monitor.Stat{Label: "20:00", Value: "12°", Detail: "60% rain", Tone: monitor.ToneAccent}, res.Summary[2],
+	assert.Equal(t, monitor.Stat{Label: "Now", Value: "13°", Detail: "Clear", Icon: "moon"}, res.Summary[0], "now is the current temperature")
+	assert.Equal(t, monitor.Stat{Label: "19:00", Value: "13°", Detail: "Part cloud", Icon: "moon-cloud"}, res.Summary[1])
+	assert.Equal(t, monitor.Stat{Label: "20:00", Value: "12°", Detail: "60% rain", Tone: monitor.ToneAccent, Icon: "rain"}, res.Summary[2],
 		"likely rain is marked, with its chance")
 	assert.Equal(t, monitor.ToneWarn, res.Summary[3].Tone, "strong gusts outrank rain")
 	assert.Equal(t, "Fog", res.Summary[10].Detail)
+	assert.Equal(t, "fog", res.Summary[10].Icon)
+}
+
+func TestIcon(t *testing.T) {
+	for _, c := range []struct {
+		code int
+		day  bool
+		want string
+	}{
+		{0, true, "sun"}, {1, false, "moon"}, {2, true, "sun-cloud"}, {2, false, "moon-cloud"}, {3, true, "cloud"},
+		{45, true, "fog"}, {53, true, "drizzle"}, {65, false, "rain"}, {73, true, "snow"}, {86, true, "snow"},
+		{81, true, "showers"}, {81, false, "rain"}, {95, true, "storm"}, {99, false, "storm"}, {10, true, ""},
+	} {
+		assert.Equal(t, c.want, icon(c.code, c.day), "code %d, day %v", c.code, c.day)
+	}
 }

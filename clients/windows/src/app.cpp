@@ -12,6 +12,7 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "cat.h"
+#include "weather_icon.h"
 #include "local.h"
 
 namespace ks {
@@ -104,6 +105,44 @@ void sparkline(const std::vector<float>& v, ImVec2 size, const ImVec4& colour, f
         dl->AddConvexPolyFilled(quad, 4, u32(fade(colour, 0.18f)));
     }
     dl->AddPolyline(pts.data(), int(pts.size()), u32(colour), 0, 1.5f * ImGui::GetStyle().FramePadding.y / 6);
+}
+
+// DrawListCanvas draws the cat and weather icons with ImGui.
+class DrawListCanvas : public Canvas {
+public:
+    explicit DrawListCanvas(ImDrawList* dl) : dl_(dl) {}
+    void Circle(Vec2f c, float r, Rgba col) override { dl_->AddCircleFilled(v(c), r, u(col)); }
+    void Ellipse(Vec2f c, float rx, float ry, float rot, Rgba col) override {
+        dl_->AddEllipseFilled(v(c), ImVec2(rx, ry), u(col), rot);
+    }
+    void Line(Vec2f a, Vec2f b, float thickness, Rgba col) override { dl_->AddLine(v(a), v(b), u(col), thickness); }
+    void Polygon(const Vec2f* points, int n, Rgba col) override {
+        ImVec2 pts[16];
+        n = std::min(n, 16);
+        for (int i = 0; i < n; i++) pts[i] = v(points[i]);
+        dl_->AddConvexPolyFilled(pts, n, u(col));
+    }
+
+private:
+    static ImVec2 v(Vec2f p) { return ImVec2(p.x, p.y); }
+    static ImU32 u(Rgba c) { return IM_COL32(c.r, c.g, c.b, c.a); }
+    ImDrawList* dl_;
+};
+
+// rgba is an opaque colour k of the way from a to b: icons overlap their
+// own shapes, so they can't be see-through.
+Rgba rgba(const ImVec4& a, const ImVec4& b = {}, float k = 0) {
+    auto c = [&](float x, float y) { return uint8_t(std::clamp(x + (y - x) * k, 0.0f, 1.0f) * 255 + 0.5f); };
+    return {c(a.x, b.x), c(a.y, b.y), c(a.z, b.z), 255};
+}
+
+// weatherIcon draws a weather icon in the square at at, size across, in
+// the theme's colours: rain in its accent, so wet hours stand out.
+void weatherIcon(const std::string& name, ImVec2 at, float size) {
+    const Palette& p = Colours();
+    IconColours col{rgba(p.warn), rgba(p.text), rgba(p.text, p.muted, 0.3f), rgba(p.muted, p.frame, 0.2f), rgba(p.accent), rgba(p.text), rgba(p.warn)};
+    DrawListCanvas canvas(ImGui::GetWindowDrawList());
+    DrawWeatherIcon(canvas, name, Vec2f{at.x, at.y}, size, col);
 }
 
 }  // namespace
@@ -953,6 +992,8 @@ void App::chips(const std::vector<Stat>& stats, float width) {
 
     // One size for all, from the widest and tallest of each part.
     float w = 0, labelH = 0, valueH = 0, detailH = 0;
+    float beside = 0;  // the widest label or value with an icon by it
+    bool icons = false;
     for (const Stat& s : stats) {
         ImGui::PushFont(fonts_.caption);
         ImVec2 l = ImGui::CalcTextSize(s.label.c_str());
@@ -966,16 +1007,26 @@ void App::chips(const std::vector<Stat>& stats, float width) {
         ImGui::PopFont();
         ImGui::PushFont(fonts_.heading);
         ImVec2 v = ImGui::CalcTextSize(s.value.c_str());
-        w = std::max(w, v.x);
+        // An icon, if any, goes right of the label and value, as tall as
+        // both if there's room, as tall as the value at least.
+        if (IsWeatherIcon(s.icon)) {
+            icons = true;
+            ImGui::PushFont(fonts_.caption);
+            beside = std::max({beside, v.x, ImGui::CalcTextSize(s.label.c_str()).x});
+            ImGui::PopFont();
+            w = std::max(w, v.x + gap + v.y * 1.2f);
+        }
         valueH = std::max(valueH, v.y);
         ImGui::PopFont();
     }
+    if (icons) w = std::max(w, beside + gap + labelH + valueH);
     w += pad.x * 2;
     float oneRow = (width - gap * float(stats.size() - 1)) / float(stats.size());
     if (w > oneRow && oneRow >= 44 * scale_) w = oneRow;
     w = std::min(w, width);
     float inner = w - pad.x * 2;
     float h = pad.y * 2 + labelH + valueH + detailH;
+    float iconSize = std::round(std::clamp(inner - beside - gap, valueH * 1.2f, labelH + valueH));
 
     ImVec2 origin = ImGui::GetCursorScreenPos();
     int perRow = std::max(1, int((width + gap) / (w + gap)));
@@ -990,10 +1041,13 @@ void App::chips(const std::vector<Stat>& stats, float width) {
         ImGui::SetCursorScreenPos(ImVec2(a.x + pad.x, a.y + pad.y));
         ImGui::TextColored(s.tone == Tone::Muted ? p.muted : p.text, "%s", fitLines(s.label, inner).c_str());
         ImGui::PopFont();
+        bool icon = IsWeatherIcon(s.icon);
         ImGui::PushFont(fonts_.heading);
         ImGui::SetCursorScreenPos(ImVec2(a.x + pad.x, a.y + pad.y + labelH));
-        ImGui::TextColored(coloured ? tone : s.tone == Tone::Muted ? p.muted : p.text, "%s", fit(s.value, inner).c_str());
+        ImGui::TextColored(coloured ? tone : s.tone == Tone::Muted ? p.muted : p.text, "%s",
+                           fit(s.value, inner - (icon ? iconSize + gap : 0)).c_str());
         ImGui::PopFont();
+        if (icon) weatherIcon(s.icon, ImVec2(a.x + w - pad.x - iconSize, a.y + pad.y + labelH + valueH - iconSize), iconSize);
         if (!s.detail.empty()) {
             ImGui::PushFont(fonts_.caption);
             ImGui::SetCursorScreenPos(ImVec2(a.x + pad.x, a.y + pad.y + labelH + valueH));
@@ -1230,6 +1284,11 @@ void App::stats(const Block& b) {
         ImGui::PushFont(fonts_.big);
         ImGui::TextColored(ToneColour(s.tone), "%s", s.value.c_str());
         ImGui::PopFont();
+        if (IsWeatherIcon(s.icon)) {
+            ImVec2 vmin = ImGui::GetItemRectMin(), vmax = ImGui::GetItemRectMax();
+            float size = std::round((vmax.y - vmin.y) * 0.95f);
+            weatherIcon(s.icon, ImVec2(vmax.x + 8 * scale_, vmax.y - size), size);
+        }
         // A flat series, e.g. no rain at all, says nothing worth a chart,
         // unless its scale is fixed: memory steady at 50% still shows.
         bool flat = s.series.empty() ||
@@ -1356,32 +1415,6 @@ void App::list(const Block& b) {
         ImGui::PopID();
     }
 }
-
-namespace {
-
-// DrawListCanvas draws the cat with ImGui.
-class DrawListCanvas : public Canvas {
-public:
-    explicit DrawListCanvas(ImDrawList* dl) : dl_(dl) {}
-    void Circle(Vec2f c, float r, Rgba col) override { dl_->AddCircleFilled(v(c), r, u(col)); }
-    void Ellipse(Vec2f c, float rx, float ry, float rot, Rgba col) override {
-        dl_->AddEllipseFilled(v(c), ImVec2(rx, ry), u(col), rot);
-    }
-    void Line(Vec2f a, Vec2f b, float thickness, Rgba col) override { dl_->AddLine(v(a), v(b), u(col), thickness); }
-    void Polygon(const Vec2f* points, int n, Rgba col) override {
-        ImVec2 pts[16];
-        n = std::min(n, 16);
-        for (int i = 0; i < n; i++) pts[i] = v(points[i]);
-        dl_->AddConvexPolyFilled(pts, n, u(col));
-    }
-
-private:
-    static ImVec2 v(Vec2f p) { return ImVec2(p.x, p.y); }
-    static ImU32 u(Rgba c) { return IM_COL32(c.r, c.g, c.b, c.a); }
-    ImDrawList* dl_;
-};
-
-}  // namespace
 
 // cat draws the black cat along the top of the Recent column.
 void App::cat(float width) {

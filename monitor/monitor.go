@@ -208,6 +208,10 @@ type Stat struct {
 	Private bool `json:"private,omitempty"`
 	// Series, if set, is drawn as a sparkline.
 	Series []float64 `json:"series,omitempty"`
+	// Icon names a small picture to draw by the value. Clients know the
+	// weather's: sun, moon, sun-cloud, moon-cloud, cloud, fog, drizzle,
+	// rain, showers, snow and storm, and ignore names they don't know.
+	Icon string `json:"icon,omitempty"`
 }
 
 // Align is a table column's alignment.

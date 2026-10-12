@@ -5,13 +5,10 @@
 #pragma once
 
 #include <array>
-#include <cstdint>
+
+#include "canvas.h"
 
 namespace ks {
-
-struct Vec2f {
-    float x = 0, y = 0;
-};
 
 // CatPose is her shape, side on, facing right, in units with the floor at
 // y = 0 below her middle and y growing downwards. Her body is three
@@ -44,22 +41,6 @@ struct Cat {
 // the middle to wander. She sleeps for most of each kEpisode seconds.
 constexpr double kEpisode = 100;
 Cat CatAt(double t, float half);
-
-// Rgba is a colour, 0 to 255 each.
-struct Rgba {
-    uint8_t r = 0, g = 0, b = 0, a = 255;
-};
-
-// Canvas is what she's drawn on: ImGui's draw list in the app, SVG or a
-// recorder in tests. Thicknesses and radii are in canvas units.
-class Canvas {
-public:
-    virtual ~Canvas() = default;
-    virtual void Circle(Vec2f c, float r, Rgba col) = 0;
-    virtual void Ellipse(Vec2f c, float rx, float ry, float rot, Rgba col) = 0;
-    virtual void Line(Vec2f a, Vec2f b, float thickness, Rgba col) = 0;
-    virtual void Polygon(const Vec2f* points, int n, Rgba col) = 0;  // convex, filled
-};
 
 // DrawCat draws her, mapping pose units to the canvas by floor + p * size,
 // where floor is the middle of the floor. t moves her Z's along.

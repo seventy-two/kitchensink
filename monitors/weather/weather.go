@@ -158,6 +158,7 @@ const hours = 12
 type hour struct {
 	label, temp string
 	sky         string // e.g. "Cloudy"
+	icon        string
 	// conditions is the sky, or the chance of rain when it's likely.
 	conditions string
 	rainProb   float64
@@ -175,7 +176,7 @@ func (m *Monitor) hourly(f *forecast) []hour {
 		}
 		day := i < len(h.IsDay) && h.IsDay[i] == 1
 		sky := brief(h.Code[i], day)
-		x := hour{label: clock(t), temp: fmt.Sprintf("%.0f°", h.Temperature[i]), sky: sky, conditions: sky, rainProb: h.RainProb[i]}
+		x := hour{label: clock(t), temp: fmt.Sprintf("%.0f°", h.Temperature[i]), sky: sky, icon: icon(h.Code[i], day), conditions: sky, rainProb: h.RainProb[i]}
 		if i == 0 {
 			x.label = "Now"
 			x.temp = fmt.Sprintf("%.0f°", f.Current.Temperature)
@@ -198,7 +199,7 @@ func (m *Monitor) hourly(f *forecast) []hour {
 func (m *Monitor) summary(f *forecast) []monitor.Stat {
 	var out []monitor.Stat
 	for _, h := range m.hourly(f) {
-		out = append(out, monitor.Stat{Label: h.label, Value: h.temp, Detail: h.conditions, Tone: h.tone})
+		out = append(out, monitor.Stat{Label: h.label, Value: h.temp, Detail: h.conditions, Tone: h.tone, Icon: h.icon})
 	}
 	return out
 }
@@ -270,7 +271,7 @@ func (m *Monitor) blocks(f *forecast) []monitor.Block {
 		Type:  monitor.BlockStats,
 		Title: m.cfg.Place,
 		Stats: []monitor.Stat{
-			{Label: "Now", Value: fmt.Sprintf("%.0f°C", c.Temperature), Detail: describe(c.Code, c.IsDay == 1)},
+			{Label: "Now", Value: fmt.Sprintf("%.0f°C", c.Temperature), Detail: describe(c.Code, c.IsDay == 1), Icon: icon(c.Code, c.IsDay == 1)},
 			{Label: "Feels like", Value: fmt.Sprintf("%.0f°C", c.FeelsLike)},
 			{Label: "Wind", Value: fmt.Sprintf("%.0f mph", c.Wind), Detail: fmt.Sprintf("gusts %.0f", c.Gusts), Tone: m.windTone(c.Gusts)},
 			rain,
@@ -349,6 +350,40 @@ func brief(code int, day bool) string {
 		return "Storms"
 	}
 	return describe(code, day)
+}
+
+// icon names a picture for a WMO weather code (see monitor.Stat.Icon).
+func icon(code int, day bool) string {
+	switch {
+	case code <= 1:
+		if day {
+			return "sun"
+		}
+		return "moon"
+	case code == 2:
+		if day {
+			return "sun-cloud"
+		}
+		return "moon-cloud"
+	case code == 3:
+		return "cloud"
+	case code == 45 || code == 48:
+		return "fog"
+	case code >= 51 && code <= 57:
+		return "drizzle"
+	case code >= 61 && code <= 67:
+		return "rain"
+	case code >= 71 && code <= 77, code == 85, code == 86:
+		return "snow"
+	case code >= 80 && code <= 82:
+		if day {
+			return "showers"
+		}
+		return "rain"
+	case code >= 95:
+		return "storm"
+	}
+	return ""
 }
 
 func (m *Monitor) windTone(gust float64) monitor.Tone {

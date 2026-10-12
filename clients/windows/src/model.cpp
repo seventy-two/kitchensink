@@ -44,6 +44,7 @@ Stat parseStat(const json& j) {
     for (const auto& v : array(j, "series"))
         if (v.is_number()) st.series.push_back(v.get<float>());
     st.isPrivate = flag(j, "private");
+    st.icon = str(j, "icon");
     return st;
 }
 

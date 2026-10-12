@@ -168,7 +168,7 @@ drawn from the same few block types, so clients need no per-monitor code:
 
 | Block `type` | Fields |
 | --- | --- |
-| `stats` | `stats`: `label`, `value`, `detail`, `tone`, `series` (a sparkline) |
+| `stats` | `stats`: `label`, `value`, `detail`, `tone`, `series` (a sparkline), `icon` (a weather picture by the value: `sun`, `moon`, `sun-cloud`, `moon-cloud`, `cloud`, `fog`, `drizzle`, `rain`, `showers`, `snow` or `storm`) |
 | `table` | `columns` (`title`, `align`, `fill` for the column that takes spare width) and `rows` of cells (`text`, `tone`, `url`, and `detail` for a smaller line under the text) |
 | `list` | `items`: `title`, `subtitle`, `detail`, `url`, `image`, `tone` |
 | `checklist` | `items` (`id`, `title`, `done`) with checkboxes that send `toggle` and `delete` actions; `addHint` adds a box for `add` |

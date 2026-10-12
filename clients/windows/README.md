@@ -78,7 +78,7 @@ parts (the data model and the server-sent events parser) also build and
 test on Linux:
 
 ```sh
-g++ -std=c++17 -I src -I third_party tests/tests.cpp src/model.cpp src/sse.cpp src/local.cpp src/cat.cpp && ./a.out
+g++ -std=c++17 -I src -I third_party tests/tests.cpp src/model.cpp src/sse.cpp src/local.cpp src/cat.cpp src/weather_icon.cpp && ./a.out
 ```
 
 ## Layout
@@ -96,6 +96,9 @@ g++ -std=c++17 -I src -I third_party tests/tests.cpp src/model.cpp src/sse.cpp s
 | `src/images.cpp` | thumbnail download, WIC decoding and textures |
 | `src/config.cpp` | settings and start-with-Windows |
 | `src/theme.cpp` | palettes, fonts and ImGui style |
+| `src/cat.cpp` | the cat above Recent: her poses, routine and drawing |
+| `src/weather_icon.cpp` | weather icons for the forecast's chips, drawn from shapes |
+| `src/canvas.h` | the simple drawing interface those two draw through |
 
 `third_party` holds Dear ImGui v1.91.9b and nlohmann/json v3.11.3, both MIT
 licensed.

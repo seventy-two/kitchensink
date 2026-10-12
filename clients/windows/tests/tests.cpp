@@ -10,6 +10,7 @@
 #include "../src/local.h"
 #include "../src/model.h"
 #include "../src/sse.h"
+#include "../src/weather_icon.h"
 
 static int failures = 0;
 
@@ -446,6 +447,25 @@ struct Recorder : Canvas {
     }
 };
 
+static void testWeatherIcons() {
+    // Each stays inside its square and draws something; unknown names
+    // draw nothing.
+    IconColours col;
+    for (const char* n : {"sun", "moon", "sun-cloud", "moon-cloud", "cloud", "fog", "drizzle", "rain", "showers", "snow", "storm"}) {
+        CHECK(IsWeatherIcon(n));
+        Recorder r;
+        DrawWeatherIcon(r, n, {10, 20}, 50, col);
+        CHECK(r.shapes > 0);
+        CHECK(r.minX >= 10 && r.maxX <= 60 && r.minY >= 20 && r.maxY <= 70);
+    }
+    CHECK(!IsWeatherIcon("tornado"));
+    Recorder none;
+    DrawWeatherIcon(none, "tornado", {0, 0}, 50, col);
+    CHECK_EQ(none.shapes, 0);
+    Stat s = ParseSnapshot(nlohmann::json::parse(R"({"summary": [{"label": "13:00", "value": "18°", "icon": "rain"}]})")).summary[0];
+    CHECK_EQ(s.icon, std::string("rain"));
+}
+
 static void testCat() {
     // Over two whole episodes, at a narrow and a wide column, she stays on
     // the floor and inside her space: 68 units tall (4 below the floor) and
@@ -486,6 +506,7 @@ static void testCat() {
 
 int main() {
     testCat();
+    testWeatherIcons();
     testPrivate();
     testParseTime();
     testAgo();

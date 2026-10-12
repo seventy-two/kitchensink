@@ -26,6 +26,7 @@ struct Stat {
     // it to the series.
     float top = 0;
     bool isPrivate = false;  // a personal figure, e.g. money, hidden on request
+    std::string icon;        // a picture by the value, e.g. "rain"
 };
 
 struct Column {
