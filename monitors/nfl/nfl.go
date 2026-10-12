@@ -361,7 +361,7 @@ func (m *Monitor) table(week int, games []game) monitor.Block {
 			{Title: "", Align: monitor.AlignRight},
 			{Title: "Home"},
 			{Title: "", Align: monitor.AlignRight},
-			{Title: "Status"},
+			{Title: "Status", Fill: true},
 		},
 		Rows: [][]monitor.Cell{},
 	}
