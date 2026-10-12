@@ -161,11 +161,11 @@ Fonts LoadFonts(float scale) {
     };
 
     Fonts f;
-    f.body = add(regular, 16, true);
-    f.caption = add(regular, 13.5f, true);
-    f.heading = add(semibold, 16, false);
-    f.big = add(semibold, 26, false);
-    f.title = add(semibold, 20, false);
+    f.body = add(regular, 17, true);
+    f.caption = add(regular, 14.75f, true);
+    f.heading = add(semibold, 17, false);
+    f.big = add(semibold, 28, false);
+    f.title = add(semibold, 21, false);
     if (exists(iconFont)) {
         ImFontConfig cfg;
         cfg.OversampleH = 2;
