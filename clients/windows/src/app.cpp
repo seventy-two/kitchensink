@@ -564,7 +564,8 @@ void App::card(const Snapshot& s, float width) {
     ImGui::PopFont();
 
     // What's being watched on the left, if the monitor says; when it was
-    // updated and refresh on the right. Local panels need neither.
+    // updated and refresh on the right. Local panels need neither, and
+    // the age only shows on hover, for monitors where it matters now.
     bool local = IsLocal(s);
     if (!local || !s.subtitle.empty()) {
         ImGui::PushFont(fonts_.caption);
@@ -572,7 +573,9 @@ void App::card(const Snapshot& s, float width) {
         mutedText(s.subtitle);
         if (!local) {
             bool pending = refreshing_.count(s.monitor) && ImGui::GetTime() - refreshing_[s.monitor] < 15;
-            std::string when = pending ? "refreshing…" : "updated " + Ago(s.updated, now());
+            std::string when = pending                     ? "refreshing…"
+                               : show && s.timely && s.updated ? "updated " + Ago(s.updated, now())
+                                                               : "";
             ImGuiStyle& st = ImGui::GetStyle();
             float bw = ImGui::CalcTextSize(icon::Refresh).x + st.FramePadding.x * 2;
             float ww = ImGui::CalcTextSize(when.c_str()).x;
@@ -756,18 +759,20 @@ float App::compactCard(const Snapshot& s, float width, Show show, float body, bo
         dl->ChannelsSetCurrent(1);
         controls(false);
         // When it was updated, left of the slots; only the server's
-        // monitors have one.
+        // monitors have one, and it only shows on hover, where it matters
+        // now. Its space is kept, so the summary doesn't move.
         float x = controlsX;
         if (!local) {
             bool pending = refreshing_.count(s.monitor) && ImGui::GetTime() - refreshing_[s.monitor] < 15;
-            std::string when = failed    ? std::string(icon::Warning) + "  Failed"
-                               : pending ? "refreshing…"
-                               : s.updated ? Ago(s.updated, now())
+            std::string when = failed      ? std::string(icon::Warning) + "  Failed"
+                               : pending   ? "refreshing…"
+                               : s.updated ? (s.timely ? Ago(s.updated, now()) : "")
                                            : "waiting…";
+            bool hidden = !failed && !pending && s.updated && !shown;
             ImGui::PushFont(fonts_.caption);
-            x -= ImGui::CalcTextSize(when.c_str()).x + 4 * scale_;
+            if (!when.empty()) x -= ImGui::CalcTextSize(when.c_str()).x + 4 * scale_;
             ImGui::SetCursorScreenPos(ImVec2(x, top.y + st.FramePadding.y));
-            ImGui::TextColored(failed ? p.warn : p.muted, "%s", when.c_str());
+            if (!when.empty() && !hidden) ImGui::TextColored(failed ? p.warn : p.muted, "%s", when.c_str());
             if (failed && clicked && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", s.error.c_str());
             ImGui::PopFont();
         }

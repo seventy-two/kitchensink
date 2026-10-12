@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -210,6 +211,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		SummaryStyle: style,
 		Events:       events,
 		Next:         m.next(games, env.Now()),
+		Timely:       slices.ContainsFunc(games, func(g game) bool { return g.state == "in" }),
 	}, nil
 }
 

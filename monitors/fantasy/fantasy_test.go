@@ -213,6 +213,7 @@ func TestPlays(t *testing.T) {
 	assert.Equal(t, monitor.PriorityHigh, res.Events[2].Priority, "touchdowns are high")
 	assert.Equal(t, monitor.PriorityLow, res.Events[8].Priority, "sacks are low")
 	assert.Equal(t, 30*time.Second, res.Next, "checks often while the game's on")
+	assert.True(t, res.Timely, "its age matters while the game's on")
 
 	// The panel: each league's score, and the plays, newest first.
 	assert.Equal(t, monitor.SummaryChips, res.SummaryStyle)
@@ -258,6 +259,7 @@ func TestBetweenGames(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, res.Events)
 	assert.Equal(t, 4*time.Hour+15*time.Minute, res.Next, "wakes for kick-off")
+	assert.False(t, res.Timely)
 	assert.Zero(t, f.count("/core/"), "no plays read before kick-off")
 	assert.Equal(t, "Nothing notable from your players yet this week.", res.Blocks[1].Text)
 }

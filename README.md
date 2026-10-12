@@ -155,7 +155,9 @@ history but shouldn't raise a notification.
 
 **Snapshot**: `monitor`, `kind`, `title`, `updated`, `error` (the last
 poll's, with the last good blocks kept), `subtitle` (what it's watching, when that isn't obvious, e.g. a car
-search's filters), `blocks` and `summary`: a few
+search's filters), `timely` (true while when it was updated matters: always
+for the watchlist and AutoTrader, while a game's on for NFL and fantasy;
+the Windows client only shows a panel's age then, on hover), `blocks` and `summary`: a few
 stats (as in a `stats` block) worth seeing at a glance, which clients show
 instead of the blocks when space is short, and `summaryStyle`: empty for
 label/value/detail tiles, or `chips` for small blocks of the same, filled

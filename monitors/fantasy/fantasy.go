@@ -155,6 +155,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 
 	var events []monitor.Event
 	var next time.Duration
+	live := false // whether any of the user's players' games are on
 	for _, g := range board {
 		if !watched[g.Home] && !watched[g.Away] {
 			continue
@@ -167,7 +168,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 			}
 			continue
 		case g.State == "in":
-			next = m.live
+			next, live = m.live, true
 		case gs.Done:
 			continue
 		}
@@ -228,6 +229,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		SummaryStyle: monitor.SummaryChips,
 		Events:       events,
 		Next:         next,
+		Timely:       live,
 	}, nil
 }
 

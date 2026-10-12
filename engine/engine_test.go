@@ -109,7 +109,7 @@ func TestPollRecordsAndNotifies(t *testing.T) {
 }
 
 func TestSnapshotsSurviveRestart(t *testing.T) {
-	m := &scripted{results: []monitor.Result{{Blocks: block("saved"), Subtitle: "watching", SummaryStyle: monitor.SummaryChips, Summary: []monitor.Stat{{Label: "Next", Value: "soon"}}}}, errs: []error{nil}}
+	m := &scripted{results: []monitor.Result{{Blocks: block("saved"), Subtitle: "watching", Timely: true, SummaryStyle: monitor.SummaryChips, Summary: []monitor.Stat{{Label: "Next", Value: "soon"}}}}, errs: []error{nil}}
 	e, st := newEngine(t, m, &recorder{})
 	e.poll(context.Background(), e.runners[0])
 
@@ -119,6 +119,7 @@ func TestSnapshotsSurviveRestart(t *testing.T) {
 	assert.Equal(t, "saved", snap.Blocks[0].Text)
 	assert.Equal(t, "soon", snap.Summary[0].Value)
 	assert.Equal(t, "watching", snap.Subtitle)
+	assert.True(t, snap.Timely)
 	assert.Equal(t, monitor.SummaryChips, snap.SummaryStyle)
 	assert.Equal(t, "Renamed", snap.Title, "titles come from the config")
 }

@@ -81,7 +81,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		return monitor.Result{}, err
 	}
 
-	res := monitor.Result{Blocks: []monitor.Block{m.list(listings)}, Summary: summary(listings), Subtitle: m.search.describe()}
+	res := monitor.Result{Blocks: []monitor.Block{m.list(listings)}, Summary: summary(listings), Subtitle: m.search.describe(), Timely: true}
 	for _, l := range listings {
 		res.Events = append(res.Events, monitor.Event{
 			Key:      "advert:" + l.AdvertID,

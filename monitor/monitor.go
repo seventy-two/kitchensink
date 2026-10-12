@@ -76,6 +76,9 @@ type Result struct {
 	Summary []Stat
 	// SummaryStyle says how clients draw the summary.
 	SummaryStyle SummaryStyle
+	// Timely says when it was updated matters at the moment, e.g. for
+	// prices or a game in progress. Clients only show its age then.
+	Timely bool
 	// Events are things that happened. The engine drops any whose Key the
 	// monitor has emitted before, so monitors can re-emit freely.
 	Events []Event
@@ -122,10 +125,12 @@ type Snapshot struct {
 	Updated time.Time `json:"updated"`
 	// Error is the last poll's error, if it failed. Blocks then still hold
 	// the last good data.
-	Error    string  `json:"error,omitempty"`
-	Subtitle string  `json:"subtitle,omitempty"`
-	Blocks   []Block `json:"blocks"`
-	Summary  []Stat  `json:"summary,omitempty"`
+	Error    string `json:"error,omitempty"`
+	Subtitle string `json:"subtitle,omitempty"`
+	// Timely is the last good poll's Result.Timely.
+	Timely  bool    `json:"timely,omitempty"`
+	Blocks  []Block `json:"blocks"`
+	Summary []Stat  `json:"summary,omitempty"`
 	// SummaryStyle is how to draw Summary; empty for plain tiles.
 	SummaryStyle SummaryStyle `json:"summaryStyle,omitempty"`
 }

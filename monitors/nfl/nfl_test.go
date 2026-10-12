@@ -112,6 +112,7 @@ func TestSummary(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, monitor.SummaryChips, res.SummaryStyle)
 	assert.Equal(t, "CHI\nGB", res.Summary[0].Label)
+	assert.True(t, res.Timely, "its age matters while a game's on")
 
 	// Without games today: the followed teams' games this week.
 	body, err := os.ReadFile("testdata/scoreboard.json")
@@ -120,6 +121,7 @@ func TestSummary(t *testing.T) {
 	res, err = newMonitor(t, srv.URL, map[string]any{"teams": []string{"CHI", "DAL", "PHI"}}).Poll(context.Background(), monitortest.Env(tuesday))
 	require.NoError(t, err)
 	assert.Equal(t, monitor.SummaryTiles, res.SummaryStyle)
+	assert.False(t, res.Timely)
 	require.Len(t, res.Summary, 3)
 	assert.Equal(t, monitor.Stat{Label: "TB @ DAL", Value: "24–16", Detail: "Final", Tone: monitor.ToneBad}, res.Summary[0], "a followed team's loss")
 }

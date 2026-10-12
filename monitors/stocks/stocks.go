@@ -215,6 +215,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		Summary:      m.summary(quotes),
 		SummaryStyle: monitor.SummaryChips,
 		Events:       events,
+		Timely:       true,
 	}
 	if p := m.cfg.Portfolio; p != nil {
 		bySymbol := map[string]quote{}
