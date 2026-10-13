@@ -210,7 +210,7 @@ func TestPlays(t *testing.T) {
 	for _, e := range res.Events {
 		assert.False(t, e.Quiet, "a game with its plays read from the start notifies")
 	}
-	assert.Equal(t, monitor.PriorityHigh, res.Events[2].Priority, "touchdowns are high")
+	assert.Equal(t, monitor.PriorityNormal, res.Events[2].Priority, "touchdowns are normal: they're too frequent to stand out")
 	assert.Equal(t, monitor.PriorityLow, res.Events[8].Priority, "sacks are low")
 	assert.Equal(t, 30*time.Second, res.Next, "checks often while the game's on")
 	assert.True(t, res.Timely, "its age matters while the game's on")

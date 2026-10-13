@@ -360,13 +360,10 @@ func (m *Monitor) newPlays(ctx context.Context, env monitor.Env, id string, seen
 	return out, nil
 }
 
-// priority is how loudly to notify a kind of play: scores are high, sacks
-// low and the rest normal.
+// priority is how loudly to notify a kind of play: sacks are low and the
+// rest normal. Touchdowns come too often on game days to stand out as high.
 func priority(kind string) monitor.Priority {
-	switch kind {
-	case kindTD, kindDefTD:
-		return monitor.PriorityHigh
-	case kindSack:
+	if kind == kindSack {
 		return monitor.PriorityLow
 	}
 	return monitor.PriorityNormal
