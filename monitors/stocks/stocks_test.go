@@ -129,6 +129,59 @@ func TestMovesOnlyFromToday(t *testing.T) {
 	assert.Empty(t, res.Events)
 }
 
+func TestMovesStayUpToDate(t *testing.T) {
+	path := openQuotes(t)
+	srv := monitortest.Serve(t, path)
+	m := newMonitor(t, srv.URL, map[string]any{"movePct": 1, "holdings": []string{"tsla"}})
+	env := monitortest.Env(inSession)
+	res, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	var news, updates []monitor.Event
+	for _, e := range res.Events {
+		if e.Update {
+			updates = append(updates, e)
+		} else {
+			news = append(news, e)
+		}
+	}
+	require.Equal(t, []string{"move:TSLA:2026-10-09:up2"}, monitortest.Keys(news))
+	assert.Empty(t, updates, "a move just raised needs no update")
+
+	// Still up 2.05%: the event again (which the engine drops as a repeat)
+	// and its update, saying the same, so changing nothing.
+	res, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	require.Len(t, res.Events, 2)
+	assert.False(t, res.Events[0].Update)
+	assert.True(t, res.Events[1].Update)
+	assert.Equal(t, "TSLA up 2.05% today", res.Events[1].Title)
+	assert.False(t, res.Events[1].Quiet)
+
+	// Later TSLA has fallen back to +0.50%: the event says so, quietly.
+	b, err := os.ReadFile(path)
+	require.NoError(t, err)
+	srv.Reply(http.StatusOK, []byte(strings.Replace(strings.Replace(string(b), `"+2.05%"`, `"+0.50%"`, 1), `"+7.70"`, `"+1.90"`, 1)))
+	res, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	require.Len(t, res.Events, 1)
+	e := res.Events[0]
+	assert.True(t, e.Update)
+	assert.Equal(t, "move:TSLA:2026-10-09:up2", e.Key)
+	assert.Equal(t, "TSLA up 0.50% today", e.Title)
+	assert.Equal(t, "Earlier up 2.05% · 382.70 USD (+1.90)", e.Body)
+	assert.True(t, e.Quiet, "muted once it's fallen back")
+
+	// The next day's first poll forgets it.
+	next := monitortest.Env(inSession.AddDate(0, 0, 3))
+	next.State = env.State
+	_, err = m.Poll(context.Background(), next)
+	require.NoError(t, err)
+	var moves map[string]notedMove
+	_, err = env.State.Get(movesKey, &moves)
+	require.NoError(t, err)
+	assert.Empty(t, moves)
+}
+
 func TestTargetsNotifyOncePerCrossing(t *testing.T) {
 	srv := monitortest.Serve(t, "testdata/quotes.json")
 	m := newMonitor(t, srv.URL, map[string]any{

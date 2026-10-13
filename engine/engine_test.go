@@ -108,6 +108,39 @@ func TestPollRecordsAndNotifies(t *testing.T) {
 	assert.Equal(t, []string{"snapshot", "event A", "event Q", "snapshot", "event B", "snapshot"}, got)
 }
 
+func TestUpdates(t *testing.T) {
+	m := &scripted{
+		results: []monitor.Result{
+			{Events: []monitor.Event{{Key: "a", Title: "AMD down 3.46% today"}}},
+			{Events: []monitor.Event{{Key: "a", Title: "AMD down 0.71% today", Quiet: true, Update: true}, {Key: "nope", Title: "X", Update: true}}},
+			{Events: []monitor.Event{{Key: "a", Title: "AMD down 0.71% today", Quiet: true, Update: true}}},
+		},
+		errs: []error{nil, nil, nil},
+	}
+	n := &recorder{}
+	e, st := newEngine(t, m, n)
+	msgs, stop := e.Subscribe()
+	defer stop()
+	r := e.runners[0]
+	for range 3 {
+		e.poll(context.Background(), r)
+	}
+
+	events, err := st.EventsSince(0, 10)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"AMD down 0.71% today"}, titles(events), "updated in place; an update makes nothing new")
+	assert.True(t, events[0].Updated.Equal(now))
+	assert.Equal(t, []string{"AMD down 3.46% today"}, titles(n.events), "updates never notify")
+
+	var got []string
+	for len(msgs) > 0 {
+		if m := <-msgs; m.Type == MessageEvent {
+			got = append(got, fmt.Sprintf("%d %s %v", m.Event.ID, m.Event.Title, m.Update))
+		}
+	}
+	assert.Equal(t, []string{"1 AMD down 3.46% today false", "1 AMD down 0.71% today true"}, got, "a change is passed on once")
+}
+
 func TestSnapshotsSurviveRestart(t *testing.T) {
 	m := &scripted{results: []monitor.Result{{Blocks: block("saved"), Subtitle: "watching", Timely: true, SummaryStyle: monitor.SummaryChips, Summary: []monitor.Stat{{Label: "Next", Value: "soon"}}}}, errs: []error{nil}}
 	e, st := newEngine(t, m, &recorder{})

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"net/http"
 	"net/url"
@@ -197,12 +198,24 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	if _, err := env.State.Get(crossedKey, &crossed); err != nil {
 		return monitor.Result{}, err
 	}
+	moves := map[string]notedMove{}
+	if _, err := env.State.Get(movesKey, &moves); err != nil {
+		return monitor.Result{}, err
+	}
 	var events []monitor.Event
 	for _, q := range quotes {
-		events = append(events, m.moveEvents(q, env.Now())...)
+		news := m.moveEvents(q, env.Now())
+		events = append(events, news...)
+		events = append(events, m.moveUpdates(q, env.Now(), news, moves)...)
 		events = append(events, m.targetEvents(q, crossed, env.Now().Unix())...)
 	}
 	if err := env.State.Set(crossedKey, crossed); err != nil {
+		return monitor.Result{}, err
+	}
+	// Only today's moves are kept up to date.
+	today := env.Now().In(london).Format(time.DateOnly)
+	maps.DeleteFunc(moves, func(_ string, n notedMove) bool { return n.Day != today })
+	if err := env.State.Set(movesKey, moves); err != nil {
 		return monitor.Result{}, err
 	}
 
@@ -313,6 +326,74 @@ func (m *Monitor) moveEvents(q quote, now time.Time) []monitor.Event {
 		URL:      "https://www.cnbc.com/quotes/" + url.PathEscape(q.Symbol),
 		Priority: prio,
 	}}
+}
+
+// movesKey is the state key holding the day's notified moves, by event
+// key, so their events can be kept up to date.
+const movesKey = "moves"
+
+// notedMove is a move that's been notified: the symbol, its trading day,
+// which way and past what level, and the furthest it's been that way.
+type notedMove struct {
+	Symbol string  `json:"symbol"`
+	Day    string  `json:"day"`
+	Up     bool    `json:"up"`
+	Level  float64 `json:"level"`
+	Peak   float64 `json:"peak"`
+}
+
+// moveUpdates keeps the day's move events for q up to date as its price
+// changes: while the move's still past its level the event shows the
+// latest figures, and once it's fallen back the event says so and goes
+// quiet, so clients show it muted. news are the move events q raised this
+// poll; ones not seen before are noted, and need no update yet.
+func (m *Monitor) moveUpdates(q quote, now time.Time, news []monitor.Event, moves map[string]notedMove) []monitor.Event {
+	pct, ok := parsePct(q.ChangePct)
+	if !ok || !tradedToday(q, now) {
+		return nil
+	}
+	day := q.LastTime[:10]
+	fresh := map[string]bool{}
+	for _, e := range news {
+		if _, seen := moves[e.Key]; !seen {
+			fresh[e.Key] = true
+			level := float64(int(math.Abs(pct)/m.movePct)) * m.movePct
+			moves[e.Key] = notedMove{Symbol: q.Symbol, Day: day, Up: pct > 0, Level: level, Peak: math.Abs(pct)}
+		}
+	}
+	dir := "up"
+	if pct < 0 {
+		dir = "down"
+	}
+	latest := fmt.Sprintf("%s %s (%s)", q.Last, q.CurrencyCode, q.Change)
+	var out []monitor.Event
+	for key, n := range moves {
+		if n.Symbol != q.Symbol || n.Day != day {
+			continue
+		}
+		// How far it's gone in the noted direction.
+		along := pct
+		if !n.Up {
+			along = -pct
+		}
+		n.Peak = math.Max(n.Peak, along)
+		moves[key] = n
+		if fresh[key] {
+			continue // first raised just now: it says this already
+		}
+		ev := monitor.Event{Key: key, Update: true, Title: fmt.Sprintf("%s %s %.2f%% today", displayName(q), dir, math.Abs(pct)), Body: latest}
+		if along < n.Level {
+			was := "up"
+			if !n.Up {
+				was = "down"
+			}
+			ev.Body = fmt.Sprintf("Earlier %s %.2f%% · %s", was, n.Peak, latest)
+			ev.Quiet = true
+		}
+		out = append(out, ev)
+	}
+	slices.SortFunc(out, func(a, b monitor.Event) int { return strings.Compare(a.Key, b.Key) })
+	return out
 }
 
 // targetEvents notifies when a price moves past a target it wasn't past

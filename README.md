@@ -20,7 +20,7 @@ notification for each event.
 
 | Type | Source | Notifies |
 | --- | --- | --- |
-| `stocks` | CNBC quotes, plus a week's change from CNBC's daily closes (fetched once a day); `holdings` (largest first) lead the table and make up the summary | a holding's daily move (any symbol's, without `holdings`) passing each multiple of `movePct`, while its market is open; a price crossing a target |
+| `stocks` | CNBC quotes, plus a week's change from CNBC's daily closes (fetched once a day); `holdings` (largest first) lead the table and make up the summary | a holding's daily move (any symbol's, without `holdings`) passing each multiple of `movePct`, while its market is open, kept up to date through the day and muted once it falls back; a price crossing a target |
 | `nfl` | ESPN scoreboard; the summary is a chip per game today, followed teams' highlighted | kick-off, scores and results for followed teams (a touchdown's score waits up to two minutes for the try, so it's notified once); optionally every result |
 | `weather` | [Open-Meteo](https://open-meteo.com) (no key needed); the summary is the next twelve hours | rain due within the hour, frost, strong gusts |
 | `autotrader` | AutoTrader UK search | newly listed cars |
@@ -170,8 +170,13 @@ The stream sends:
 Each `event` message carries the event's ID as its SSE `id`.
 
 **Event**: `id`, `monitor`, `key`, `time`, `title`, `body`, `url`, `image`,
-`priority` (`low`, `normal`, `high`) and `quiet`. Quiet events go in the
-history but shouldn't raise a notification.
+`priority` (`low`, `normal`, `high`), `quiet` and `updated`. Quiet events go
+in the history but shouldn't raise a notification. A monitor can update an
+event it raised earlier (e.g. a price move that's since changed); the
+stream then sends it again with the same `id` and an `updated` time, and
+clients replace their copy without notifying. A client that reconnects
+with `since` also gets the events it had that were updated after event
+`since`.
 
 **Snapshot**: `monitor`, `kind`, `title`, `updated`, `error` (the last
 poll's, with the last good blocks kept), `subtitle` (what it's watching, when that isn't obvious, e.g. a car

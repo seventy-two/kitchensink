@@ -115,6 +115,14 @@ type Event struct {
 	// Quiet events are logged and shown in clients' history but don't
 	// raise a notification, e.g. adverts already listed on the first check.
 	Quiet bool `json:"quiet,omitempty"`
+	// Update, from a monitor, changes the title, body and quiet of the
+	// event already recorded with this key, e.g. a price move that's since
+	// changed, rather than recording a new one. It never notifies, and does
+	// nothing if there's no such event.
+	Update bool `json:"-"`
+	// Updated is when the event was last changed by an update, for clients
+	// to replace the copy they have.
+	Updated time.Time `json:"updated,omitzero"`
 }
 
 // Snapshot is the current state of one monitor, as clients render it.

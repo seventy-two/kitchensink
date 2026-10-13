@@ -93,3 +93,43 @@ func TestSnapshotsAndState(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, ok, "state is per monitor")
 }
+
+func TestUpdateEvent(t *testing.T) {
+	s := open(t)
+	at := time.Date(2026, 10, 13, 9, 0, 0, 0, time.UTC)
+	_, _, err := s.AddEvent(monitor.Event{Monitor: "a", Key: "1", Time: at, Title: "AMD down 3.46% today", URL: "https://example.com"})
+	require.NoError(t, err)
+	_, _, err = s.AddEvent(monitor.Event{Monitor: "a", Key: "2", Time: at.Add(time.Hour), Title: "later"})
+	require.NoError(t, err)
+
+	later := at.Add(2 * time.Hour)
+	e, changed, err := s.UpdateEvent(monitor.Event{Monitor: "a", Key: "1", Title: "AMD down 0.71% today", Body: "Earlier down 3.46%", Quiet: true, Updated: later})
+	require.NoError(t, err)
+	assert.True(t, changed)
+	assert.EqualValues(t, 1, e.ID)
+	assert.Equal(t, "https://example.com", e.URL, "the rest stays as it was")
+	assert.True(t, e.Time.Equal(at))
+	assert.True(t, e.Updated.Equal(later))
+
+	_, changed, err = s.UpdateEvent(monitor.Event{Monitor: "a", Key: "1", Title: "AMD down 0.71% today", Body: "Earlier down 3.46%", Quiet: true, Updated: later.Add(time.Minute)})
+	require.NoError(t, err)
+	assert.False(t, changed, "already reads that way")
+	_, changed, err = s.UpdateEvent(monitor.Event{Monitor: "a", Key: "missing", Title: "x", Updated: later})
+	require.NoError(t, err)
+	assert.False(t, changed, "an update never makes an event")
+
+	all, err := s.EventsSince(0, 10)
+	require.NoError(t, err)
+	require.Len(t, all, 2)
+	assert.Equal(t, "AMD down 0.71% today", all[0].Title)
+	assert.True(t, all[0].Quiet)
+
+	// A client that saw event 2 missed the update to event 1, made after.
+	missed, err := s.UpdatedSince(2, 10)
+	require.NoError(t, err)
+	require.Len(t, missed, 1)
+	assert.EqualValues(t, 1, missed[0].ID)
+	none, err := s.UpdatedSince(0, 10)
+	require.NoError(t, err)
+	assert.Empty(t, none, "with no event seen, they all come as new events anyway")
+}

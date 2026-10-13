@@ -50,11 +50,12 @@ const (
 )
 
 // Message is sent to subscribers when an event happens or a snapshot
-// changes.
+// changes. Update marks an event that was already sent and has changed.
 type Message struct {
 	Type     MessageType
 	Event    monitor.Event
 	Snapshot monitor.Snapshot
+	Update   bool
 }
 
 // minInterval stops a misbehaving monitor from polling in a tight loop.
@@ -198,6 +199,18 @@ func (e *Engine) record(ctx context.Context, log *slog.Logger, r *runner, ev mon
 	}
 	if ev.Priority == "" {
 		ev.Priority = monitor.PriorityNormal
+	}
+	if ev.Update {
+		// A change to an earlier event: passed on, never notified.
+		ev.Updated = e.opts.Now()
+		changed, ok, err := e.store.UpdateEvent(ev)
+		if err != nil {
+			log.Error("updating event", "key", ev.Key, "err", err)
+		} else if ok {
+			log.Info("event updated", "key", ev.Key, "title", changed.Title, "quiet", changed.Quiet)
+			e.hub.publish(Message{Type: MessageEvent, Event: changed, Update: true})
+		}
+		return
 	}
 	ev, isNew, err := e.store.AddEvent(ev)
 	if err != nil {

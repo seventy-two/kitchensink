@@ -190,6 +190,18 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 			}
 			last = e.ID
 		}
+		// Events the client had that have changed since, e.g. a price
+		// move: sent again for it to replace its copies.
+		changed, err := s.Store.UpdatedSince(since, maxReplay)
+		if err != nil {
+			s.Log.Error("replaying updated events", "err", err)
+			return
+		}
+		for _, e := range changed {
+			if writeEvent(w, e) != nil {
+				return
+			}
+		}
 	}
 	for _, snap := range s.Engine.Snapshots() {
 		if writeSSE(w, "", "snapshot", snap) != nil {
@@ -216,7 +228,7 @@ func (s *Server) stream(w http.ResponseWriter, r *http.Request) {
 			}
 			switch m.Type {
 			case engine.MessageEvent:
-				if m.Event.ID <= last {
+				if m.Event.ID <= last && !m.Update {
 					continue // already sent in the replay
 				}
 				err = writeEvent(w, m.Event)

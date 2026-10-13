@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/seventy-two/kitchensink/monitor"
 	_ "modernc.org/sqlite"
@@ -21,6 +22,7 @@ CREATE TABLE IF NOT EXISTS events (
 	key     TEXT NOT NULL,
 	time    INTEGER NOT NULL,
 	data    TEXT NOT NULL,
+	updated INTEGER NOT NULL DEFAULT 0, -- when last updated, Unix ms; 0 if never
 	UNIQUE (monitor, key)
 );
 CREATE TABLE IF NOT EXISTS snapshots (
@@ -52,6 +54,12 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("creating schema: %w", err)
 	}
+	// Databases made before events could be updated lack the column.
+	if _, err := db.Exec(`ALTER TABLE events ADD COLUMN updated INTEGER NOT NULL DEFAULT 0`); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column") {
+		db.Close()
+		return nil, fmt.Errorf("adding updated column: %w", err)
+	}
 	return &Store{db: db}, nil
 }
 
@@ -82,6 +90,47 @@ func (s *Store) AddEvent(e monitor.Event) (monitor.Event, bool, error) {
 	}
 	e.ID, err = res.LastInsertId()
 	return e, true, err
+}
+
+// UpdateEvent applies an update (see monitor.Event.Update) to the event
+// its monitor recorded with the same key, at the update's Updated time. It
+// returns the event as it now is, and whether it changed: false if there's
+// no such event or it already reads that way.
+func (s *Store) UpdateEvent(u monitor.Event) (monitor.Event, bool, error) {
+	var id int64
+	var data []byte
+	err := s.db.QueryRow(`SELECT id, data FROM events WHERE monitor = ? AND key = ?`, u.Monitor, u.Key).Scan(&id, &data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return u, false, nil
+	}
+	if err != nil {
+		return u, false, err
+	}
+	var e monitor.Event
+	if err := json.Unmarshal(data, &e); err != nil {
+		return u, false, fmt.Errorf("event %d: %w", id, err)
+	}
+	if e.Title == u.Title && e.Body == u.Body && e.Quiet == u.Quiet {
+		e.ID = id
+		return e, false, nil
+	}
+	e.Title, e.Body, e.Quiet, e.Updated = u.Title, u.Body, u.Quiet, u.Updated
+	if data, err = json.Marshal(e); err != nil {
+		return u, false, err
+	}
+	if _, err := s.db.Exec(`UPDATE events SET data = ?, updated = ? WHERE id = ?`, data, u.Updated.UnixMilli(), id); err != nil {
+		return u, false, err
+	}
+	e.ID = id
+	return e, true, nil
+}
+
+// UpdatedSince returns the events up to and including since that have
+// been updated after event since was recorded, oldest first: what a client
+// that saw up to since may have missed besides the events after it.
+func (s *Store) UpdatedSince(since int64, limit int) ([]monitor.Event, error) {
+	return s.events(`SELECT id, data FROM events WHERE id <= ?1 AND updated > 0 AND updated > COALESCE((SELECT time FROM events WHERE id = ?1), 0)
+		ORDER BY id LIMIT ?2`, since, limit)
 }
 
 // EventsSince returns up to limit events with IDs above since, oldest first.

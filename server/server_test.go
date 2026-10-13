@@ -189,6 +189,34 @@ func TestStream(t *testing.T) {
 	assert.Equal(t, "snapshot", s.next(t).name)
 }
 
+func TestStreamUpdates(t *testing.T) {
+	srv, eng, st := setup(t)
+	// Event a changed after the client saw event b.
+	_, _, err := st.UpdateEvent(monitor.Event{Monitor: "stocks", Key: "a", Title: "event a, changed", Updated: time.Now()})
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", srv.URL+"/api/stream?since=2", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	s := sse{bufio.NewReader(resp.Body)}
+
+	assert.Equal(t, "3", s.next(t).id, "the missed event")
+	e := s.next(t)
+	assert.Equal(t, "1", e.id, "then the changed one, to replace")
+	assert.Contains(t, e.data, `"title":"event a, changed"`)
+	assert.Equal(t, "snapshot", s.next(t).name)
+	assert.Equal(t, "ready", s.next(t).name)
+
+	// Live, a change to an event already sent comes through.
+	eng.msgs <- engine.Message{Type: engine.MessageEvent, Event: monitor.Event{ID: 2, Key: "b", Title: "b changed"}, Update: true}
+	e = s.next(t)
+	assert.Equal(t, "2", e.id)
+	assert.Contains(t, e.data, "b changed")
+}
+
 func TestStreamParams(t *testing.T) {
 	srv, _, _ := setup(t)
 	assert.Equal(t, http.StatusBadRequest, do(t, "GET", srv.URL+"/api/stream?heartbeat=1", "secret").StatusCode)
