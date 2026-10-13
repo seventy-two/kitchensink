@@ -30,19 +30,23 @@ type fakeAPIs struct {
 	mu       sync.Mutex
 	requests []string
 	state    string // the game's state on the scoreboard
-	plays    []byte
-	cookie   string
+	// The NFL's week and the one Sleeper shows, and ESPN's matchup period.
+	week, display, period int
+	plays                 []byte
+	cookie                string
 }
 
 func newFakeAPIs(t *testing.T) *fakeAPIs {
 	plays, err := os.ReadFile("testdata/plays.json")
 	require.NoError(t, err)
-	f := &fakeAPIs{state: "in", plays: plays}
+	f := &fakeAPIs{state: "in", plays: plays, week: 5, period: 5}
 	js := func(w http.ResponseWriter, v any) { json.NewEncoder(w).Encode(v) }
 	mux := http.NewServeMux()
 	// Sleeper.
 	mux.HandleFunc("/sleeper/state/nfl", func(w http.ResponseWriter, r *http.Request) {
-		js(w, map[string]any{"season": "2026", "week": 5})
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		js(w, map[string]any{"season": "2026", "week": f.week, "display_week": f.display})
 	})
 	mux.HandleFunc("/sleeper/user/tester", func(w http.ResponseWriter, r *http.Request) {
 		js(w, map[string]any{"user_id": "U1"})
@@ -85,9 +89,12 @@ func newFakeAPIs(t *testing.T) *fakeAPIs {
 			return
 		}
 		live := 61.5
+		f.mu.Lock()
+		period := f.period
+		f.mu.Unlock()
 		js(w, map[string]any{
 			"settings": map[string]any{"name": "Office League 2026"},
-			"status":   map[string]any{"currentMatchupPeriod": 5},
+			"status":   map[string]any{"currentMatchupPeriod": period},
 			"teams": []any{
 				map[string]any{"id": 10, "name": "Mine", "owners": []string{"{ME}"}, "roster": map[string]any{"entries": []any{
 					entry(2577417, "Dak Prescott", 6, 1), entry(3953687, "Brandon Aubrey", 6, 5), entry(-16006, "Cowboys D/ST", 6, 16),
@@ -236,6 +243,21 @@ func TestPlays(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, res.Events)
 	assert.Equal(t, 1, f.count("/sleeper/players/nfl"), "rosters are kept between checks")
+}
+
+func TestShowsTheWeekJustPlayed(t *testing.T) {
+	// On Tuesday morning the NFL has moved on to week 6, but Sleeper still
+	// shows week 5, whose last game finished overnight: its results stay.
+	f := newFakeAPIs(t)
+	f.week, f.display, f.period = 6, 5, 6
+	m := newMonitor(t, f)
+	res, err := m.Poll(context.Background(), monitortest.Env(now))
+	require.NoError(t, err)
+	assert.Equal(t, []monitor.Stat{
+		{Label: "Test League", Value: "32.9–14.6", Detail: "v Rival FC", Tone: monitor.ToneGood},
+		{Label: "Work", Value: "61.5–70.2", Detail: "v Their Team", Tone: monitor.ToneBad},
+	}, res.Summary, "week 5's matchups, from both Sleeper and ESPN")
+	assert.Equal(t, 1, f.count("/sleeper/league/L1/matchups/5"))
 }
 
 func TestJoiningLate(t *testing.T) {

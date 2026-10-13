@@ -54,17 +54,31 @@ type league struct {
 
 // roster is everything the user has, refreshed now and then.
 type roster struct {
-	Season   string              `json:"season"`
-	Week     int                 `json:"week"`
+	Season string `json:"season"`
+	Week   int    `json:"week"`
+	// Shown is the week whose matchups to show: Sleeper's display week,
+	// which stays on the week just played until midweek, so Monday night's
+	// results are still there on Tuesday morning in the UK.
+	Shown    int                 `json:"shown,omitempty"`
 	Leagues  []league            `json:"leagues"`
 	Players  map[string]owned    `json:"players"`  // by ESPN athlete ID
 	Defences map[string][]string `json:"defences"` // league names, by team abbreviation
 }
 
-// sleeperState is the NFL's season and week, from Sleeper.
+// sleeperState is the NFL's season and week, from Sleeper, and the week
+// its own app shows.
 type sleeperState struct {
-	Season string `json:"season"`
-	Week   int    `json:"week"`
+	Season      string `json:"season"`
+	Week        int    `json:"week"`
+	DisplayWeek int    `json:"display_week"`
+}
+
+// shownWeek is the week whose matchups to show (see Shown).
+func (r *roster) shownWeek() int {
+	if r.Shown > 0 && r.Shown <= r.Week {
+		return r.Shown
+	}
+	return r.Week
 }
 
 // espnTeam is a pro team from ESPN's team list.
@@ -80,7 +94,10 @@ func (m *Monitor) loadRoster(ctx context.Context, client *http.Client) (*roster,
 	if err := getJSON(ctx, client, m.cfg.SleeperURL+"/state/nfl", &state); err != nil {
 		return nil, err
 	}
-	r := &roster{Season: state.Season, Week: state.Week, Players: map[string]owned{}, Defences: map[string][]string{}}
+	r := &roster{Season: state.Season, Week: state.Week, Shown: state.DisplayWeek, Players: map[string]owned{}, Defences: map[string][]string{}}
+	if r.Shown <= 0 || r.Shown > r.Week {
+		r.Shown = r.Week
+	}
 	teams, err := m.espnTeams(ctx, client)
 	if err != nil {
 		return nil, err
@@ -386,7 +403,7 @@ func (m *Monitor) espnLeagueURL(season, id string, views ...string) string {
 	return u
 }
 
-// matchup is the user's game this week in one league.
+// matchup is the user's game in the shown week in one league.
 type matchup struct {
 	League   string
 	Mine     float64
@@ -406,7 +423,7 @@ func (m *Monitor) matchups(ctx context.Context, client *http.Client, r *roster, 
 				MatchupID int     `json:"matchup_id"`
 				Points    float64 `json:"points"`
 			}
-			if err := getJSON(ctx, client, fmt.Sprintf("%s/league/%s/matchups/%d", m.cfg.SleeperURL, l.ID, r.Week), &ms); err != nil {
+			if err := getJSON(ctx, client, fmt.Sprintf("%s/league/%s/matchups/%d", m.cfg.SleeperURL, l.ID, r.shownWeek()), &ms); err != nil {
 				logf("reading matchups", "league", l.Name, "err", err)
 				continue
 			}
@@ -439,8 +456,11 @@ func (m *Monitor) matchups(ctx context.Context, client *http.Client, r *roster, 
 					mine = t.ID
 				}
 			}
+			// ESPN moves on to the new week's matchups when the NFL does;
+			// step back as far as the shown week is behind.
+			period := data.Status.CurrentMatchupPeriod - (r.Week - r.shownWeek())
 			for _, s := range data.Schedule {
-				if s.MatchupPeriodID != data.Status.CurrentMatchupPeriod {
+				if s.MatchupPeriodID != period {
 					continue
 				}
 				me, them := s.Home, s.Away

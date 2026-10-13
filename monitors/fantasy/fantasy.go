@@ -216,14 +216,15 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		games[g.ID] = gs
 	}
 
-	// Keep only this week's: last week's games and plays go.
+	// Keep only this week's games, and the plays since the shown week:
+	// last night's stay while its results are shown.
 	weekGames := map[string]gameState{}
 	for _, g := range board {
 		if gs, ok := games[g.ID]; ok {
 			weekGames[g.ID] = gs
 		}
 	}
-	notes = slices.DeleteFunc(notes, func(n noted) bool { return n.Week != r.Week })
+	notes = slices.DeleteFunc(notes, func(n noted) bool { return n.Week < r.shownWeek() || n.Week > r.Week })
 	if len(notes) > maxNoted {
 		notes = notes[len(notes)-maxNoted:]
 	}
@@ -252,7 +253,8 @@ func (m *Monitor) roster(ctx context.Context, env monitor.Env, now time.Time) (*
 	if _, err := env.State.Get(rosterKey, &saved); err != nil {
 		return nil, err
 	}
-	if saved.Roster != nil && now.Sub(saved.Read) < rosterEvery {
+	// One saved before the shown week was kept is read again.
+	if saved.Roster != nil && saved.Roster.Shown > 0 && now.Sub(saved.Read) < rosterEvery {
 		return saved.Roster, nil
 	}
 	r, err := m.loadRoster(ctx, env.HTTP)
