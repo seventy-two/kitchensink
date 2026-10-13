@@ -67,7 +67,7 @@ func (m *Monitor) noteKey(o occurrence) string {
 	if m.cfg.Explain != nil {
 		about = m.cfg.Explain.Context
 	}
-	return noteKey(o, m.cfg.Calendars[o.Cal].Name, about)
+	return noteKey(o, m.calName(o), about)
 }
 
 // explain returns notes for the occurrences shown, by noteKey. Gemini is
@@ -87,6 +87,10 @@ func (m *Monitor) explain(ctx context.Context, env monitor.Env, events []occurre
 	var keys []string
 	for _, o := range events {
 		k := m.noteKey(o)
+		if o.Cal < 0 {
+			out[k] = o.detail // added events come with their own
+			continue
+		}
 		if _, done := kept[k]; done {
 			continue // a multi-day event, seen already
 		}
@@ -144,7 +148,7 @@ func (m *Monitor) askGemini(ctx context.Context, client *http.Client, events []o
 		}
 		list = append(list, explainEvent{
 			ID: i, Title: o.Title, When: when, Location: o.Location,
-			Calendar: m.cfg.Calendars[o.Cal].Name, Description: clip(o.Description, 300),
+			Calendar: m.calName(o), Description: clip(o.Description, 300),
 		})
 	}
 	eventsJSON, _ := json.Marshal(list)

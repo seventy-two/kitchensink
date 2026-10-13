@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -117,6 +118,9 @@ type occurrence struct {
 	Link        string // a video call link, if the event has one
 	Start, End  time.Time
 	AllDay      bool
+	// For added events (Cal -1): what to show as the calendar, and the
+	// line under the title.
+	source, detail string
 }
 
 // slack lets a reminder fire when a poll wakes a moment before it's due.
@@ -143,6 +147,11 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	if len(failed) == len(m.cfg.Calendars) {
 		return monitor.Result{}, errors.New(strings.Join(failed, "; "))
 	}
+	extra, err := m.addedOccurrences(env, today, end)
+	if err != nil {
+		return monitor.Result{}, err
+	}
+	occs = append(occs, extra...)
 	sort.SliceStable(occs, func(i, j int) bool {
 		a, b := occs[i], occs[j]
 		if !a.Start.Equal(b.Start) {
@@ -157,6 +166,14 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	var notes map[string]string
 	if m.cfg.Explain != nil {
 		notes = m.explain(ctx, env, occs, now)
+	}
+	for _, o := range occs {
+		if o.Cal < 0 {
+			if notes == nil {
+				notes = map[string]string{}
+			}
+			notes[m.noteKey(o)] = o.detail
+		}
 	}
 
 	var blocks []monitor.Block
@@ -182,8 +199,8 @@ func (m *Monitor) summary(occs []occurrence, now time.Time, notes map[string]str
 		if n := notes[m.noteKey(o)]; n != "" {
 			return n
 		}
-		if len(m.cfg.Calendars) > 1 {
-			return m.cfg.Calendars[o.Cal].Name
+		if len(m.cfg.Calendars) > 1 || o.Cal < 0 {
+			return m.calName(o)
 		}
 		return ""
 	}
@@ -252,7 +269,7 @@ func (m *Monitor) blocks(occs []occurrence, now time.Time, notes map[string]stri
 	today := midnight(now)
 	// No headings: each day's table is short, and they'd repeat.
 	cols := []monitor.Column{{}, {Fill: true}}
-	many := len(m.cfg.Calendars) > 1
+	many := len(m.cfg.Calendars) > 1 || slices.ContainsFunc(occs, func(o occurrence) bool { return o.Cal < 0 })
 	if many {
 		cols = append(cols, monitor.Column{})
 	}
@@ -287,8 +304,7 @@ func (m *Monitor) blocks(occs []occurrence, now time.Time, notes map[string]stri
 				{Text: title, Tone: tone, URL: o.Link},
 			}
 			if many {
-				cal := m.cfg.Calendars[o.Cal]
-				row = append(row, monitor.Cell{Text: cal.Name, Tone: cal.Tone})
+				row = append(row, monitor.Cell{Text: m.calName(o), Tone: m.calTone(o)})
 			}
 			row[1].Detail = notes[m.noteKey(o)]
 			b.Rows = append(b.Rows, row)
@@ -315,13 +331,12 @@ func (m *Monitor) reminders(occs []occurrence, now time.Time) []monitor.Event {
 		if o.AllDay || until <= 0 || until > m.remind+slack {
 			continue
 		}
-		cal := m.cfg.Calendars[o.Cal]
-		body := []string{inMinutes(until), cal.Name}
+		body := []string{inMinutes(until), m.calName(o)}
 		if o.Location != "" && o.Location != o.Link {
 			body = append(body, o.Location)
 		}
 		out = append(out, monitor.Event{
-			Key:   "remind:" + cal.Name + ":" + o.UID + ":" + o.Start.UTC().Format(time.RFC3339),
+			Key:   "remind:" + m.calName(o) + ":" + o.UID + ":" + o.Start.UTC().Format(time.RFC3339),
 			Time:  now,
 			Title: o.Title + " at " + o.Start.In(m.loc).Format("15:04"),
 			Body:  strings.Join(body, " · "),
