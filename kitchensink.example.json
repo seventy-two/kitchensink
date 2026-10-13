@@ -25,6 +25,21 @@
       "interval": "1h"
     },
     {
+      "type": "chores",
+      "title": "Chores",
+      "interval": "6h",
+      "config": {
+        "timezone": "Europe/London",
+        "remindAt": "08:00",
+        "perDay": { "washer": 1 },
+        "chores": [
+          { "name": "Towel wash", "every": 7, "uses": "washer" },
+          { "name": "Bedsheet wash", "every": 14, "flex": 3, "days": ["Sat", "Sun"], "uses": "washer" },
+          { "name": "Bins out", "every": 7, "flex": 0, "days": ["Thu"] }
+        ]
+      }
+    },
+    {
       "type": "stocks",
       "title": "Watchlist",
       "interval": "5m",

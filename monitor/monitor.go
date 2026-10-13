@@ -171,7 +171,8 @@ const (
 	// BlockText is a paragraph of plain text.
 	BlockText BlockType = "text"
 	// BlockChecklist is a list of Items with checkboxes. Ticking one sends
-	// a "toggle" action with its ID, and clients offer "delete"; if AddHint
+	// a "toggle" action with its ID, and clients offer "delete" (labelled
+	// with DeleteHint if set); if AddHint
 	// is set, they also offer a box for "add" actions.
 	BlockChecklist BlockType = "checklist"
 )
@@ -201,6 +202,9 @@ type Block struct {
 	Text    string    `json:"text,omitempty"`
 	// AddHint is the placeholder for a checklist's box for new items.
 	AddHint string `json:"addHint,omitempty"`
+	// DeleteHint says what a checklist's delete button does when that
+	// isn't deleting the item, e.g. "Put off a day".
+	DeleteHint string `json:"deleteHint,omitempty"`
 	// Private marks personal figures, e.g. money, which clients can hide
 	// on request.
 	Private bool `json:"private,omitempty"`

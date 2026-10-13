@@ -26,6 +26,7 @@ import (
 	// kind available to the config file.
 	_ "github.com/seventy-two/kitchensink/monitors/autotrader"
 	_ "github.com/seventy-two/kitchensink/monitors/calendar"
+	_ "github.com/seventy-two/kitchensink/monitors/chores"
 	_ "github.com/seventy-two/kitchensink/monitors/fantasy"
 	_ "github.com/seventy-two/kitchensink/monitors/football"
 	_ "github.com/seventy-two/kitchensink/monitors/nfl"

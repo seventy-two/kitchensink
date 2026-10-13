@@ -2,7 +2,7 @@
 
 A small self-hosted service that keeps an eye on things for you (stock
 prices, NFL games, your fantasy football teams, the weather, car adverts,
-your calendars and a to-do list) and tells your devices when something
+your calendars, a to-do list and recurring chores) and tells your devices when something
 happens. Clients get a live dashboard of everything being watched and a
 notification for each event.
 
@@ -25,6 +25,7 @@ notification for each event.
 | `weather` | [Open-Meteo](https://open-meteo.com) (no key needed); the summary is the next twelve hours | rain due within the hour, frost, strong gusts |
 | `autotrader` | AutoTrader UK search | newly listed cars |
 | `todo` | a to-do list kept on the server, changed from clients | nothing; ticked tasks clear after `clearAfter` (default `24h`) |
+| `chores` | recurring chores planned around each other (below), ticked off from clients | each morning at `remindAt` (default `08:00`), the day's chores |
 | `fantasy` | Sleeper and ESPN fantasy leagues, and ESPN's play-by-play | notable plays by players on any of your teams: touchdowns, big gains, turnovers, long or missed kicks, and your defences' takeaways, sacks and scores |
 | `calendar` | iCalendar (ICS) feeds, e.g. Google or Outlook | each timed event, `remindMinutes` (default 10) before it starts |
 | `football` | `nfl` and `fantasy` together as one panel (see below) | what each of them notifies |
@@ -87,6 +88,36 @@ all marked private, for clients to hide.
   ]
 }
 ```
+
+### Chores
+
+The `chores` monitor is a to-do list that fills itself. Each chore is due
+`every` so many days after it was last done, so doing one late or early
+moves the next one with it. Chores that share something (`uses`, e.g. the
+washing machine) are spread out so no day has more of them than `perDay`
+allows (one each, unless set), and each goes as close to its due day as it
+can: the most pressing first, within `flex` days either side (default 1)
+before it counts as late, and on its preferred `days` if it has them.
+Chores never done start straight away, staggered the same way.
+
+Its panel is two checklists, *Today* and *Coming up* (with the day each is
+planned for). Ticking a chore marks it done today, even one not due yet;
+unticking it the same day undoes that. The delete button puts it off a
+day instead, and the rest fit around it.
+
+```json
+"config": {
+  "perDay": { "washer": 1 },
+  "chores": [
+    { "name": "Towel wash", "every": 7, "uses": "washer" },
+    { "name": "Bedsheet wash", "every": 14, "flex": 3, "days": ["Sat", "Sun"], "uses": "washer" },
+    { "name": "Bins out", "every": 7, "flex": 0, "days": ["Thu"] }
+  ]
+}
+```
+
+A chore's history is kept by its `id`, which defaults to its name in
+lower case with dashes, so give it the old `id` when renaming it.
 
 ### Calendars
 
@@ -196,7 +227,7 @@ drawn from the same few block types, so clients need no per-monitor code:
 | `stats` | `stats`: `label`, `value`, `detail`, `tone`, `series` (a sparkline), `icon` (a weather picture by the value: `sun`, `moon`, `sun-cloud`, `moon-cloud`, `cloud`, `fog`, `drizzle`, `rain`, `showers`, `snow` or `storm`), `level` (0 to 1, drawn faintly behind the chip as a chart joined to its neighbours', e.g. the chance of rain; 0 draws along the bottom, absent draws nothing) |
 | `table` | `columns` (`title`, `align`, `fill` for the column that takes spare width) and `rows` of cells (`text`, `tone`, `url`, and `detail` for a smaller line under the text) |
 | `list` | `items`: `title`, `subtitle`, `detail`, `url`, `image`, `tone` |
-| `checklist` | `items` (`id`, `title`, `done`) with checkboxes that send `toggle` and `delete` actions; `addHint` adds a box for `add` |
+| `checklist` | `items` (`id`, `title`, `done`, `tone`) with checkboxes that send `toggle` and `delete` actions; `addHint` adds a box for `add`, and `deleteHint` names what delete does when it isn't deleting (the chores' "Put off a day") |
 | `text` | `text` |
 
 Tones are `good`, `bad`, `warn`, `muted`, `accent`, or empty for plain text.
