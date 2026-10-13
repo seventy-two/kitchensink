@@ -196,21 +196,15 @@ func TestSummary(t *testing.T) {
 		}
 		return out
 	}
+	// The next event, not the rest of the week; today's all-day "Bins out"
+	// waits for a quiet moment.
+	assert.Equal(t, []string{"in 8 min | Standup | Work"}, brief(now))
+	// What's on now leads.
 	assert.Equal(t, []string{
-		"Today | Bins out | Personal",
-		"in 8 min | Standup | Work",
-		"15:00 | Quarterly review | Work",
-	}, brief(now))
-	assert.Equal(t, []string{
-		"Today | Bins out | Personal",
-		"Now | Quarterly review | until 16:00",
+		"Now, until 16:00 | Quarterly review | Work",
 		"Tomorrow 10:00 | Standup (moved) | Work",
 	}, brief(time.Date(2026, 10, 12, 15, 30, 0, 0, london)))
-	assert.Equal(t, []string{
-		"Tomorrow 09:00 | Standup | Work",
-		"Fri 16 Oct | Weekend in Cardiff | Personal",
-		"Fri 09:00 | Standup | Work",
-	}, brief(time.Date(2026, 10, 14, 20, 0, 0, 0, london)))
+	assert.Equal(t, []string{"Tomorrow 09:00 | Standup | Work"}, brief(time.Date(2026, 10, 14, 20, 0, 0, 0, london)))
 }
 
 func TestTableLayout(t *testing.T) {

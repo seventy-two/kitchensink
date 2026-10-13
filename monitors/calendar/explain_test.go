@@ -113,6 +113,8 @@ func TestExplain(t *testing.T) {
 		"Late film -> about Late film",
 	}, details(res.Blocks[1]), "later days get notes too")
 	assert.Equal(t, "Weekend in Cardiff -> about Weekend in Cardiff", details(res.Blocks[6])[0], "on each day of a multi-day event")
+	require.Len(t, res.Summary, 1)
+	assert.Equal(t, monitor.Stat{Label: "in 8 min", Value: "Standup", Detail: "about Standup"}, res.Summary[0], "the next event, with its note")
 
 	require.Equal(t, 1, gemini.calls(), "one request for all of them")
 	body := gemini.bodies[0]

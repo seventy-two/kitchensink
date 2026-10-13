@@ -166,50 +166,58 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	blocks = append(blocks, m.blocks(occs, now, notes)...)
 	return monitor.Result{
 		Blocks:  blocks,
-		Summary: m.summary(occs, now),
+		Summary: m.summary(occs, now, notes),
 		Events:  m.reminders(occs, now),
 		Next:    m.next(occs, now),
 	}, nil
 }
 
-// summaryLen is how many events the summary shows.
-const summaryLen = 3
-
-// summary lists what's on now, then what's next: today's all-day events
-// count as on now, and later days' as next on their day.
-func (m *Monitor) summary(occs []occurrence, now time.Time) []monitor.Stat {
+// summary is the next event: when, what, and its note (or, without one,
+// which calendar it's on, if there's more than one), led by what's on now
+// if anything is. Today's all-day events show only when nothing else is
+// coming up.
+func (m *Monitor) summary(occs []occurrence, now time.Time, notes map[string]string) []monitor.Stat {
 	today, tomorrow := midnight(now), midnight(now).AddDate(0, 0, 1)
-	var on, next []monitor.Stat
-	for _, o := range occs {
-		cal := m.cfg.Calendars[o.Cal]
+	detail := func(o occurrence) string {
+		if n := notes[m.noteKey(o)]; n != "" {
+			return n
+		}
+		if len(m.cfg.Calendars) > 1 {
+			return m.cfg.Calendars[o.Cal].Name
+		}
+		return ""
+	}
+	var current, next, allDay *occurrence
+	for i := range occs {
+		o := &occs[i]
 		switch {
-		case over(o, now):
+		case over(*o, now):
 		case o.AllDay && o.Start.Before(tomorrow):
-			on = append(on, monitor.Stat{Label: "Today", Value: o.Title, Detail: cal.Name})
-		case !o.AllDay && !o.Start.After(now):
-			on = append(on, monitor.Stat{Label: "Now", Value: o.Title, Detail: "until " + o.End.In(m.loc).Format("15:04"), Tone: monitor.ToneAccent})
-		default:
-			next = append(next, monitor.Stat{Label: when(o, now, today), Value: o.Title, Detail: cal.Name})
-		}
-	}
-	if len(m.cfg.Calendars) == 1 {
-		for i := range on {
-			if on[i].Label == "Today" {
-				on[i].Detail = ""
+			if allDay == nil {
+				allDay = o
 			}
-		}
-		for i := range next {
-			next[i].Detail = ""
+		case !o.AllDay && !o.Start.After(now):
+			if current == nil {
+				current = o
+			}
+		case next == nil:
+			next = o
 		}
 	}
-	// Something coming up always gets a place, however busy now is.
-	out := on
-	if len(out) > summaryLen-1 && len(next) > 0 {
-		out = out[:summaryLen-1]
+	var out []monitor.Stat
+	if current != nil {
+		out = append(out, monitor.Stat{Label: "Now, until " + current.End.In(m.loc).Format("15:04"), Value: current.Title,
+			Detail: detail(*current), Tone: monitor.ToneAccent})
 	}
-	out = append(out, next...)
-	if len(out) > summaryLen {
-		out = out[:summaryLen]
+	if next == nil && current == nil {
+		next = allDay
+	}
+	if next != nil {
+		label := when(*next, now, today)
+		if next == allDay {
+			label = "Today"
+		}
+		out = append(out, monitor.Stat{Label: label, Value: next.Title, Detail: detail(*next)})
 	}
 	if len(out) == 0 {
 		out = append(out, monitor.Stat{Label: "Next", Value: fmt.Sprintf("Nothing in the next %d days", m.cfg.Days), Tone: monitor.ToneMuted})
