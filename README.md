@@ -2,8 +2,8 @@
 
 A small self-hosted service that keeps an eye on things for you (stock
 prices, NFL games, your fantasy football teams, the weather, car adverts,
-your calendars, a to-do list and recurring chores) and tells your devices when something
-happens. Clients get a live dashboard of everything being watched and a
+your calendars, a to-do list, recurring chores, and the orders and
+bookings in your email) and tells your devices when something happens. Clients get a live dashboard of everything being watched and a
 notification for each event.
 
 - **Server**: Go, one binary, SQLite. Runs the monitors on their intervals,
@@ -29,6 +29,7 @@ notification for each event.
 | `fantasy` | Sleeper and ESPN fantasy leagues, and ESPN's play-by-play | notable plays by players on any of your teams: touchdowns, big gains, turnovers, long or missed kicks, and your defences' takeaways, sacks and scores |
 | `calendar` | iCalendar (ICS) feeds, e.g. Google or Outlook | each timed event, `remindMinutes` (default 10) before it starts |
 | `football` | `nfl` and `fantasy` together as one panel (see below) | what each of them notifies |
+| `mail` | IMAP (e.g. Gmail) and Outlook mailboxes, read by Gemini for bookings, orders and things to do, which it adds to the calendar, to-do list and chores (below) | nothing itself (each finding is a quiet event); a sign-in code when an Outlook account needs one |
 
 Each monitor also returns a dashboard panel and a short summary (shown when
 space is short), polls on its own interval and can ask to be polled sooner
@@ -119,6 +120,13 @@ day instead, and the rest fit around it.
 A chore's history is kept by its `id`, which defaults to its name in
 lower case with dashes, so give it the old `id` when renaming it.
 
+Other monitors (the `mail` monitor) can also tell it a chore was done on
+a given day (a `done` action, with `{"day": "2026-10-12"}`), and track
+chores of their own with a `track` action (`{"name", "every", "last"}`),
+for reordering things bought regularly. Those go in a third checklist,
+*Reorders*, due when the last lot has likely run out; ticking one means
+it's been ordered, and its delete button stops tracking it for good.
+
 ### Calendars
 
 The `calendar` monitor merges any number of ICS feeds into one view of the
@@ -135,6 +143,12 @@ calendar shows without them. Naming places you go regularly in the
 in a film's screening or a venue for titles that don't say; changing the
 `context` makes every note again.
 
+Other monitors can add events too (the `mail` monitor's bookings): an
+`upsert` action with a `calendar.Added` as its data adds or replaces one
+by its `key`, and `remove` takes it away. They show alongside the feeds',
+with their `source` as the calendar's name, their own `detail` in place
+of a Gemini note, and reminders like any other event.
+
 Each feed's address is a secret, so put it in the environment:
 
 - **Google Calendar**: Settings → the calendar → *Integrate calendar* →
@@ -142,6 +156,59 @@ Each feed's address is a secret, so put it in the environment:
 - **Outlook / Microsoft 365**: Settings → Calendar → *Shared calendars* →
   *Publish a calendar*, with *Can view all details*, then copy the ICS link.
   Some work accounts don't allow publishing.
+
+### Mail
+
+The `mail` monitor reads your email for what belongs on the dashboard,
+and shows none of the mail itself. Each new message whose subject looks
+like an order, booking, ticket, appointment, delivery or a change to one
+is passed, with its text, to Gemini; nothing else leaves the server.
+Gemini says what in it is worth keeping, and the monitor passes that on:
+
+- **Calendar**: tickets, reservations, travel, appointments and booked
+  delivery slots, as events from "Email"; a later email about the same
+  booking (by its reference) moves or cancels it.
+- **To do**: things the email asks you to do by a date, such as returning
+  something or checking in.
+- **Chores**: the chores in `choresDone` ticked off on the day of an email
+  that shows them done (placing the weekly shop), and everyday things
+  bought again and again (dishwasher tablets, coffee) tracked as
+  reorders, due again after the time between your orders, or Gemini's
+  guess until there are two.
+
+The first time, it reads back `lookbackDays` (default 365), which finds
+bookings still to come and how often you reorder things; past events and
+old to-dos are skipped. Its panel lists what each email added.
+
+```json
+"config": {
+  "accounts": [
+    { "type": "imap", "name": "Gmail", "user": "${GMAIL_USER}", "password": "${GMAIL_APP_PASSWORD}" },
+    { "type": "outlook", "name": "Outlook", "clientId": "${OUTLOOK_CLIENT_ID}" }
+  ],
+  "gemini": { "apiKey": "${GEMINI_API_KEY}", "context": "Lives with their partner in Bristol." },
+  "choresDone": { "waitrose-order": "a Waitrose groceries order being placed" }
+}
+```
+
+- **Gmail** (`imap`, `imap.gmail.com:993` by default): turn on 2-Step
+  Verification, then make an app password at
+  [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords).
+  It reads `INBOX` unless `folder` says otherwise, and never marks mail
+  read.
+- **Outlook** (`outlook`, through Microsoft Graph): Outlook.com no longer
+  takes passwords, so register an app in the
+  [Microsoft Entra admin centre](https://entra.microsoft.com) (App
+  registrations → New registration; *Personal Microsoft accounts only*; no
+  redirect URI), turn on *Allow public client flows* under
+  Authentication, and give its *Application (client) ID* as `clientId`.
+  The panel then shows a code to enter at microsoft.com/devicelogin; once
+  signed in, the monitor stays signed in. For a work or school account,
+  set `tenant` (it defaults to `consumers`).
+
+`calendar`, `todo` and `chores` name the monitors to add to (by default
+those IDs; empty leaves one out), `reorders: false` turns reorders off,
+and `ignoreFrom` skips senders whose address contains any of its strings.
 
 ## Running it
 
@@ -186,7 +253,7 @@ Every `/api` request needs `Authorization: Bearer <token>`.
 | `GET /api/events?since=ID&limit=N` | `{"events": [Event...]}` after `since`, or the latest `limit` (default 100) |
 | `GET /api/stream?since=ID&heartbeat=S` | a server-sent events stream (below) |
 | `POST /api/monitors/{id}/refresh` | 202; the monitor polls now |
-| `POST /api/monitors/{id}/actions` | 204; applies a JSON action such as `{"type":"add","text":"Bins"}`, `{"type":"toggle","id":"…"}` or `{"type":"delete","id":"…"}`, then polls. 400 for an action the monitor refuses, 405 for a monitor that takes none |
+| `POST /api/monitors/{id}/actions` | 204; applies a JSON action such as `{"type":"add","text":"Bins"}`, `{"type":"toggle","id":"…"}` or `{"type":"delete","id":"…"}` (some take a `data` object too), then polls. 400 for an action the monitor refuses, 405 for a monitor that takes none |
 | `GET /healthz` | `ok`, no token needed |
 
 The stream sends:
@@ -266,6 +333,9 @@ Then import it from `cmd/kitchensink/main.go` and add it to the config.
   `monitor.Actor`. The engine never runs `Act` alongside `Poll`, and polls
   straight after, so changes show at once. Wrap `monitor.ErrBadAction` for
   actions it can't do.
+- A monitor can act on another, as a client would, with `env.Act` (the
+  `mail` monitor adds to the calendar this way). It's nil without an
+  engine, and a monitor can't act on itself.
 - Event keys only need to be unique within the monitor. The engine drops
   any key it has seen before, so a monitor can report the current state on
   every poll without repeating notifications.
