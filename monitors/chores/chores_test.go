@@ -220,3 +220,65 @@ func TestConfig(t *testing.T) {
 		assert.Error(t, err, bad)
 	}
 }
+
+func actData(t *testing.T, m *Monitor, env monitor.Env, typ, id string, data any) error {
+	t.Helper()
+	b, err := json.Marshal(data)
+	require.NoError(t, err)
+	return m.Act(context.Background(), env, monitor.Action{Type: typ, ID: id, Data: b})
+}
+
+func TestDoneOnADay(t *testing.T) {
+	m := newMonitor(t, laundry)
+	env := monitortest.Env(now)
+	// The Waitrose order was placed on Saturday, as an email says.
+	require.NoError(t, actData(t, m, env, "done", "waitrose-order", Done{Day: "2026-10-10"}))
+	require.NoError(t, actData(t, m, env, "done", "waitrose-order", Done{Day: "2026-10-03"}), "an older one goes in order")
+	today, later := lines(t, poll(t, m, env))
+	assert.Equal(t, []string{"[ ] Whites wash"}, today)
+	assert.Contains(t, later, "[ ] Waitrose order · Sat")
+	v, err := m.view(env)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"2026-10-03", "2026-10-10"}, v.records["waitrose-order"].Done)
+
+	assert.ErrorIs(t, actData(t, m, env, "done", "waitrose-order", Done{Day: "2026-10-20"}), monitor.ErrBadAction, "the future")
+	assert.ErrorIs(t, actData(t, m, env, "done", "waitrose-order", Done{Day: "Sat"}), monitor.ErrBadAction)
+	assert.ErrorIs(t, actData(t, m, env, "done", "nope", Done{Day: "2026-10-10"}), monitor.ErrBadAction)
+}
+
+func TestTracked(t *testing.T) {
+	m := newMonitor(t, laundry)
+	env := monitortest.Env(now)
+	require.NoError(t, actData(t, m, env, "track", "dishwasher-tablets", Tracked{Name: "Dishwasher tablets", Every: 30, Last: "2026-09-10"}))
+	require.NoError(t, actData(t, m, env, "track", "coffee-beans", Tracked{Name: "Coffee beans", Every: 21, Last: "2026-10-01"}))
+	res := poll(t, m, env)
+	require.Len(t, res.Blocks, 3)
+	r := res.Blocks[2]
+	assert.Equal(t, "Reorders", r.Title)
+	assert.Equal(t, "Stop tracking", r.DeleteHint)
+	var got []string
+	for _, it := range r.Items {
+		got = append(got, it.Title)
+	}
+	assert.Equal(t, []string{"Dishwasher tablets · due", "Coffee beans · Thu 22 Oct"}, got)
+	assert.Equal(t, monitor.ToneWarn, r.Items[0].Tone)
+	assert.Contains(t, res.Summary, monitor.Stat{Value: "Reorder dishwasher tablets", Tone: monitor.ToneWarn}, "three days past due")
+	require.Len(t, res.Events, 1)
+	assert.Equal(t, "Whites wash, Waitrose order, Reorder dishwasher tablets", res.Events[0].Body)
+	today, later := lines(t, monitor.Result{Blocks: res.Blocks[:2]})
+	assert.NotContains(t, append(today, later...), "Coffee beans", "reorders keep to their own list")
+
+	// Ordered again (an email says, or ticked): next due from then.
+	require.NoError(t, actData(t, m, env, "track", "dishwasher-tablets", Tracked{Name: "Dishwasher tablets", Every: 28, Last: "2026-10-12"}))
+	res = poll(t, m, env)
+	assert.Equal(t, "Dishwasher tablets · Mon 9 Nov", res.Blocks[2].Items[1].Title)
+
+	// Stopping it is for good.
+	act(t, m, env, "delete", "coffee-beans")
+	require.NoError(t, actData(t, m, env, "track", "coffee-beans", Tracked{Name: "Coffee beans", Every: 21}))
+	res = poll(t, m, env)
+	require.Len(t, res.Blocks[2].Items, 1)
+
+	assert.ErrorIs(t, actData(t, m, env, "track", "whites-wash", Tracked{Name: "Whites", Every: 7}), monitor.ErrBadAction)
+	assert.ErrorIs(t, actData(t, m, env, "track", "x", Tracked{Name: "X", Every: 0}), monitor.ErrBadAction)
+}

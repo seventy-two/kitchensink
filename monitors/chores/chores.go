@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -59,6 +60,9 @@ type chore struct {
 	days     [7]bool
 	any      bool
 	uses     string
+	// reorder marks a chore tracked by an action rather than configured,
+	// such as buying something again.
+	reorder bool
 }
 
 // Monitor is the chores list.
@@ -167,8 +171,28 @@ type record struct {
 // keepDone is how many days done each chore remembers.
 const keepDone = 20
 
-// recordsKey is the state key holding each chore's record, by ID.
-const recordsKey = "records"
+// State keys: each chore's record, by ID; the chores tracked by actions;
+// and the IDs of those stopped, which aren't tracked again.
+const (
+	recordsKey = "records"
+	trackedKey = "tracked"
+	stoppedKey = "stopped"
+)
+
+// Tracked is a chore added by a "track" action, e.g. reordering something
+// bought regularly: the action's ID is its ID, and its Data this.
+type Tracked struct {
+	Name  string `json:"name"`
+	Every int    `json:"every"`
+	// Last, in a track action, is a day it was done ("2006-01-02").
+	Last string `json:"last,omitempty"`
+}
+
+// Done is the Data of a "done" action: the day the chore with the action's
+// ID was done, which can be in the past.
+type Done struct {
+	Day string `json:"day"`
+}
 
 // planned is a chore and the day it's planned for.
 type planned struct {
@@ -177,6 +201,15 @@ type planned struct {
 	due   day
 	never bool
 	done  bool // done today
+}
+
+// label names the chore in a summary or reminder.
+func (p planned) label() string {
+	if p.reorder {
+		r := []rune(p.name)
+		return "Reorder " + strings.ToLower(string(r[:1])) + string(r[1:])
+	}
+	return p.name
 }
 
 // lateBy is how many days past its flex it is on its planned day.
@@ -191,17 +224,26 @@ func (p planned) lateBy() int {
 type view struct {
 	today   day
 	records map[string]*record
-	items   []planned // in config order
+	items   []planned // in config order, then tracked ones by ID
+	tracked map[string]Tracked
 }
 
 func (m *Monitor) view(env monitor.Env) (view, error) {
-	v := view{today: dayOf(env.Now(), m.loc), records: map[string]*record{}}
+	v := view{today: dayOf(env.Now(), m.loc), records: map[string]*record{}, tracked: map[string]Tracked{}}
 	if _, err := env.State.Get(recordsKey, &v.records); err != nil {
 		return v, fmt.Errorf("reading chores: %w", err)
 	}
+	if _, err := env.State.Get(trackedKey, &v.tracked); err != nil {
+		return v, fmt.Errorf("reading tracked chores: %w", err)
+	}
+	all := slices.Clone(m.chores)
+	for _, id := range slices.Sorted(maps.Keys(v.tracked)) {
+		t := v.tracked[id]
+		all = append(all, chore{id: id, name: t.Name, every: t.Every, any: true, reorder: true})
+	}
 	var jobs []job
 	used := map[string]map[day]int{}
-	for i, c := range m.chores {
+	for i, c := range all {
 		r := v.records[c.id]
 		if r == nil {
 			r = &record{}
@@ -242,6 +284,9 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 	if err != nil {
 		return err
 	}
+	if a.Type == "track" {
+		return m.track(env, v, a)
+	}
 	i := slices.IndexFunc(v.items, func(p planned) bool { return p.id == a.ID })
 	if i < 0 {
 		return fmt.Errorf("%w: no chore %q", monitor.ErrBadAction, a.ID)
@@ -254,14 +299,24 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 		if p.done {
 			r.Done = r.Done[:len(r.Done)-1]
 		} else {
-			r.Done = append(r.Done, v.today.String())
-			if n := len(r.Done); n > keepDone {
-				r.Done = r.Done[n-keepDone:]
-			}
-			r.PutOff = ""
+			r.done(v.today)
 		}
+	case "done":
+		var d Done
+		if err := json.Unmarshal(a.Data, &d); err != nil {
+			return fmt.Errorf("%w: %v", monitor.ErrBadAction, err)
+		}
+		on, ok := parseDay(d.Day)
+		if !ok || on > v.today {
+			return fmt.Errorf("%w: %q isn't a day so far", monitor.ErrBadAction, d.Day)
+		}
+		r.done(on)
 	case "delete":
-		// Clients' delete button puts it off a day.
+		if p.reorder {
+			// Stop tracking it, for good.
+			return m.stop(env, v, p.id)
+		}
+		// Otherwise clients' delete button puts it off a day.
 		if p.done {
 			return fmt.Errorf("%w: %s is done today", monitor.ErrBadAction, p.name)
 		}
@@ -270,6 +325,81 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 		return fmt.Errorf("%w: unknown action %q", monitor.ErrBadAction, a.Type)
 	}
 	return env.State.Set(recordsKey, v.records)
+}
+
+// done records the chore done on a day, keeping the days in order.
+func (r *record) done(on day) {
+	s := on.String()
+	if slices.Contains(r.Done, s) {
+		return
+	}
+	r.Done = append(r.Done, s)
+	slices.Sort(r.Done) // the format sorts by date
+	if n := len(r.Done); n > keepDone {
+		r.Done = r.Done[n-keepDone:]
+	}
+	if r.Done[len(r.Done)-1] == s {
+		r.PutOff = ""
+	}
+}
+
+// maxEvery bounds a tracked chore's interval, in days.
+const maxEvery = 730
+
+// track adds or updates a tracked chore, unless it's been stopped.
+func (m *Monitor) track(env monitor.Env, v view, a monitor.Action) error {
+	var t Tracked
+	if err := json.Unmarshal(a.Data, &t); err != nil {
+		return fmt.Errorf("%w: %v", monitor.ErrBadAction, err)
+	}
+	t.Name = strings.TrimSpace(t.Name)
+	if a.ID == "" || t.Name == "" || t.Every < 1 || t.Every > maxEvery {
+		return fmt.Errorf("%w: tracking needs an ID, a name and every from 1 to %d days", monitor.ErrBadAction, maxEvery)
+	}
+	if slices.ContainsFunc(m.chores, func(c chore) bool { return c.id == a.ID }) {
+		return fmt.Errorf("%w: %q is a configured chore", monitor.ErrBadAction, a.ID)
+	}
+	var stopped []string
+	if _, err := env.State.Get(stoppedKey, &stopped); err != nil {
+		return err
+	}
+	if slices.Contains(stopped, a.ID) {
+		return nil
+	}
+	if t.Last != "" {
+		on, ok := parseDay(t.Last)
+		if !ok || on > v.today {
+			return fmt.Errorf("%w: %q isn't a day so far", monitor.ErrBadAction, t.Last)
+		}
+		r := v.records[a.ID]
+		if r == nil {
+			r = &record{}
+			v.records[a.ID] = r
+		}
+		r.done(on)
+		if err := env.State.Set(recordsKey, v.records); err != nil {
+			return err
+		}
+	}
+	v.tracked[a.ID] = Tracked{Name: t.Name, Every: t.Every}
+	return env.State.Set(trackedKey, v.tracked)
+}
+
+// stop stops tracking a chore and forgets it.
+func (m *Monitor) stop(env monitor.Env, v view, id string) error {
+	var stopped []string
+	if _, err := env.State.Get(stoppedKey, &stopped); err != nil {
+		return err
+	}
+	if err := env.State.Set(stoppedKey, append(stopped, id)); err != nil {
+		return err
+	}
+	delete(v.tracked, id)
+	delete(v.records, id)
+	if err := env.State.Set(recordsKey, v.records); err != nil {
+		return err
+	}
+	return env.State.Set(trackedKey, v.tracked)
 }
 
 func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, error) {
@@ -295,9 +425,25 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	})
 	today := monitor.Block{Type: monitor.BlockChecklist, Title: "Today", Items: []monitor.Item{}, DeleteHint: "Put off a day"}
 	later := monitor.Block{Type: monitor.BlockChecklist, Title: "Coming up", Items: []monitor.Item{}, DeleteHint: "Put off a day"}
+	reorders := monitor.Block{Type: monitor.BlockChecklist, Title: "Reorders", Items: []monitor.Item{}, DeleteHint: "Stop tracking"}
 	var open []planned
 	for _, p := range items {
 		it := monitor.Item{ID: p.id, Title: p.name, Done: p.done}
+		if p.reorder {
+			// Due means likely running out; ticking it means ordered.
+			switch {
+			case p.done:
+				it.Title += " · ordered today"
+			case p.on == v.today:
+				it.Title += " · due"
+				it.Tone = monitor.ToneWarn
+				open = append(open, p)
+			default:
+				it.Title += " · " + when(p.on, v.today)
+			}
+			reorders.Items = append(reorders.Items, it)
+			continue
+		}
 		if p.on == v.today {
 			if late := p.lateBy(); late > 0 {
 				it.Title += fmt.Sprintf(" · %s late", days(late))
@@ -313,7 +459,11 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		}
 	}
 
-	res := monitor.Result{Blocks: []monitor.Block{today, later}, Summary: summary(open, items, v.today)}
+	blocks := []monitor.Block{today, later}
+	if len(reorders.Items) > 0 {
+		blocks = append(blocks, reorders)
+	}
+	res := monitor.Result{Blocks: blocks, Summary: summary(open, items, v.today)}
 	midnight := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, m.loc)
 	res.Next = midnight.Sub(now)
 	if m.remindAt >= 0 {
@@ -321,7 +471,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		if !now.Before(at) && len(open) > 0 {
 			var names []string
 			for _, p := range open {
-				names = append(names, p.name)
+				names = append(names, p.label())
 			}
 			res.Events = append(res.Events, monitor.Event{
 				Key:      "today/" + v.today.String(),
@@ -343,7 +493,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 func summary(open, items []planned, today day) []monitor.Stat {
 	var out []monitor.Stat
 	for i, p := range open {
-		s := monitor.Stat{Value: p.name}
+		s := monitor.Stat{Value: p.label()}
 		if i == 0 {
 			s.Label = "Today"
 		}
@@ -358,7 +508,7 @@ func summary(open, items []planned, today day) []monitor.Stat {
 	out = append(out, monitor.Stat{Label: "Today", Value: "All done", Tone: monitor.ToneGood})
 	for _, p := range items {
 		if p.on > today {
-			out = append(out, monitor.Stat{Label: "Next", Value: p.name, Detail: when(p.on, today)})
+			out = append(out, monitor.Stat{Label: "Next", Value: p.label(), Detail: when(p.on, today)})
 			break
 		}
 	}
