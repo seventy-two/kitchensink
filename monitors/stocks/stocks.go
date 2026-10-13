@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/seventy-two/kitchensink/monitor"
 )
@@ -198,7 +199,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	}
 	var events []monitor.Event
 	for _, q := range quotes {
-		events = append(events, m.moveEvents(q)...)
+		events = append(events, m.moveEvents(q, env.Now())...)
 		events = append(events, m.targetEvents(q, crossed, env.Now().Unix())...)
 	}
 	if err := env.State.Set(crossedKey, crossed); err != nil {
@@ -277,13 +278,13 @@ func (m *Monitor) held(q quote) bool {
 
 // moveEvents notifies for each multiple of movePct the day's move has
 // passed. Keys include the trading day, so each level fires once a day.
-// Only the regular session counts: before the open CNBC still shows the
-// last session's move, and its day can come back wrong, which once
-// notified Friday's moves again on Monday morning. With holdings set,
-// other symbols are only watched.
-func (m *Monitor) moveEvents(q quote) []monitor.Event {
+// Only today's regular session counts: before the open CNBC still shows
+// the last session's move, and early each morning it has sent an old
+// day's quotes marked as in session, so the quote must be from today too.
+// With holdings set, other symbols are only watched.
+func (m *Monitor) moveEvents(q quote, now time.Time) []monitor.Event {
 	pct, ok := parsePct(q.ChangePct)
-	if !ok || m.movePct <= 0 || q.MarketStatus != "REG_MKT" || len(m.rank) > 0 && !m.held(q) {
+	if !ok || m.movePct <= 0 || q.MarketStatus != "REG_MKT" || !tradedToday(q, now) || len(m.rank) > 0 && !m.held(q) {
 		return nil
 	}
 	steps := int(math.Abs(pct) / m.movePct)

@@ -20,6 +20,10 @@ import (
 
 var now = time.Date(2026, 10, 10, 19, 0, 0, 0, time.UTC)
 
+// inSession is during the fixture's trading day, Friday 9 October, with
+// London and New York both open.
+var inSession = time.Date(2026, 10, 9, 15, 30, 0, 0, time.UTC)
+
 func newMonitor(t *testing.T, srv string, extra map[string]any) *Monitor {
 	t.Helper()
 	chart := monitortest.Serve(t, "testdata/chart.json")
@@ -74,7 +78,7 @@ func openQuotes(t *testing.T) string {
 func TestMoveEvents(t *testing.T) {
 	srv := monitortest.Serve(t, openQuotes(t))
 	m := newMonitor(t, srv.URL, map[string]any{"movePct": 1})
-	res, err := m.Poll(context.Background(), monitortest.Env(now))
+	res, err := m.Poll(context.Background(), monitortest.Env(inSession))
 	require.NoError(t, err)
 
 	// TSLA +2.05% passes 2%; the FTSE +1.06% and AAPL -1.11% pass 1%.
@@ -96,12 +100,12 @@ func TestMoveEvents(t *testing.T) {
 	}
 
 	off := newMonitor(t, srv.URL, map[string]any{"movePct": 0})
-	res, err = off.Poll(context.Background(), monitortest.Env(now))
+	res, err = off.Poll(context.Background(), monitortest.Env(inSession))
 	require.NoError(t, err)
 	assert.Empty(t, res.Events)
 
 	held := newMonitor(t, srv.URL, map[string]any{"movePct": 1, "holdings": []string{"tsla"}})
-	res, err = held.Poll(context.Background(), monitortest.Env(now))
+	res, err = held.Poll(context.Background(), monitortest.Env(inSession))
 	require.NoError(t, err)
 	assert.Equal(t, []string{"move:TSLA:2026-10-09:up2"}, monitortest.Keys(res.Events), "only holdings notify")
 }
@@ -110,9 +114,19 @@ func TestMovesOnlyInTheSession(t *testing.T) {
 	// AAPL and TSLA have closed; the FTSE is open.
 	srv := monitortest.Serve(t, "testdata/quotes.json")
 	m := newMonitor(t, srv.URL, map[string]any{"movePct": 1})
-	res, err := m.Poll(context.Background(), monitortest.Env(now))
+	res, err := m.Poll(context.Background(), monitortest.Env(inSession))
 	require.NoError(t, err)
 	assert.Equal(t, []string{"move:.FTSE:2026-10-09:up1"}, monitortest.Keys(res.Events))
+}
+
+func TestMovesOnlyFromToday(t *testing.T) {
+	// Early on a later morning CNBC has sent an old day's quotes marked as
+	// in session: their moves aren't today's, so they don't notify.
+	srv := monitortest.Serve(t, openQuotes(t))
+	m := newMonitor(t, srv.URL, map[string]any{"movePct": 1})
+	res, err := m.Poll(context.Background(), monitortest.Env(time.Date(2026, 10, 13, 6, 34, 0, 0, time.UTC)))
+	require.NoError(t, err)
+	assert.Empty(t, res.Events)
 }
 
 func TestTargetsNotifyOncePerCrossing(t *testing.T) {
