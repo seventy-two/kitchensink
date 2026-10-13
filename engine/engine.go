@@ -246,7 +246,16 @@ func (e *Engine) Snapshots() []monitor.Snapshot {
 }
 
 func (e *Engine) env(r *runner, log *slog.Logger) monitor.Env {
-	return monitor.Env{State: e.store.State(r.spec.ID), HTTP: e.opts.HTTP, Now: e.opts.Now, Log: log}
+	return monitor.Env{
+		State: e.store.State(r.spec.ID), HTTP: e.opts.HTTP, Now: e.opts.Now, Log: log,
+		Act: func(ctx context.Context, id string, a monitor.Action) error {
+			if id == r.spec.ID {
+				// It's busy already, so this would never return.
+				return fmt.Errorf("monitor %s can't act on itself", id)
+			}
+			return e.Act(ctx, id, a)
+		},
+	}
 }
 
 // Errors from Act.

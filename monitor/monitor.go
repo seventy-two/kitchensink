@@ -33,12 +33,14 @@ type Actor interface {
 	Act(ctx context.Context, env Env, a Action) error
 }
 
-// Action is a change a client asks for. Type says what, e.g. "add",
-// "toggle" or "delete"; ID names the item and Text carries new text.
+// Action is a change a client (or another monitor) asks for. Type says
+// what, e.g. "add", "toggle" or "delete"; ID names the item, Text carries
+// new text and Data anything more, as JSON.
 type Action struct {
-	Type string `json:"type"`
-	ID   string `json:"id,omitempty"`
-	Text string `json:"text,omitempty"`
+	Type string          `json:"type"`
+	ID   string          `json:"id,omitempty"`
+	Text string          `json:"text,omitempty"`
+	Data json.RawMessage `json:"data,omitempty"`
 }
 
 // ErrBadAction wraps the error for an action a monitor can't do, such as
@@ -54,6 +56,10 @@ type Env struct {
 	// Now is the current time; tests replace it.
 	Now func() time.Time
 	Log *slog.Logger
+	// Act sends an action to another monitor by its ID, as a client
+	// would, e.g. to add an event to the calendar. It's nil where there's
+	// no engine, as in -check. A monitor must not act on itself.
+	Act func(ctx context.Context, monitor string, a Action) error
 }
 
 // State is a monitor's own key-value store. Values are JSON encoded.

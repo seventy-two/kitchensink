@@ -245,3 +245,35 @@ func TestAct(t *testing.T) {
 	plain, _ := newEngine(t, &scripted{results: []monitor.Result{{}}, errs: []error{nil}}, &recorder{})
 	assert.ErrorIs(t, plain.Act(ctx, "m", monitor.Action{Type: "add"}), ErrNoActions)
 }
+
+// sender acts on another monitor, and on itself, when it polls.
+type sender struct{ errs []error }
+
+func (s *sender) Poll(ctx context.Context, env monitor.Env) (monitor.Result, error) {
+	s.errs = []error{
+		env.Act(ctx, "m", monitor.Action{Type: "add", Text: "From s"}),
+		env.Act(ctx, "s", monitor.Action{Type: "add"}),
+	}
+	return monitor.Result{}, nil
+}
+
+func TestMonitorsActOnEachOther(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { st.Close() })
+	target := &acting{scripted{results: []monitor.Result{{}}, errs: []error{nil}}}
+	s := &sender{}
+	e, err := New(st, []Spec{
+		{ID: "m", Kind: "fake", Interval: time.Hour, Monitor: target},
+		{ID: "s", Kind: "fake", Interval: time.Hour, Monitor: s},
+	}, Options{Now: func() time.Time { return now }})
+	require.NoError(t, err)
+	e.poll(context.Background(), e.byID["s"])
+	require.Len(t, s.errs, 2)
+	assert.NoError(t, s.errs[0])
+	assert.Error(t, s.errs[1], "acting on itself would deadlock")
+	var last string
+	_, err = st.State("m").Get("last", &last)
+	require.NoError(t, err)
+	assert.Equal(t, "From s", last)
+}
