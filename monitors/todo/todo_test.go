@@ -65,11 +65,7 @@ func TestList(t *testing.T) {
 	got, res = list(t, m, env)
 	assert.Equal(t, []string{"[ ] Book dentist", "[ ] Renew passport", "[ ] Call Mum", "[x] Bins out"}, got,
 		"open first, oldest first, then ticked; spacing tidied")
-	assert.Equal(t, []monitor.Stat{
-		{Label: "To do", Value: "Book dentist"},
-		{Value: "Renew passport"},
-		{Value: "Call Mum"},
-	}, res.Summary)
+	assert.Equal(t, []monitor.Stat{{Label: "To do", Value: "Book dentist"}}, res.Summary, "names only the oldest open task")
 	assert.Equal(t, 24*time.Hour+time.Second, res.Next, "polls again when the ticked one clears")
 
 	// Unticking puts it back; deleting removes it.
@@ -79,9 +75,6 @@ func TestList(t *testing.T) {
 	assert.Equal(t, []string{"[ ] Bins out", "[ ] Book dentist", "[ ] Renew passport"}, got)
 	assert.Zero(t, res.Next, "nothing to clear")
 
-	require.NoError(t, m.Act(ctx, env, monitor.Action{Type: "add", Text: "Fourth"}))
-	_, res = list(t, m, env)
-	assert.Equal(t, monitor.Stat{Label: "And", Value: "1 more", Tone: monitor.ToneMuted}, res.Summary[3])
 }
 
 func TestClearsAfterADay(t *testing.T) {

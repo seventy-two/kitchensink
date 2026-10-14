@@ -185,27 +185,12 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	return monitor.Result{Blocks: []monitor.Block{b}, Summary: summary(open), Next: next}, nil
 }
 
-// summaryLen is how many open tasks the summary names.
-const summaryLen = 3
-
-// summary names the oldest few open tasks and counts the rest.
+// summary names the oldest open task.
 func summary(open []task) []monitor.Stat {
 	if len(open) == 0 {
 		return []monitor.Stat{{Label: "To do", Value: "All done", Tone: monitor.ToneGood}}
 	}
-	var out []monitor.Stat
-	for i, t := range open {
-		if i == summaryLen {
-			out = append(out, monitor.Stat{Label: "And", Value: fmt.Sprintf("%d more", len(open)-summaryLen), Tone: monitor.ToneMuted})
-			break
-		}
-		label := ""
-		if i == 0 {
-			label = "To do"
-		}
-		out = append(out, monitor.Stat{Label: label, Value: t.Text})
-	}
-	return out
+	return []monitor.Stat{{Label: "To do", Value: open[0].Text}}
 }
 
 func newID() string {
