@@ -28,6 +28,9 @@ type Config struct {
 	URL string `json:"url"`
 	// Player is whose games to show, as the tracker names them.
 	Player string `json:"player"`
+	// Versus, if set, is who Player is up against: played games are then
+	// green when won, red when lost and blue when drawn or waiting on them.
+	Versus string `json:"versus"`
 	// Names gives games shorter names for the summary's tiles, by the tracker's
 	// game ID, e.g. {"wordle": "W"}.
 	Names map[string]string `json:"names"`
@@ -83,6 +86,72 @@ type day struct {
 	Ends []struct {
 		Player string `json:"player"`
 	} `json:"ends"`
+	// Winners is who won each game both have played, "" for a tie.
+	Winners map[string]string `json:"winners"`
+}
+
+// outcome is where a game stands for the player today.
+type outcome int
+
+const (
+	unplayed outcome = iota
+	skipped          // the player ended the day without it
+	done             // played, with no one to compare against
+	waiting          // played; the opponent hasn't yet
+	won
+	lost
+	drew
+)
+
+// status is the panel's word for an outcome, and its tone.
+func (m *Monitor) status(o outcome) monitor.Cell {
+	switch o {
+	case skipped:
+		return monitor.Cell{Text: "Skipped", Tone: monitor.ToneMuted}
+	case done:
+		return monitor.Cell{Text: "Done", Tone: monitor.ToneGood}
+	case waiting:
+		return monitor.Cell{Text: "Waiting for " + m.cfg.Versus, Tone: monitor.ToneAccent}
+	case won:
+		return monitor.Cell{Text: "Won", Tone: monitor.ToneGood}
+	case lost:
+		return monitor.Cell{Text: "Lost", Tone: monitor.ToneBad}
+	case drew:
+		return monitor.Cell{Text: "Drew", Tone: monitor.ToneAccent}
+	}
+	return monitor.Cell{} // blank until played, so the done ones stand out
+}
+
+// outcomes works out where each game stands for the player; games not in
+// it are unplayed, or skipped if they've ended the day.
+func (m *Monitor) outcomes(d day) (got map[string]outcome, ended bool) {
+	played := map[string]map[string]bool{}
+	for _, r := range d.Results {
+		if played[r.Player] == nil {
+			played[r.Player] = map[string]bool{}
+		}
+		played[r.Player][r.Game] = true
+	}
+	for _, e := range d.Ends {
+		ended = ended || e.Player == m.cfg.Player
+	}
+	got = map[string]outcome{}
+	for g := range played[m.cfg.Player] {
+		winner, both := d.Winners[g]
+		switch {
+		case m.cfg.Versus == "":
+			got[g] = done
+		case !played[m.cfg.Versus][g] || !both:
+			got[g] = waiting
+		case winner == m.cfg.Player:
+			got[g] = won
+		case winner == "":
+			got[g] = drew
+		default:
+			got[g] = lost
+		}
+	}
+	return got, ended
 }
 
 func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, error) {
@@ -94,16 +163,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	if err := m.get(ctx, env.HTTP, "/api/day?date="+c.Today, &d); err != nil {
 		return monitor.Result{}, err
 	}
-	played := map[string]bool{}
-	for _, r := range d.Results {
-		if r.Player == m.cfg.Player {
-			played[r.Game] = true
-		}
-	}
-	ended := false
-	for _, e := range d.Ends {
-		ended = ended || e.Player == m.cfg.Player
-	}
+	got, ended := m.outcomes(d)
 	// What's been pasted since the last poll; the engine polls straight
 	// after an action.
 	var outcomes []monitor.Event
@@ -118,8 +178,8 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	return monitor.Result{
 		Paste:        "Log a result from the clipboard",
 		Events:       outcomes,
-		Blocks:       []monitor.Block{list(c.Games, played, ended)},
-		Summary:      m.chips(c.Games, played, ended),
+		Blocks:       []monitor.Block{m.list(c.Games, got, ended)},
+		Summary:      m.chips(c.Games, got, ended),
 		SummaryStyle: monitor.SummaryChips,
 		Next:         m.untilTomorrow(env.Now()),
 	}, nil
@@ -199,37 +259,35 @@ func (m *Monitor) untilTomorrow(now time.Time) time.Duration {
 	return midnight.Sub(now) + 30*time.Second
 }
 
-// list is every game, each linking to it and saying whether it's been
-// played, one line each.
-func list(games []game, played map[string]bool, ended bool) monitor.Block {
+// outcomeOf is where game id stands, from what outcomes worked out.
+func outcomeOf(got map[string]outcome, ended bool, id string) outcome {
+	if o, ok := got[id]; ok {
+		return o
+	}
+	if ended {
+		return skipped
+	}
+	return unplayed
+}
+
+// list is every game, each linking to it and saying where it stands, one
+// line each.
+func (m *Monitor) list(games []game, got map[string]outcome, ended bool) monitor.Block {
 	b := monitor.Block{Type: monitor.BlockTable, Columns: []monitor.Column{{Title: "Game", Fill: true}, {Title: "Today"}}, Rows: [][]monitor.Cell{}}
 	for _, g := range games {
-		var status monitor.Cell // blank until played, so the done ones stand out
-		switch {
-		case played[g.ID]:
-			status = monitor.Cell{Text: "Done", Tone: monitor.ToneGood}
-		case ended:
-			status = monitor.Cell{Text: "Skipped", Tone: monitor.ToneMuted}
-		}
-		b.Rows = append(b.Rows, []monitor.Cell{{Text: g.Name, URL: g.URL}, status})
+		b.Rows = append(b.Rows, []monitor.Cell{{Text: g.Name, URL: g.URL}, m.status(outcomeOf(got, ended, g.ID))})
 	}
 	return b
 }
 
-// chips is a tile for each game, by its short name if it has one, green
-// once it's been played.
-func (m *Monitor) chips(games []game, played map[string]bool, ended bool) []monitor.Stat {
+// chips is a tile for each game, by its short name if it has one, in the
+// colour of where it stands.
+func (m *Monitor) chips(games []game, got map[string]outcome, ended bool) []monitor.Stat {
 	out := make([]monitor.Stat, len(games))
 	for i, g := range games {
-		st := monitor.Stat{Value: g.Name, URL: g.URL}
+		st := monitor.Stat{Value: g.Name, URL: g.URL, Tone: m.status(outcomeOf(got, ended, g.ID)).Tone}
 		if short := m.cfg.Names[g.ID]; short != "" {
 			st.Value = short
-		}
-		switch {
-		case played[g.ID]:
-			st.Tone = monitor.ToneGood
-		case ended:
-			st.Tone = monitor.ToneMuted
 		}
 		out[i] = st
 	}

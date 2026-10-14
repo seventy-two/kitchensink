@@ -44,7 +44,7 @@
       "type": "dailies",
       "title": "Dailies",
       "interval": "10m",
-      "config": { "url": "http://127.0.0.1:6040", "player": "M", "names": { "wordle": "W" } }
+      "config": { "url": "http://127.0.0.1:6040", "player": "M", "versus": "J", "names": { "wordle": "W" } }
     },
     {
       "type": "osrs",

@@ -141,3 +141,31 @@ func TestConfig(t *testing.T) {
 	_, err := New(json.RawMessage(`{"url":"http://x"}`))
 	assert.Error(t, err)
 }
+
+func TestVersus(t *testing.T) {
+	m, err := New(json.RawMessage(`{"url": "http://tracker.test", "player": "M", "versus": "J"}`))
+	require.NoError(t, err)
+	var d day
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"results": [
+			{"game": "wordle", "player": "M"}, {"game": "wordle", "player": "J"},
+			{"game": "flagle", "player": "M"}, {"game": "flagle", "player": "J"},
+			{"game": "maptap", "player": "M"}, {"game": "maptap", "player": "J"},
+			{"game": "krillion", "player": "M"},
+			{"game": "fillle", "player": "J"}
+		],
+		"winners": {"wordle": "M", "flagle": "J", "maptap": ""}
+	}`), &d))
+	got, ended := m.outcomes(d)
+	assert.False(t, ended)
+	assert.Equal(t, map[string]outcome{"wordle": won, "flagle": lost, "maptap": drew, "krillion": waiting}, got)
+	assert.Equal(t, unplayed, outcomeOf(got, ended, "fillle"))
+
+	games := []game{{ID: "wordle"}, {ID: "flagle"}, {ID: "maptap"}, {ID: "krillion"}, {ID: "fillle"}}
+	var tones []monitor.Tone
+	for _, st := range m.chips(games, got, ended) {
+		tones = append(tones, st.Tone)
+	}
+	assert.Equal(t, []monitor.Tone{monitor.ToneGood, monitor.ToneBad, monitor.ToneAccent, monitor.ToneAccent, monitor.ToneNone}, tones)
+	assert.Equal(t, "Waiting for J", m.status(waiting).Text)
+}
