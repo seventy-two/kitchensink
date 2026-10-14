@@ -72,11 +72,14 @@ gain or loss from the same quotes: give it a `portfolio` with `cash` and
 converted to pounds (USD at CNBC's GBP/USD rate, London prices in pence),
 or a fixed `value` in pounds for anything CNBC doesn't quote, e.g. a fund,
 which moves by a `symbol`'s daily percentage if one is given (an index for
-a tracker). Only moves from today's session count, so before the open
-it's £0; like a broker's own figure it leaves out currency moves. The
-panel shows the value, today's gain, the positions moving it most and
-recent days (kept for 30), and the summary leads with today's gain. It's
-all marked private, for clients to hide.
+a tracker). Today's gain counts each position's move from today's
+session, or its last session's if its market hasn't opened yet (so before
+New York opens it has last night's US moves alongside London's); like a
+broker's own figure it leaves out currency moves. Recent days record only
+moves from that day's sessions. The panel shows the value, today's gain,
+the positions moving it most today and recent days (kept for 30), and the
+summary leads with today's gain, marked `lead`. It's all marked private,
+for clients to hide.
 
 ```json
 "portfolio": {
@@ -292,7 +295,9 @@ instead of the blocks when space is short, and `summaryStyle`: empty for
 label/value/detail tiles, or `chips` for small blocks of the same, filled
 with each stat's tone (the watchlist's daily moves, the hourly forecast,
 today's NFL games). A stat or block marked `private` holds personal
-figures, e.g. money, which clients can hide. Every monitor is
+figures, e.g. money, which clients can hide; a stat marked `lead` is set
+apart from the ones after it (the portfolio's day before the watchlist's
+moves). Every monitor is
 drawn from the same few block types, so clients need no per-monitor code:
 
 | Block `type` | Fields |

@@ -249,6 +249,9 @@ type Stat struct {
 	// joined to its neighbours', e.g. the chance of rain each hour.
 	// Nil for none: 0 still draws, along the bottom.
 	Level *float64 `json:"level,omitempty"`
+	// Lead sets the stat apart from the ones after it, e.g. the
+	// portfolio's day ahead of the watchlist's moves.
+	Lead bool `json:"lead,omitempty"`
 }
 
 // Align is a table column's alignment.

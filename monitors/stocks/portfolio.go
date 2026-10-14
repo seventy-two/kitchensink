@@ -56,10 +56,15 @@ type contribution struct {
 
 // estimate is the portfolio worked out from the quotes.
 type estimate struct {
-	Value    float64 // pounds, cash included
-	Gain     float64 // today's, pounds
-	Pct      float64 // Gain against what was invested at the start of the day
-	Traded   bool    // whether any of it has traded today
+	Value  float64 // pounds, cash included
+	Gain   float64 // today's, pounds
+	Traded bool    // whether any of it has traded today
+	// Earlier is the last session's move, pounds, of positions that
+	// haven't traded yet today, e.g. US shares before New York opens.
+	Earlier float64
+	// Pct is Gain and Earlier together against what was invested
+	// before them.
+	Pct      float64
 	Unpriced []string
 	Top      []contribution // largest moves first
 }
@@ -120,14 +125,14 @@ func (p *Portfolio) estimate(quotes map[string]quote, now time.Time) estimate {
 	if q, ok := quotes[fxSymbol]; ok {
 		fx, _ = parseNumber(q.Last)
 	}
-	var start float64 // invested value before today's moves
+	var start float64 // invested value before the moves counted
 	for _, pos := range p.Positions {
 		name := pos.Name
 		if name == "" {
 			name = pos.Symbol
 		}
 		q, quoted := quotes[strings.ToUpper(pos.Symbol)]
-		var value, gain float64
+		var value, gain, earlier float64 // earlier: the last session's move, if not today's
 		switch {
 		case pos.Units > 0:
 			last, okLast := parseNumber(q.Last)
@@ -144,12 +149,18 @@ func (p *Portfolio) estimate(quotes map[string]quote, now time.Time) estimate {
 			value = v
 			if tradedToday(q, now) {
 				gain = g
+			} else {
+				earlier = g
 			}
 		default:
 			value = pos.Value
-			if pct, ok := parsePct(q.ChangePct); quoted && ok && tradedToday(q, now) {
-				gain = value * pct / 100
-				value += gain
+			if pct, ok := parsePct(q.ChangePct); quoted && ok {
+				if tradedToday(q, now) {
+					gain = value * pct / 100
+					value += gain
+				} else {
+					earlier = value * pct / 100
+				}
 			}
 		}
 		if quoted && tradedToday(q, now) {
@@ -157,13 +168,14 @@ func (p *Portfolio) estimate(quotes map[string]quote, now time.Time) estimate {
 		}
 		e.Value += value
 		e.Gain += gain
-		start += value - gain
+		e.Earlier += earlier
+		start += value - gain - earlier
 		if gain != 0 {
 			e.Top = append(e.Top, contribution{Name: name, Gain: gain})
 		}
 	}
 	if start > 0 {
-		e.Pct = e.Gain / start * 100
+		e.Pct = (e.Gain + e.Earlier) / start * 100
 	}
 	sort.SliceStable(e.Top, func(i, j int) bool { return math.Abs(e.Top[i].Gain) > math.Abs(e.Top[j].Gain) })
 	return e
@@ -191,10 +203,17 @@ const topLen = 5
 // positions that moved it most, and recent days. They're private, for
 // clients to hide on request.
 func portfolioBlocks(e estimate, days []day, now time.Time) []monitor.Block {
-	today := monitor.Stat{Label: "Today", Value: signedPounds(e.Gain), Detail: fmt.Sprintf("%+.2f%%", e.Pct), Tone: toneOfFloat(e.Gain)}
-	if !e.Traded {
-		today = monitor.Stat{Label: "Today", Value: "—", Detail: "nothing has traded yet", Tone: monitor.ToneMuted}
+	today := todayStat(e)
+	today.Detail = fmt.Sprintf("%+.2f%%", e.Pct)
+	switch {
+	case !e.Traded && e.Earlier == 0:
+		today.Detail = "nothing has traded yet"
+	case !e.Traded:
+		today.Detail += " · all from the last session"
+	case e.Earlier != 0:
+		today.Detail += fmt.Sprintf(" · %s from the last session", signedPounds(e.Earlier))
 	}
+	today.Private = false
 	value := monitor.Stat{Label: "Portfolio", Value: formatPounds(e.Value)}
 	if len(e.Unpriced) > 0 {
 		value.Detail = "without " + strings.Join(e.Unpriced, ", ")
@@ -243,13 +262,27 @@ func portfolioBlocks(e estimate, days []day, now time.Time) []monitor.Block {
 	return blocks
 }
 
-// portfolioStat is the summary's chip for the day. Chips share one width
-// with the watchlist's percentages, so big moves are shortened.
-func portfolioStat(e estimate) monitor.Stat {
-	if !e.Traded {
+// todayStat is the day's move so far, counting the last session's for
+// markets that haven't opened yet, so before New York opens it has the
+// US shares' moves from last night alongside London's from today.
+func todayStat(e estimate) monitor.Stat {
+	gain := e.Gain + e.Earlier
+	if !e.Traded && e.Earlier == 0 {
 		return monitor.Stat{Label: "Today", Value: "—", Tone: monitor.ToneMuted, Private: true}
 	}
-	return monitor.Stat{Label: "Today", Value: shortPounds(e.Gain), Tone: toneOfFloat(e.Gain), Private: true}
+	return monitor.Stat{Label: "Today", Value: signedPounds(gain), Tone: toneOfFloat(gain), Private: true}
+}
+
+// portfolioStat is the summary's chip for the day, leading the
+// watchlist's. Chips share one width with the watchlist's percentages,
+// so big moves are shortened.
+func portfolioStat(e estimate) monitor.Stat {
+	s := todayStat(e)
+	if s.Value != "—" {
+		s.Value = shortPounds(e.Gain + e.Earlier)
+	}
+	s.Lead = true
+	return s
 }
 
 // shortPounds is signedPounds in thousands or millions once it reaches

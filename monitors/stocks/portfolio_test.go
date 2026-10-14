@@ -38,7 +38,7 @@ func TestEstimate(t *testing.T) {
 	p := Portfolio{Cash: 100, Positions: []Position{
 		{Symbol: "AAA", Units: 10},                     // $1,000 = £800, down $20 = £16
 		{Name: "Bee", Symbol: "bbb.-gb", Units: 200},   // £1,000, up £20
-		{Symbol: "CCC", Units: 10},                     // £400; Friday's move doesn't count
+		{Symbol: "CCC", Units: 10},                     // £400; Friday's move counts as earlier: £40
 		{Name: "Tracker", Symbol: ".IDX", Value: 1000}, // up 1%: £10
 		{Name: "Fund", Value: 500},                     // fixed
 		{Name: "Gone", Symbol: "ZZZ", Units: 5},        // not quoted
@@ -47,7 +47,8 @@ func TestEstimate(t *testing.T) {
 
 	assert.InDelta(t, 100+800+1000+400+1010+500, e.Value, 0.001)
 	assert.InDelta(t, -16+20+10, e.Gain, 0.001)
-	assert.InDelta(t, 14.0/(800+16+1000-20+400+1000+500)*100, e.Pct, 0.0001, "against the start of the day, without cash")
+	assert.InDelta(t, 40, e.Earlier, 0.001)
+	assert.InDelta(t, 54.0/(800+16+1000-20+400-40+1000+500)*100, e.Pct, 0.0001, "against the start of the moves, without cash")
 	assert.True(t, e.Traded)
 	assert.Equal(t, []string{"Gone"}, e.Unpriced)
 	assert.Equal(t, []contribution{{"Bee", 20}, {"AAA", -16}, {"Tracker", 10}}, e.Top)
@@ -59,11 +60,16 @@ func TestEstimateBeforeTheOpen(t *testing.T) {
 	e := p.estimate(quotesBySymbol(fxQuote, usFriday), saturday)
 	assert.False(t, e.Traded)
 	assert.Zero(t, e.Gain)
+	assert.InDelta(t, 40, e.Earlier, 0.001, "Friday's move, as the last session's")
 	assert.InDelta(t, 400, e.Value, 0.001, "valued at the last price")
+	assert.Equal(t, monitor.Stat{Label: "Today", Value: "+£40", Tone: monitor.ToneGood, Private: true, Lead: true}, portfolioStat(e))
+	assert.Equal(t, "+11.11% · all from the last session", portfolioBlocks(e, nil, saturday)[0].Stats[1].Detail)
 
 	// Friday evening in London is still Friday's session.
 	friday := time.Date(2026, 10, 9, 21, 30, 0, 0, time.UTC)
-	assert.True(t, p.estimate(quotesBySymbol(fxQuote, usFriday), friday).Traded)
+	e = p.estimate(quotesBySymbol(fxQuote, usFriday), friday)
+	assert.True(t, e.Traded)
+	assert.Zero(t, e.Earlier)
 }
 
 func TestRecord(t *testing.T) {
@@ -104,6 +110,13 @@ func TestPortfolioBlocks(t *testing.T) {
 	quiet := portfolioBlocks(estimate{Value: 1000}, days, monday)
 	assert.Equal(t, "—", quiet[0].Stats[1].Value)
 	assert.Len(t, quiet, 2, "no movers before anything trades")
+	assert.Equal(t, monitor.Stat{Label: "Today", Value: "—", Tone: monitor.ToneMuted, Private: true, Lead: true}, portfolioStat(estimate{}))
+
+	// Before New York opens, last night's US moves count too.
+	mixed := portfolioBlocks(estimate{Value: 1000, Gain: 10, Earlier: -30, Pct: -2.04, Traded: true}, days, monday)
+	assert.Equal(t, "−£20", mixed[0].Stats[1].Value)
+	assert.Equal(t, monitor.ToneBad, mixed[0].Stats[1].Tone)
+	assert.Equal(t, "-2.04% · −£30 from the last session", mixed[0].Stats[1].Detail)
 }
 
 func texts(row []monitor.Cell) []string {
@@ -169,7 +182,7 @@ func TestPortfolioPoll(t *testing.T) {
 	}
 	assert.Equal(t, []string{"AAA"}, symbols, "but not listed")
 	assert.Equal(t, "£805", res.Blocks[0].Stats[0].Value)
-	assert.Equal(t, monitor.Stat{Label: "Today", Value: "−£16", Tone: monitor.ToneBad, Private: true}, res.Summary[0])
+	assert.Equal(t, monitor.Stat{Label: "Today", Value: "−£16", Tone: monitor.ToneBad, Private: true, Lead: true}, res.Summary[0])
 	assert.False(t, strings.Contains(res.Summary[1].Label, "GBP"))
 
 	var days []day
