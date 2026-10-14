@@ -214,7 +214,7 @@ const todoMaxAge = 14 * 24 * time.Hour
 // apply passes what Gemini found on to the other monitors, and says what
 // it did.
 func (m *Monitor) apply(ctx context.Context, env monitor.Env, h header, x extraction, now time.Time) finding {
-	f := finding{Time: h.Date, Account: h.Account, From: h.From, Summary: strings.TrimSpace(x.Summary)}
+	f := finding{ID: h.ID, Time: h.Date, Account: h.Account, From: h.From, Summary: strings.TrimSpace(x.Summary)}
 	if f.Summary == "" {
 		f.Summary = h.Subject
 	}
@@ -239,8 +239,8 @@ func (m *Monitor) apply(ctx context.Context, env monitor.Env, h header, x extrac
 		}
 		for _, e := range x.Events {
 			a, ok := m.calendarEvent(e)
-			if !ok || a.End.Before(today) || (a.End.IsZero() && a.Start.Before(today)) {
-				continue // unreadable, or over
+			if !ok || over(a, today) {
+				continue
 			}
 			data, _ := json.Marshal(a)
 			send(m.calendar, monitor.Action{Type: "upsert", Data: data}, "Calendar: "+a.Title+", "+describeWhen(a))
@@ -326,6 +326,15 @@ var (
 	isoDate   = regexp.MustCompile(`\d{4}-\d{2}-\d{2}`)
 	clockTime = regexp.MustCompile(`\b([01]?\d|2[0-3]):([0-5]\d)`)
 )
+
+// over reports whether an event finished before today. One with no end
+// (a film, a gig) is over once its day has gone.
+func over(a calendar.Added, today time.Time) bool {
+	if a.End.IsZero() {
+		return a.Start.Before(today)
+	}
+	return a.End.Before(today)
+}
 
 // describeWhen is when an added event is, briefly.
 func describeWhen(a calendar.Added) string {

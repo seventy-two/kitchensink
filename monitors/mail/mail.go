@@ -341,7 +341,8 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		delete(failed, h.ID)
 		f := m.apply(ctx, env, h, x, now)
 		if len(f.Did) > 0 {
-			found = append([]finding{f}, found...)
+			// An email read again replaces what it found before.
+			found = append([]finding{f}, slices.DeleteFunc(found, func(o finding) bool { return o.ID == f.ID })...)
 			if now.Sub(h.Date) < 48*time.Hour {
 				events = append(events, monitor.Event{
 					Key: "found:" + h.ID, Title: f.Summary, Body: strings.Join(f.Did, " · "), Quiet: true, Priority: monitor.PriorityLow,
@@ -390,6 +391,7 @@ func (m *Monitor) worthReading(h header) bool {
 
 // finding is what one email added.
 type finding struct {
+	ID      string    `json:"id,omitempty"` // the email's
 	Time    time.Time `json:"time"`
 	Account string    `json:"account"`
 	From    string    `json:"from"`

@@ -14,6 +14,7 @@ import (
 
 	"github.com/seventy-two/kitchensink/monitor"
 	"github.com/seventy-two/kitchensink/monitor/monitortest"
+	"github.com/seventy-two/kitchensink/monitors/calendar"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -170,6 +171,9 @@ func TestReadsAndPassesOn(t *testing.T) {
 	g.answers["Your tickets for Vildhjarta"] = extraction{Kind: "ticket", Summary: "Vildhjarta tickets", Events: []xEvent{{
 		Key: "ticketmaster-123", Title: "Vildhjarta", Date: "2026-10-16", Start: "19:00", End: "23:00",
 		Location: "The Fleece, Bristol", Detail: "2 tickets · doors 18:30",
+	}, {
+		// No end time, as with most cinema tickets: still to come, so kept.
+		Key: "odeon-wjz85b3", Title: "Street Fighter", Date: "2026-10-16", Start: "20:40", Location: "ODEON, Bristol",
 	}}}
 	g.answers["Your Waitrose order is confirmed"] = extraction{Kind: "order", Summary: "Waitrose delivery", Chores: []string{"waitrose-order", "made-up"},
 		Events: []xEvent{{Key: "waitrose-55", Title: "Waitrose delivery", Date: "2026-10-14", Start: "10:00", End: "11:00"}}}
@@ -196,6 +200,7 @@ func TestReadsAndPassesOn(t *testing.T) {
 
 	assert.Equal(t, []string{
 		`calendar upsert {"key":"mail:ticketmaster-123","title":"Vildhjarta","start":"2026-10-16T19:00:00+01:00","end":"2026-10-16T23:00:00+01:00","location":"The Fleece, Bristol","detail":"2 tickets · doors 18:30","source":"Email"}`,
+		`calendar upsert {"key":"mail:odeon-wjz85b3","title":"Street Fighter","start":"2026-10-16T20:40:00+01:00","location":"ODEON, Bristol","source":"Email"}`,
 		`calendar upsert {"key":"mail:waitrose-55","title":"Waitrose delivery","start":"2026-10-14T10:00:00+01:00","end":"2026-10-14T11:00:00+01:00","source":"Email"}`,
 		`chores done waitrose-order {"day":"2026-10-12"}`,
 		`chores track reorder-dishwasher-tablets {"name":"Dishwasher tablets","every":60,"last":"2026-10-12"}`,
@@ -208,7 +213,7 @@ func TestReadsAndPassesOn(t *testing.T) {
 	b := res.Blocks[0]
 	assert.Equal(t, "Found in email", b.Title)
 	assert.Equal(t, monitor.Item{Title: "Amazon return", Subtitle: "To do: Return the boots to Amazon by Fri 30 Oct", Detail: "Gmail · Amazon.co.uk · 08:00"}, b.Items[0])
-	assert.Equal(t, "Calendar: Vildhjarta, Fri 16 Oct 19:00", b.Items[3].Subtitle)
+	assert.Equal(t, "Calendar: Vildhjarta, Fri 16 Oct 19:00 · Calendar: Street Fighter, Fri 16 Oct 20:40", b.Items[3].Subtitle)
 	assert.Len(t, b.Items, 4, "the one-off order added nothing")
 	assert.Equal(t, "Amazon return", res.Summary[0].Value)
 
@@ -366,4 +371,29 @@ func TestSkipsWhatGeminiCantRead(t *testing.T) {
 	assert.Len(t, g.asked, 1, "only the second was asked about again")
 	assert.Equal(t, []string{"todo add Do it"}, acts.sent)
 	assert.Zero(t, res.Next)
+}
+
+func TestOver(t *testing.T) {
+	today := time.Date(2026, 10, 13, 0, 0, 0, 0, london)
+	at := func(d, h int) time.Time { return time.Date(2026, 10, d, h, 0, 0, 0, london) }
+	assert.False(t, over(calendar.Added{Start: at(13, 20)}, today), "tonight, with no end")
+	assert.True(t, over(calendar.Added{Start: at(12, 20)}, today))
+	assert.False(t, over(calendar.Added{Start: at(12, 23), End: at(13, 1)}, today), "ran past midnight into today")
+	assert.True(t, over(calendar.Added{Start: at(12, 9), End: at(12, 10)}, today))
+}
+
+func TestReadAgainReplacesFinding(t *testing.T) {
+	g := newFakeGemini(t)
+	acc := &fakeAccount{name: "Gmail"}
+	acc.add("Your booking", "Hotel <x@hotel.com>", now.Add(-time.Hour), "")
+	g.answers["Your booking"] = extraction{Kind: "booking", Summary: "Hotel", Todos: []string{"Pay"}}
+	m := newMonitor(t, g, acc)
+	env := (&actions{}).env(monitortest.Env(now))
+	_, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	require.NoError(t, env.State.Set(seenKey, map[string]string{}))
+	require.NoError(t, env.State.Set(cursorsKey, map[string]string{}))
+	res, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Len(t, res.Blocks[0].Items, 1)
 }
