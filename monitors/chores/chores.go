@@ -164,8 +164,12 @@ func weekday(s string) (time.Weekday, bool) {
 type record struct {
 	// Done is the days it was done, oldest first.
 	Done []string `json:"done,omitempty"`
-	// PutOff is the earliest day it can go, when it's been put off.
+	// PutOff is the earliest day it can go, when it's been put off (by
+	// clients without move buttons).
 	PutOff string `json:"putOff,omitempty"`
+	// On is the day it's been moved to by hand, kept until it's done or
+	// the day's gone.
+	On string `json:"on,omitempty"`
 }
 
 // keepDone is how many days done each chore remembers.
@@ -269,7 +273,11 @@ func (m *Monitor) view(env monitor.Env) (view, error) {
 			if d, ok := parseDay(r.PutOff); ok && d > from {
 				from = d
 			}
-			jobs = append(jobs, job{idx: i, due: p.due, flex: c.flex, from: from, days: c.days, any: c.any, uses: c.uses, never: p.never})
+			var on day
+			if d, ok := parseDay(r.On); ok && d >= v.today {
+				on = d
+			}
+			jobs = append(jobs, job{idx: i, due: p.due, flex: c.flex, from: from, days: c.days, any: c.any, uses: c.uses, never: p.never, on: on})
 		}
 		v.items = append(v.items, p)
 	}
@@ -316,11 +324,29 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 			// Stop tracking it, for good.
 			return m.stop(env, v, p.id)
 		}
-		// Otherwise clients' delete button puts it off a day.
+		// Otherwise it puts it off a day, for clients without move
+		// buttons.
 		if p.done {
 			return fmt.Errorf("%w: %s is done today", monitor.ErrBadAction, p.name)
 		}
-		r.PutOff = (p.on + 1).String()
+		r.On = (p.on + 1).String()
+	case "move":
+		// Up brings it forward a day (not before today), down puts it off
+		// a day; the rest fit around it.
+		if p.done {
+			return fmt.Errorf("%w: %s is done today", monitor.ErrBadAction, p.name)
+		}
+		switch a.Text {
+		case "up":
+			if p.on <= v.today {
+				return nil // as soon as it can be already
+			}
+			r.On = (p.on - 1).String()
+		case "down":
+			r.On = (p.on + 1).String()
+		default:
+			return fmt.Errorf("%w: move up or down, not %q", monitor.ErrBadAction, a.Text)
+		}
 	default:
 		return fmt.Errorf("%w: unknown action %q", monitor.ErrBadAction, a.Type)
 	}
@@ -339,7 +365,7 @@ func (r *record) done(on day) {
 		r.Done = r.Done[n-keepDone:]
 	}
 	if r.Done[len(r.Done)-1] == s {
-		r.PutOff = ""
+		r.PutOff, r.On = "", ""
 	}
 }
 
@@ -423,8 +449,11 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		}
 		return 0
 	})
-	today := monitor.Block{Type: monitor.BlockChecklist, Title: "Today", Items: []monitor.Item{}, DeleteHint: "Put off a day"}
-	later := monitor.Block{Type: monitor.BlockChecklist, Title: "Coming up", Items: []monitor.Item{}, DeleteHint: "Put off a day"}
+	// Up and down move a chore a day either way, so there's no delete.
+	today := monitor.Block{Type: monitor.BlockChecklist, Title: "Today", Items: []monitor.Item{},
+		NoDelete: true, Movable: true, UpHint: "Bring forward a day", DownHint: "Put off a day"}
+	later := today
+	later.Title, later.Items = "Coming up", []monitor.Item{}
 	reorders := monitor.Block{Type: monitor.BlockChecklist, Title: "Reorders", Items: []monitor.Item{}, DeleteHint: "Stop tracking"}
 	var open []planned
 	for _, p := range items {

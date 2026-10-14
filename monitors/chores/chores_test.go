@@ -46,7 +46,8 @@ func lines(t *testing.T, res monitor.Result) (today, later []string) {
 	require.Len(t, res.Blocks, 2)
 	f := func(b monitor.Block) []string {
 		assert.Equal(t, monitor.BlockChecklist, b.Type)
-		assert.Equal(t, "Put off a day", b.DeleteHint)
+		assert.True(t, b.NoDelete && b.Movable)
+		assert.Equal(t, "Put off a day", b.DownHint)
 		assert.Empty(t, b.AddHint)
 		var out []string
 		for _, it := range b.Items {
@@ -281,4 +282,41 @@ func TestTracked(t *testing.T) {
 
 	assert.ErrorIs(t, actData(t, m, env, "track", "whites-wash", Tracked{Name: "Whites", Every: 7}), monitor.ErrBadAction)
 	assert.ErrorIs(t, actData(t, m, env, "track", "x", Tracked{Name: "X", Every: 0}), monitor.ErrBadAction)
+}
+
+func TestMove(t *testing.T) {
+	m := newMonitor(t, laundry)
+	env := monitortest.Env(now)
+	move := func(id, dir string) { require.NoError(t, m.Act(context.Background(), env, monitor.Action{Type: "move", ID: id, Text: dir})) }
+
+	// Towels from Thursday to tomorrow: the black tees make way.
+	move("towel-wash", "up")
+	today, later := lines(t, poll(t, m, env))
+	assert.Equal(t, []string{"[ ] Whites wash", "[ ] Waitrose order"}, today)
+	assert.Equal(t, []string{"[ ] Towel wash · tomorrow", "[ ] Black tee wash · Thu", "[ ] Bedsheet wash · Sat"}, later)
+
+	// Whites off today: down a day, and the towels stay pinned, so the
+	// black tees take today.
+	move("whites-wash", "down")
+	today, later = lines(t, poll(t, m, env))
+	assert.Equal(t, []string{"[ ] Black tee wash", "[ ] Waitrose order"}, today)
+	assert.Contains(t, later, "[ ] Towel wash · tomorrow")
+	assert.Contains(t, later, "[ ] Whites wash · tomorrow", "pinned there, room or not")
+
+	// Today's as early as it goes; done, the pin's forgotten.
+	move("black-tee-wash", "up")
+	today, _ = lines(t, poll(t, m, env))
+	assert.Equal(t, "[ ] Black tee wash", today[0])
+	act(t, m, env, "toggle", "towel-wash")
+	v, err := m.view(env)
+	require.NoError(t, err)
+	assert.Empty(t, v.records["towel-wash"].On)
+
+	// A pin for a day that's gone counts for nothing.
+	res := poll(t, m, at(env, now.AddDate(0, 0, 3)))
+	_, later = lines(t, res)
+	assert.NotContains(t, later, "[ ] Whites wash · tomorrow")
+
+	assert.ErrorIs(t, m.Act(context.Background(), env, monitor.Action{Type: "move", ID: "whites-wash", Text: "sideways"}), monitor.ErrBadAction)
+	assert.ErrorIs(t, m.Act(context.Background(), env, monitor.Action{Type: "move", ID: "towel-wash", Text: "up"}), monitor.ErrBadAction, "done today")
 }

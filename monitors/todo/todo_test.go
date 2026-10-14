@@ -135,3 +135,29 @@ func TestBadActions(t *testing.T) {
 	_, err = New(json.RawMessage(`{"clearAfter": "-1h"}`))
 	assert.Error(t, err)
 }
+
+func TestMove(t *testing.T) {
+	m, err := New(nil)
+	require.NoError(t, err)
+	env := monitortest.Env(now)
+	ctx := context.Background()
+	for _, text := range []string{"A", "B", "C", "D"} {
+		require.NoError(t, m.Act(ctx, env, monitor.Action{Type: "add", Text: text}))
+	}
+	require.NoError(t, m.Act(ctx, env, monitor.Action{Type: "toggle", ID: idOf(t, m, env, "B")}))
+	move := func(text, dir string) {
+		require.NoError(t, m.Act(ctx, env, monitor.Action{Type: "move", ID: idOf(t, m, env, text), Text: dir}))
+	}
+	move("C", "up") // over the ticked B, to above A
+	got, res := list(t, m, env)
+	assert.Equal(t, []string{"[ ] C", "[ ] A", "[ ] D", "[x] B"}, got)
+	assert.True(t, res.Blocks[0].Movable)
+	move("C", "up") // already first
+	move("A", "down")
+	move("A", "down") // already last of the open ones
+	got, _ = list(t, m, env)
+	assert.Equal(t, []string{"[ ] C", "[ ] D", "[ ] A", "[x] B"}, got)
+
+	assert.ErrorIs(t, m.Act(ctx, env, monitor.Action{Type: "move", ID: idOf(t, m, env, "B"), Text: "up"}), monitor.ErrBadAction)
+	assert.ErrorIs(t, m.Act(ctx, env, monitor.Action{Type: "move", ID: idOf(t, m, env, "A"), Text: "left"}), monitor.ErrBadAction)
+}

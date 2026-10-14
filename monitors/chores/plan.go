@@ -38,6 +38,7 @@ type job struct {
 	any   bool    // no preferred days
 	uses  string  // what it shares with other chores, e.g. the washing machine
 	never bool    // never done, so due today only to get it started
+	on    day     // a day it's been moved to by hand, or 0
 }
 
 // Costs of a day, against the job's due day. Lateness past the flex costs
@@ -50,7 +51,8 @@ const (
 	searchDays     = 28 // how far past its earliest day a job looks for room
 )
 
-// plan puts each job on a day, the most pressing first: each takes the
+// plan puts each job on a day. Ones moved to a day by hand go there
+// first, room or not; then the rest, the most pressing first: each takes the
 // cheapest day from its earliest on where what it uses still has room, so
 // chores sharing the washing machine spread out instead of piling up.
 // used counts what's already been used on each day (today's finished
@@ -60,6 +62,9 @@ func plan(jobs []job, used map[string]map[day]int, perDay map[string]int) map[in
 	copy(order, jobs)
 	sort.SliceStable(order, func(i, j int) bool {
 		a, b := order[i], order[j]
+		if (a.on != 0) != (b.on != 0) {
+			return a.on != 0
+		}
 		if da, db := a.due+day(a.flex), b.due+day(b.flex); da != db {
 			return da < db
 		}
@@ -85,6 +90,16 @@ func plan(jobs []job, used map[string]map[day]int, perDay map[string]int) map[in
 
 	out := map[int]day{}
 	for _, j := range order {
+		if j.on != 0 {
+			out[j.idx] = j.on
+			if j.uses != "" {
+				if load[j.uses] == nil {
+					load[j.uses] = map[day]int{}
+				}
+				load[j.uses][j.on]++
+			}
+			continue
+		}
 		start := j.from
 		if early := j.due - day(j.flex); !j.never && early > start {
 			start = early

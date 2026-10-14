@@ -108,6 +108,26 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 			return err
 		}
 		tasks = append(tasks[:i], tasks[i+1:]...)
+	case "move":
+		// Swaps an open task with the open one above or below it, as
+		// they're shown. Past either end, nothing happens.
+		i, err := find()
+		if err != nil {
+			return err
+		}
+		if tasks[i].Done != nil {
+			return fmt.Errorf("%w: ticked tasks stay in the order they were ticked", monitor.ErrBadAction)
+		}
+		step := map[string]int{"up": -1, "down": 1}[a.Text]
+		if step == 0 {
+			return fmt.Errorf("%w: move up or down, not %q", monitor.ErrBadAction, a.Text)
+		}
+		for j := i + step; j >= 0 && j < len(tasks); j += step {
+			if tasks[j].Done == nil {
+				tasks[i], tasks[j] = tasks[j], tasks[i]
+				break
+			}
+		}
 	default:
 		return fmt.Errorf("%w: unknown action %q", monitor.ErrBadAction, a.Type)
 	}
@@ -143,7 +163,8 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		}
 	}
 
-	// Open tasks first, oldest first; then ticked ones, latest first.
+	// Open tasks first, in their order (oldest first unless moved); then
+	// ticked ones, latest first.
 	var open, done []task
 	for _, t := range kept {
 		if t.Done == nil {
@@ -153,7 +174,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		}
 	}
 	sort.SliceStable(done, func(i, j int) bool { return done[i].Done.After(*done[j].Done) })
-	b := monitor.Block{Type: monitor.BlockChecklist, Items: []monitor.Item{}, AddHint: "Add a task…"}
+	b := monitor.Block{Type: monitor.BlockChecklist, Items: []monitor.Item{}, AddHint: "Add a task…", Movable: true}
 	for _, t := range append(open, done...) {
 		b.Items = append(b.Items, monitor.Item{ID: t.ID, Title: t.Text, Done: t.Done != nil})
 	}

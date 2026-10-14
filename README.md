@@ -103,8 +103,9 @@ Chores never done start straight away, staggered the same way.
 
 Its panel is two checklists, *Today* and *Coming up* (with the day each is
 planned for). Ticking a chore marks it done today, even one not due yet;
-unticking it the same day undoes that. The delete button puts it off a
-day instead, and the rest fit around it.
+unticking it the same day undoes that. Its up and down buttons bring it
+forward or put it off a day (a `move` action), and the rest fit around
+it; clients without them can put it off with `delete`.
 
 ```json
 "config": {
@@ -179,7 +180,9 @@ Gemini says what in it is worth keeping, and the monitor passes that on:
 
 The first time, it reads back `lookbackDays` (default 365), which finds
 bookings still to come and how often you reorder things; past events and
-old to-dos are skipped. Its panel lists what each email added.
+old to-dos are skipped. Its panel, which clients keep with their settings
+rather than on the dashboard (unless an account needs signing in), lists
+what each email added.
 
 ```json
 "config": {
@@ -281,7 +284,9 @@ with `since` also gets the events it had that were updated after event
 poll's, with the last good blocks kept), `subtitle` (what it's watching, when that isn't obvious, e.g. a car
 search's filters), `timely` (true while when it was updated matters: always
 for the watchlist and AutoTrader, while a game's on for NFL and fantasy;
-the Windows client only shows a panel's age then, on hover), `blocks` and `summary`: a few
+the Windows client only shows a panel's age then, on hover), `background`
+(true for a monitor that only feeds others, like `mail`: clients leave it
+off the dashboard and show it with their settings), `blocks` and `summary`: a few
 stats (as in a `stats` block) worth seeing at a glance, which clients show
 instead of the blocks when space is short, and `summaryStyle`: empty for
 label/value/detail tiles, or `chips` for small blocks of the same, filled
@@ -295,7 +300,7 @@ drawn from the same few block types, so clients need no per-monitor code:
 | `stats` | `stats`: `label`, `value`, `detail`, `tone`, `series` (a sparkline), `icon` (a weather picture by the value: `sun`, `moon`, `sun-cloud`, `moon-cloud`, `cloud`, `fog`, `drizzle`, `rain`, `showers`, `snow` or `storm`), `level` (0 to 1, drawn faintly behind the chip as a chart joined to its neighbours', e.g. the chance of rain; 0 draws along the bottom, absent draws nothing) |
 | `table` | `columns` (`title`, `align`, `fill` for the column that takes spare width) and `rows` of cells (`text`, `tone`, `url`, and `detail` for a smaller line under the text) |
 | `list` | `items`: `title`, `subtitle`, `detail`, `url`, `image`, `tone` |
-| `checklist` | `items` (`id`, `title`, `done`, `tone`) with checkboxes that send `toggle` and `delete` actions; `addHint` adds a box for `add`, and `deleteHint` names what delete does when it isn't deleting (the chores' "Put off a day") |
+| `checklist` | `items` (`id`, `title`, `done`, `tone`) with checkboxes that send `toggle` and `delete` actions; `addHint` adds a box for `add`, `deleteHint` names what delete does when it isn't deleting (the reorders' "Stop tracking") and `noDelete` leaves it out; `movable` adds up and down buttons that send `move` with text `up` or `down` (reordering the to-do list), named by `upHint` and `downHint` when they do something else (the chores' days) |
 | `text` | `text` |
 
 Tones are `good`, `bad`, `warn`, `muted`, `accent`, or empty for plain text.

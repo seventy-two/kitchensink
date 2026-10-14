@@ -216,6 +216,7 @@ func TestReadsAndPassesOn(t *testing.T) {
 	assert.Equal(t, "Calendar: Vildhjarta, Fri 16 Oct 19:00 · Calendar: Street Fighter, Fri 16 Oct 20:40", b.Items[3].Subtitle)
 	assert.Len(t, b.Items, 4, "the one-off order added nothing")
 	assert.Equal(t, "Amazon return", res.Summary[0].Value)
+	assert.True(t, res.Background, "kept off the dashboard")
 
 	// Nothing new: nothing asked.
 	n := len(g.asked)
@@ -308,6 +309,7 @@ func TestFailures(t *testing.T) {
 		": Reading 2 emails.",
 	}, texts)
 	assert.Equal(t, monitor.Stat{Label: "Sign in to Hotmail", Value: "ABCD-1234", Detail: "https://microsoft.com/devicelogin", Tone: monitor.ToneWarn}, res.Summary[0])
+	assert.False(t, res.Background, "on the dashboard while the code's needed")
 	assert.Equal(t, 10*time.Second, res.Next, "back soon to see if it's signed in, not hammering Gemini")
 	require.Len(t, res.Events, 1)
 	assert.Equal(t, "signin:Hotmail:2026-10-13", res.Events[0].Key)

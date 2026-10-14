@@ -85,6 +85,10 @@ type Result struct {
 	// Timely says when it was updated matters at the moment, e.g. for
 	// prices or a game in progress. Clients only show its age then.
 	Timely bool
+	// Background says the monitor works for others (the mail monitor
+	// fills the calendar), so clients leave it off the dashboard and show
+	// it with their settings, for diagnosing it.
+	Background bool
 	// Events are things that happened. The engine drops any whose Key the
 	// monitor has emitted before, so monitors can re-emit freely.
 	Events []Event
@@ -142,9 +146,11 @@ type Snapshot struct {
 	Error    string `json:"error,omitempty"`
 	Subtitle string `json:"subtitle,omitempty"`
 	// Timely is the last good poll's Result.Timely.
-	Timely  bool    `json:"timely,omitempty"`
-	Blocks  []Block `json:"blocks"`
-	Summary []Stat  `json:"summary,omitempty"`
+	Timely bool `json:"timely,omitempty"`
+	// Background is the last good poll's Result.Background.
+	Background bool    `json:"background,omitempty"`
+	Blocks     []Block `json:"blocks"`
+	Summary    []Stat  `json:"summary,omitempty"`
 	// SummaryStyle is how to draw Summary; empty for plain tiles.
 	SummaryStyle SummaryStyle `json:"summaryStyle,omitempty"`
 }
@@ -209,8 +215,17 @@ type Block struct {
 	// AddHint is the placeholder for a checklist's box for new items.
 	AddHint string `json:"addHint,omitempty"`
 	// DeleteHint says what a checklist's delete button does when that
-	// isn't deleting the item, e.g. "Put off a day".
+	// isn't deleting the item, e.g. "Stop tracking".
 	DeleteHint string `json:"deleteHint,omitempty"`
+	// NoDelete leaves out a checklist's delete button.
+	NoDelete bool `json:"noDelete,omitempty"`
+	// Movable gives a checklist's items buttons that send "move" actions
+	// with Text "up" or "down". UpHint and DownHint, if set, say what each
+	// does when it isn't moving the item in the list (e.g. "Put off a
+	// day").
+	Movable  bool   `json:"movable,omitempty"`
+	UpHint   string `json:"upHint,omitempty"`
+	DownHint string `json:"downHint,omitempty"`
 	// Private marks personal figures, e.g. money, which clients can hide
 	// on request.
 	Private bool `json:"private,omitempty"`

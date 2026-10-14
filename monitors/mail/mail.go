@@ -369,11 +369,17 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	case len(queue) > 0:
 		soonest(backlogPoll)
 	}
+	signingIn := false
+	for _, st := range statuses {
+		signingIn = signingIn || st.SignIn != nil
+	}
 	return monitor.Result{
-		Blocks:  m.blocks(statuses, queue, found, readErr, now),
-		Summary: m.summary(statuses, queue, found),
-		Events:  events,
-		Next:    next,
+		// It only feeds other panels, unless an account needs signing in.
+		Background: !signingIn,
+		Blocks:     m.blocks(statuses, queue, found, readErr, now),
+		Summary:    m.summary(statuses, queue, found),
+		Events:     events,
+		Next:       next,
 	}, nil
 }
 
