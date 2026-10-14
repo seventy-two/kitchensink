@@ -97,7 +97,12 @@ func TestDoneAndDueAgain(t *testing.T) {
 	today, later := lines(t, res)
 	assert.Equal(t, []string{"[ ] Waitrose order", "[x] Whites wash", "[x] Towel wash"}, today)
 	assert.Equal(t, []string{"[ ] Black tee wash · tomorrow", "[ ] Bedsheet wash · Sat"}, later)
-	assert.Equal(t, []monitor.Stat{{Label: "Today", Value: "Waitrose order"}}, res.Summary)
+	assert.Equal(t, []monitor.Stat{
+		{Label: "Today", Value: "Waitrose order", Tone: monitor.ToneAccent},
+		{Label: "Tomorrow", Value: "Black tee wash"},
+		{Label: "Sat", Value: "Bedsheet wash"},
+	}, res.Summary, "today's chores, then the week's")
+	assert.Equal(t, monitor.SummaryChips, res.SummaryStyle)
 
 	// Unticking undoes it.
 	act(t, m, env, "toggle", "towel-wash")
@@ -108,7 +113,8 @@ func TestDoneAndDueAgain(t *testing.T) {
 	res = poll(t, m, env)
 	assert.Equal(t, []monitor.Stat{
 		{Label: "Today", Value: "All done", Tone: monitor.ToneGood},
-		{Label: "Next", Value: "Black tee wash", Detail: "tomorrow"},
+		{Label: "Tomorrow", Value: "Black tee wash"},
+		{Label: "Sat", Value: "Bedsheet wash"},
 	}, res.Summary)
 
 	// A week on, whites and towels are both due, and fit around each
@@ -263,7 +269,7 @@ func TestTracked(t *testing.T) {
 	}
 	assert.Equal(t, []string{"Dishwasher tablets · due", "Coffee beans · Thu 22 Oct"}, got)
 	assert.Equal(t, monitor.ToneWarn, r.Items[0].Tone)
-	assert.Contains(t, res.Summary, monitor.Stat{Value: "Reorder dishwasher tablets", Tone: monitor.ToneWarn}, "three days past due")
+	assert.Contains(t, res.Summary, monitor.Stat{Label: "Today", Value: "Reorder dishwasher tablets", Tone: monitor.ToneWarn}, "three days past due")
 	require.Len(t, res.Events, 1)
 	assert.Equal(t, "Whites wash, Waitrose order, Reorder dishwasher tablets", res.Events[0].Body)
 	today, later := lines(t, monitor.Result{Blocks: res.Blocks[:2]})
