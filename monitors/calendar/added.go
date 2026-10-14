@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/seventy-two/kitchensink/monitor"
 )
@@ -131,4 +133,50 @@ func (m *Monitor) calTone(o occurrence) monitor.Tone {
 		return addedTone
 	}
 	return m.cfg.Calendars[o.Cal].Tone
+}
+
+// withoutCopies drops added events that a feed already has: ones starting
+// at the same time (or on the same day, all day) whose titles and places
+// share a word, like a booking email's "Orchard Sauna" and a calendar's
+// "sauna".
+func withoutCopies(added, feeds []occurrence) []occurrence {
+	return slices.DeleteFunc(added, func(a occurrence) bool {
+		return slices.ContainsFunc(feeds, func(f occurrence) bool {
+			if f.Cal < 0 || f.AllDay != a.AllDay || !f.Start.Equal(a.Start) {
+				return false
+			}
+			words := wordsOf(f.Title + " " + f.Location)
+			for w := range wordsOf(a.Title + " " + a.Location) {
+				if words[w] {
+					return true
+				}
+			}
+			return false
+		})
+	})
+}
+
+// wordsOf is the words of four letters or more in s, in lower case.
+func wordsOf(s string) map[string]bool {
+	out := map[string]bool{}
+	for _, w := range strings.FieldsFunc(strings.ToLower(s), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) {
+		if len([]rune(w)) >= 4 {
+			out[w] = true
+		}
+	}
+	return out
+}
+
+// shortPlace is o's location as shown after its title: none if it's the
+// call link, and without the part the title already says ("Loop Massage ·
+// Bristol", not "Loop Massage · Loop Massage, Bristol").
+func shortPlace(o occurrence) string {
+	if o.Location == "" || o.Location == o.Link {
+		return ""
+	}
+	first, rest, ok := strings.Cut(o.Location, ",")
+	if ok && strings.EqualFold(strings.TrimSpace(first), strings.TrimSpace(o.Title)) {
+		return strings.TrimSpace(rest)
+	}
+	return o.Location
 }

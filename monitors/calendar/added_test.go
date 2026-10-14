@@ -37,14 +37,14 @@ func TestAdded(t *testing.T) {
 	res, err := m.Poll(ctx, env)
 	require.NoError(t, err)
 	assert.Equal(t, []string{
-		"All day | Bins out | Personal",
-		"10:00–11:00 | Waitrose delivery | Email",
-	}, rows(res.Blocks[0]), "the calendar column shows once something's added")
-	assert.Equal(t, monitor.ToneWarn, res.Blocks[0].Rows[1][2].Tone)
+		"All day | Bins out",
+		"10:00–11:00 | Waitrose delivery",
+	}, rows(res.Blocks[0]), "no calendar column for one feed, so phones keep their width")
+	assert.Equal(t, "Email", res.Blocks[0].Rows[1][1].Detail)
 	tue := res.Blocks[1]
-	assert.Equal(t, "19:00 | Vildhjarta · The Fleece, Bristol | Email", rows(tue)[0])
-	assert.Equal(t, "2 tickets · Ticketmaster", tue.Rows[0][1].Detail, "its own detail stands in for a note")
-	assert.Contains(t, rows(res.Blocks[2]), "All day | Amazon parcel | Email")
+	assert.Equal(t, "19:00 | Vildhjarta · The Fleece, Bristol", rows(tue)[0])
+	assert.Equal(t, "Email · 2 tickets · Ticketmaster", tue.Rows[0][1].Detail, "its source and own detail stand in for a note")
+	assert.Contains(t, rows(res.Blocks[2]), "All day | Amazon parcel")
 	assert.Equal(t, monitor.Stat{Label: "10:00", Value: "Waitrose delivery", Detail: "Email"}, res.Summary[0])
 
 	// Reminders work as for any timed event.
@@ -57,10 +57,10 @@ func TestAdded(t *testing.T) {
 	gig.Start = gig.Start.Add(30 * time.Minute)
 	require.NoError(t, upsert(t, m, env, gig))
 	res, _ = m.Poll(ctx, env)
-	assert.Equal(t, "19:30 | Vildhjarta · The Fleece, Bristol | Email", rows(res.Blocks[1])[0])
+	assert.Equal(t, "19:30 | Vildhjarta · The Fleece, Bristol", rows(res.Blocks[1])[0])
 	require.NoError(t, m.Act(ctx, env, monitor.Action{Type: "remove", ID: gig.Key}))
 	res, _ = m.Poll(ctx, env)
-	assert.Equal(t, []string{"22:00–… | Late film | Personal"}, rows(res.Blocks[1]))
+	assert.Equal(t, []string{"22:00–… | Late film"}, rows(res.Blocks[1]))
 
 	added, err := loadAdded(env)
 	require.NoError(t, err)
@@ -74,4 +74,24 @@ func TestAdded(t *testing.T) {
 func at(env monitor.Env, t time.Time) monitor.Env {
 	env.Now = func() time.Time { return t }
 	return env
+}
+
+func TestAddedCopiesAndPlaces(t *testing.T) {
+	work, personal := feeds(t)
+	m := newMonitor(t, work, personal)
+	env := monitortest.Env(now)
+	// The personal feed has "Late film" at 22:00 on Tuesday.
+	film := time.Date(2026, 10, 13, 22, 0, 0, 0, london)
+	require.NoError(t, upsert(t, m, env, Added{Key: "odeon", Title: "Odeon: The Film", Location: "Odeon, Bristol", Start: film, Source: "Email"}))
+	require.NoError(t, upsert(t, m, env, Added{Key: "other", Title: "Pottery class", Start: film, Source: "Email"}))
+	require.NoError(t, upsert(t, m, env, Added{Key: "loop", Title: "Loop Massage", Location: "Loop Massage, Bristol",
+		Start: time.Date(2026, 10, 14, 9, 0, 0, 0, london), Source: "Email"}))
+	res, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		"10:00–10:15 | Standup (moved) | Work",
+		"22:00–… | Late film | Personal",
+		"22:00 | Pottery class | ",
+	}, rows(res.Blocks[1]), "the email's copy of the film is left out, another event at the time isn't; with two feeds the column stays, empty for email")
+	assert.Contains(t, rows(res.Blocks[2]), "09:00 | Loop Massage · Bristol | ")
 }

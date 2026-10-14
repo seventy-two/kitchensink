@@ -151,7 +151,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	if err != nil {
 		return monitor.Result{}, err
 	}
-	occs = append(occs, extra...)
+	occs = append(occs, withoutCopies(extra, occs)...)
 	sort.SliceStable(occs, func(i, j int) bool {
 		a, b := occs[i], occs[j]
 		if !a.Start.Equal(b.Start) {
@@ -172,7 +172,9 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 			if notes == nil {
 				notes = map[string]string{}
 			}
-			notes[m.noteKey(o)] = o.detail
+			// The source goes with the detail, not in a column of its own,
+			// which would squeeze the titles on a phone.
+			notes[m.noteKey(o)] = strings.Join(slices.DeleteFunc([]string{o.source, o.detail}, func(s string) bool { return s == "" }), " · ")
 		}
 	}
 
@@ -269,7 +271,7 @@ func (m *Monitor) blocks(occs []occurrence, now time.Time, notes map[string]stri
 	today := midnight(now)
 	// No headings: each day's table is short, and they'd repeat.
 	cols := []monitor.Column{{}, {Fill: true}}
-	many := len(m.cfg.Calendars) > 1 || slices.ContainsFunc(occs, func(o occurrence) bool { return o.Cal < 0 })
+	many := len(m.cfg.Calendars) > 1
 	if many {
 		cols = append(cols, monitor.Column{})
 	}
@@ -296,15 +298,19 @@ func (m *Monitor) blocks(occs []occurrence, now time.Time, notes map[string]stri
 				tone = monitor.ToneAccent // on now
 			}
 			title := o.Title
-			if o.Location != "" && o.Location != o.Link {
-				title += " · " + o.Location
+			if place := shortPlace(o); place != "" {
+				title += " · " + place
 			}
 			row := []monitor.Cell{
 				{Text: timeLabel(o, day, next), Tone: monitor.ToneMuted},
 				{Text: title, Tone: tone, URL: o.Link},
 			}
 			if many {
-				row = append(row, monitor.Cell{Text: m.calName(o), Tone: m.calTone(o)})
+				name, tone := m.calName(o), m.calTone(o)
+				if o.Cal < 0 {
+					name = "" // said in its detail
+				}
+				row = append(row, monitor.Cell{Text: name, Tone: tone})
 			}
 			row[1].Detail = notes[m.noteKey(o)]
 			b.Rows = append(b.Rows, row)
