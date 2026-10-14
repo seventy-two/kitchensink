@@ -122,7 +122,7 @@ func (s *Server) hook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorised", http.StatusUnauthorized)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 16<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var body []byte
 	var err error
 	if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt == "multipart/form-data" {

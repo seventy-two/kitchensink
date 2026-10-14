@@ -241,10 +241,12 @@ line, so it can still post to Discord). Then turn on:
 
 Notifications from other accounts and from leagues or Deadman worlds are
 ignored. Each one has the monitor poll, but it asks WOM to update at most
-every five minutes, so skill XP still comes mostly from WOM. Kill counts
+hourly (the hiscores only change at logout), so skill XP between logins
+comes from Dink's login summary. Kill counts
 for bosses the hiscores don't rank yet start from the first kill Dink
 reports that day, rather than counting every earlier kill as today's.
-Screenshots are dropped, so they can stay on for Discord.
+Screenshots are dropped; turn them off unless Dink also posts to
+Discord, as bodies over 1MB are refused.
 
 ## Running it
 

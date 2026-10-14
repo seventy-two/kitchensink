@@ -47,8 +47,10 @@ type Config struct {
 }
 
 // womEvery is how often Wise Old Man is asked to update the player, at
-// most: Dink's hooks have the monitor poll after every kill.
-const womEvery = 5 * time.Minute
+// most. The hiscores only change when the player logs out, and Dink's
+// hooks (which have the monitor poll after every kill) cover the time in
+// between, so an hourly update does.
+const womEvery = 55 * time.Minute
 
 // Monitor is the OSRS monitor.
 type Monitor struct {

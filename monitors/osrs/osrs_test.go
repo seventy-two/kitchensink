@@ -121,7 +121,7 @@ func TestToday(t *testing.T) {
 	assert.Equal(t, 4*time.Hour+time.Minute, res.Next, "wakes just after midnight to mark the new day")
 
 	// A poll soon after (as after a hook) doesn't ask WOM again.
-	env.Now = func() time.Time { return now.Add(4 * time.Minute) }
+	env.Now = func() time.Time { return now.Add(50 * time.Minute) }
 	_, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
 	assert.Equal(t, 1, f.count("POST /players/GTX 480"))
@@ -131,7 +131,7 @@ func TestToday(t *testing.T) {
 	f.mu.Lock()
 	f.limited = true
 	f.mu.Unlock()
-	env.Now = func() time.Time { return now.Add(5 * time.Minute) }
+	env.Now = func() time.Time { return now.Add(time.Hour) }
 	res, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
 	assert.Len(t, res.Summary, 4)
