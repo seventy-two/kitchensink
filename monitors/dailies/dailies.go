@@ -1,5 +1,5 @@
-// Package dailies shows which of today's daily puzzle games one player
-// hasn't played yet, from the dailies tracker (a separate app).
+// Package dailies shows today's daily puzzle games and which of them one
+// player has played, from the dailies tracker (a separate app).
 package dailies
 
 import (
@@ -25,7 +25,7 @@ type Config struct {
 	URL string `json:"url"`
 	// Player is whose games to show, as the tracker names them.
 	Player string `json:"player"`
-	// Names gives games shorter names for the tiles, by the tracker's
+	// Names gives games shorter names for the summary's tiles, by the tracker's
 	// game ID, e.g. {"wordle": "W"}.
 	Names map[string]string `json:"names"`
 	// Timezone is the tracker's day, which starts at midnight here. It
@@ -63,6 +63,7 @@ func New(raw json.RawMessage) (*Monitor, error) {
 type game struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	URL  string `json:"url"`
 }
 
 type config struct {
@@ -100,18 +101,9 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	for _, e := range d.Ends {
 		ended = ended || e.Player == m.cfg.Player
 	}
-	var left []game
-	if !ended {
-		for _, g := range c.Games {
-			if !played[g.ID] {
-				left = append(left, g)
-			}
-		}
-	}
-	tiles := m.tiles(left)
 	return monitor.Result{
-		Blocks:       blocks(tiles, ended),
-		Summary:      summary(tiles, ended),
+		Blocks:       []monitor.Block{list(c.Games, played, ended)},
+		Summary:      m.chips(c.Games, played, ended),
 		SummaryStyle: monitor.SummaryChips,
 		Next:         m.untilTomorrow(env.Now()),
 	}, nil
@@ -125,36 +117,39 @@ func (m *Monitor) untilTomorrow(now time.Time) time.Duration {
 	return midnight.Sub(now) + 30*time.Second
 }
 
-func blocks(tiles []monitor.Stat, ended bool) []monitor.Block {
-	switch {
-	case ended:
-		return []monitor.Block{{Type: monitor.BlockText, Text: "You ended today early."}}
-	case len(tiles) == 0:
-		return []monitor.Block{{Type: monitor.BlockText, Text: "All played for today."}}
-	}
-	return []monitor.Block{{Type: monitor.BlockStats, Title: "Still to play", Stats: tiles}}
-}
-
-// summary is a chip for each game left, or one saying there are none.
-func summary(tiles []monitor.Stat, ended bool) []monitor.Stat {
-	switch {
-	case ended:
-		return []monitor.Stat{{Label: "Dailies", Value: "Ended early", Tone: monitor.ToneMuted}}
-	case len(tiles) == 0:
-		return []monitor.Stat{{Label: "Dailies", Value: "All played", Tone: monitor.ToneGood}}
-	}
-	return tiles
-}
-
-// tiles names each game left, by its short name if it has one.
-func (m *Monitor) tiles(left []game) []monitor.Stat {
-	out := make([]monitor.Stat, len(left))
-	for i, g := range left {
-		name := g.Name
-		if short := m.cfg.Names[g.ID]; short != "" {
-			name = short
+// list is every game, each linking to it and saying whether it's been
+// played, one line each.
+func list(games []game, played map[string]bool, ended bool) monitor.Block {
+	b := monitor.Block{Type: monitor.BlockTable, Columns: []monitor.Column{{Title: "Game", Fill: true}, {Title: "Today"}}, Rows: [][]monitor.Cell{}}
+	for _, g := range games {
+		var status monitor.Cell // blank until played, so the done ones stand out
+		switch {
+		case played[g.ID]:
+			status = monitor.Cell{Text: "Done", Tone: monitor.ToneGood}
+		case ended:
+			status = monitor.Cell{Text: "Skipped", Tone: monitor.ToneMuted}
 		}
-		out[i] = monitor.Stat{Value: name}
+		b.Rows = append(b.Rows, []monitor.Cell{{Text: g.Name, URL: g.URL}, status})
+	}
+	return b
+}
+
+// chips is a tile for each game, by its short name if it has one, green
+// once it's been played.
+func (m *Monitor) chips(games []game, played map[string]bool, ended bool) []monitor.Stat {
+	out := make([]monitor.Stat, len(games))
+	for i, g := range games {
+		st := monitor.Stat{Value: g.Name, URL: g.URL}
+		if short := m.cfg.Names[g.ID]; short != "" {
+			st.Value = short
+		}
+		switch {
+		case played[g.ID]:
+			st.Tone = monitor.ToneGood
+		case ended:
+			st.Tone = monitor.ToneMuted
+		}
+		out[i] = st
 	}
 	return out
 }

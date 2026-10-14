@@ -252,6 +252,8 @@ type Stat struct {
 	// Lead sets the stat apart from the ones after it, e.g. the
 	// portfolio's day ahead of the watchlist's moves.
 	Lead bool `json:"lead,omitempty"`
+	// URL, if set, is opened when the stat is clicked.
+	URL string `json:"url,omitempty"`
 }
 
 // Align is a table column's alignment.

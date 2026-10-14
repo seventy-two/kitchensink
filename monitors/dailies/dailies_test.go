@@ -56,24 +56,39 @@ func poll(t *testing.T, srv *httptest.Server, player string) monitor.Result {
 	return res
 }
 
-func TestStillToPlay(t *testing.T) {
+func TestToday(t *testing.T) {
 	res := poll(t, fakeTracker(t), "M")
 	require.Len(t, res.Blocks, 1)
-	want := []monitor.Stat{{Value: "W"}, {Value: "Connections"}}
-	assert.Equal(t, want, res.Blocks[0].Stats, "only M's, in the tracker's order")
-	assert.Equal(t, want, res.Summary)
+	notYet := monitor.Cell{}
+	assert.Equal(t, [][]monitor.Cell{
+		{{Text: "Wordle", URL: "https://wordle.test/"}, notYet},
+		{{Text: "Connections", URL: "https://connections.test/"}, notYet},
+		{{Text: "Wikidle", URL: "https://wikidle.test/"}, {Text: "Done", Tone: monitor.ToneGood}},
+	}, res.Blocks[0].Rows, "M's, in the tracker's order")
+	assert.Equal(t, []monitor.Stat{
+		{Value: "W", URL: "https://wordle.test/"},
+		{Value: "Connections", URL: "https://connections.test/"},
+		{Value: "Wikidle", URL: "https://wikidle.test/", Tone: monitor.ToneGood},
+	}, res.Summary, "short names where given")
 	assert.Equal(t, monitor.SummaryChips, res.SummaryStyle)
 	assert.Equal(t, 13*time.Hour+40*time.Minute+30*time.Second, res.Next, "just after UK midnight")
 }
 
 func TestOtherPlayerAndEndingEarly(t *testing.T) {
-	srv := fakeTracker(t)
-	res := poll(t, srv, "J")
-	assert.Equal(t, "Wikidle", res.Summary[0].Value)
+	res := poll(t, fakeTracker(t), "J")
+	assert.Equal(t, []monitor.Tone{monitor.ToneGood, monitor.ToneGood, ""}, tones(res.Summary))
 
 	res = poll(t, fakeTracker(t, "M"), "M")
-	assert.Equal(t, "You ended today early.", res.Blocks[0].Text)
-	assert.Equal(t, "Ended early", res.Summary[0].Value)
+	assert.Equal(t, []monitor.Tone{monitor.ToneMuted, monitor.ToneMuted, monitor.ToneGood}, tones(res.Summary))
+	assert.Equal(t, "Skipped", res.Blocks[0].Rows[0][1].Text)
+}
+
+func tones(stats []monitor.Stat) []monitor.Tone {
+	var out []monitor.Tone
+	for _, s := range stats {
+		out = append(out, s.Tone)
+	}
+	return out
 }
 
 func TestConfig(t *testing.T) {

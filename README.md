@@ -30,7 +30,7 @@ notification for each event.
 | `calendar` | iCalendar (ICS) feeds, e.g. Google or Outlook | each timed event, `remindMinutes` (default 10) before it starts |
 | `football` | `nfl` and `fantasy` together as one panel (see below) | what each of them notifies |
 | `mail` | IMAP (e.g. Gmail) and Outlook mailboxes, read by Gemini for bookings, orders and things to do, which it adds to the calendar, to-do list and chores (below) | nothing itself (each finding is a quiet event); a sign-in code when an Outlook account needs one |
-| `dailies` | a dailies tracker (a separate app)'s games and today's results: the games `player` hasn't logged yet, as tiles (`names` gives them shorter names by game ID) | nothing |
+| `dailies` | a dailies tracker (a separate app)'s games and today's results: every game, linked and marked once `player` has logged it; the summary is a chip for each (`names` gives them shorter names by game ID), green once played | nothing |
 
 Each monitor also returns a dashboard panel and a short summary (shown when
 space is short), polls on its own interval and can ask to be polled sooner
@@ -299,7 +299,8 @@ with each stat's tone (the watchlist's daily moves, the hourly forecast,
 today's NFL games). A stat or block marked `private` holds personal
 figures, e.g. money, which clients can hide; a stat marked `lead` is set
 apart from the ones after it (the portfolio's day before the watchlist's
-moves). Every monitor is
+moves), and one with a `url` opens it when clicked (the dailies' chips).
+Every monitor is
 drawn from the same few block types, so clients need no per-monitor code:
 
 | Block `type` | Fields |
