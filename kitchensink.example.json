@@ -47,6 +47,12 @@
       "config": { "url": "http://127.0.0.1:6040", "player": "M", "names": { "wordle": "W" } }
     },
     {
+      "type": "osrs",
+      "title": "OSRS today",
+      "interval": "30m",
+      "config": { "player": "Zezima" }
+    },
+    {
       "type": "mail",
       "title": "Mail",
       "interval": "10m",

@@ -1,0 +1,284 @@
+// Package osrs shows what an Old School RuneScape player has done today
+// towards pets: boss kills, and XP in the skills that have a pet, from
+// Wise Old Man (https://docs.wiseoldman.net/).
+package osrs
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"sort"
+	"strconv"
+	"time"
+
+	"github.com/seventy-two/kitchensink/monitor"
+)
+
+func init() {
+	monitor.Register("osrs", func(c json.RawMessage) (monitor.Monitor, error) { return New(c) })
+}
+
+const (
+	defaultWOM = "https://api.wiseoldman.net/v2"
+	userAgent  = "kitchensink (github.com/seventy-two/kitchensink)"
+)
+
+// Config is the monitor's config.
+type Config struct {
+	// Player is the OSRS name, as Wise Old Man tracks it.
+	Player string `json:"player"`
+	// Timezone is where the day starts at midnight. It defaults to
+	// Europe/London.
+	Timezone string `json:"timezone"`
+	// WOMURL replaces Wise Old Man's API, for tests.
+	WOMURL string `json:"womURL"`
+}
+
+// Monitor is the OSRS monitor.
+type Monitor struct {
+	cfg Config
+	loc *time.Location
+}
+
+// New builds the monitor from its JSON config.
+func New(raw json.RawMessage) (*Monitor, error) {
+	var c Config
+	if err := monitor.Decode(raw, &c); err != nil {
+		return nil, err
+	}
+	if c.Player == "" {
+		return nil, fmt.Errorf("osrs needs a player")
+	}
+	if c.Timezone == "" {
+		c.Timezone = "Europe/London"
+	}
+	if c.WOMURL == "" {
+		c.WOMURL = defaultWOM
+	}
+	loc, err := time.LoadLocation(c.Timezone)
+	if err != nil {
+		return nil, err
+	}
+	return &Monitor{cfg: c, loc: loc}, nil
+}
+
+// stats are a snapshot's numbers by WOM metric: XP, kills or score.
+// Unranked ones (WOM's -1, e.g. under a boss's hiscore minimum) are 0.
+type stats map[string]int64
+
+// baseline is the day's starting point, kept for the day.
+type baseline struct {
+	Day   string `json:"day"`
+	Stats stats  `json:"stats"`
+}
+
+const baselineKey = "baseline"
+
+// Poll asks Wise Old Man to update the player, then compares their stats
+// with the last snapshot from before midnight. WOM only snapshots when
+// asked, so the poll just after midnight (see Next) is what marks the
+// day's start; without one, the last earlier snapshot does.
+func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, error) {
+	now := env.Now().In(m.loc)
+	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, m.loc)
+	day := midnight.Format(time.DateOnly)
+
+	current, err := m.update(ctx, env.HTTP)
+	if err != nil {
+		return monitor.Result{}, err
+	}
+	var base baseline
+	if _, err := env.State.Get(baselineKey, &base); err != nil {
+		return monitor.Result{}, err
+	}
+	if base.Day != day {
+		start, err := m.before(ctx, env.HTTP, midnight.Add(5*time.Minute))
+		if err != nil {
+			return monitor.Result{}, err
+		}
+		if start == nil {
+			start = current // nothing earlier: today starts now
+		}
+		base = baseline{Day: day, Stats: start}
+		if err := env.State.Set(baselineKey, base); err != nil {
+			return monitor.Result{}, err
+		}
+	}
+	rows := gains(base.Stats, current)
+	return monitor.Result{
+		Subtitle:     m.cfg.Player + " · since midnight",
+		Blocks:       []monitor.Block{table(rows)},
+		Summary:      summary(rows),
+		SummaryStyle: monitor.SummaryChips,
+		Next:         midnight.AddDate(0, 0, 1).Add(time.Minute).Sub(now),
+	}, nil
+}
+
+// gain is one metric's progress today.
+type gain struct {
+	metric
+	Gained, Total int64
+}
+
+// gains are the tracked metrics that went up: kills and scores first,
+// then XP, each most first.
+func gains(from, to stats) []gain {
+	var out []gain
+	for id, mt := range tracked {
+		if d := to[id] - from[id]; d > 0 {
+			out = append(out, gain{metric: mt, Gained: d, Total: to[id]})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if (a.Kind == xp) != (b.Kind == xp) {
+			return b.Kind == xp
+		}
+		if a.Gained != b.Gained {
+			return a.Gained > b.Gained
+		}
+		return a.Name < b.Name
+	})
+	return out
+}
+
+func table(rows []gain) monitor.Block {
+	if len(rows) == 0 {
+		return monitor.Block{Type: monitor.BlockText, Text: "Nothing towards a pet yet today."}
+	}
+	b := monitor.Block{Type: monitor.BlockTable, Columns: []monitor.Column{
+		{Title: ""}, {Title: "Today", Align: monitor.AlignRight}, {Title: "Total", Align: monitor.AlignRight}, {Title: "Pet", Fill: true},
+	}}
+	for _, g := range rows {
+		b.Rows = append(b.Rows, []monitor.Cell{
+			{Text: g.Name},
+			{Text: "+" + amount(g.Kind, g.Gained), Tone: monitor.ToneGood},
+			{Text: amount(g.Kind, g.Total), Tone: monitor.ToneMuted},
+			{Text: g.Pet, Tone: monitor.ToneMuted},
+		})
+	}
+	return b
+}
+
+func summary(rows []gain) []monitor.Stat {
+	if len(rows) == 0 {
+		return []monitor.Stat{{Label: "Today", Value: "Nothing yet", Tone: monitor.ToneMuted}}
+	}
+	var out []monitor.Stat
+	for _, g := range rows {
+		out = append(out, monitor.Stat{Label: g.Name, Value: "+" + amount(g.Kind, g.Gained), Tone: monitor.ToneGood})
+	}
+	return out
+}
+
+// amount shows a number of kills plainly and XP in short: "85.2k xp".
+func amount(k kind, n int64) string {
+	if k != xp {
+		return comma(n)
+	}
+	switch {
+	case n >= 1_000_000:
+		return strconv.FormatFloat(float64(n)/1e6, 'f', 2, 64) + "M xp"
+	case n >= 10_000:
+		return strconv.FormatFloat(float64(n)/1e3, 'f', 1, 64) + "k xp"
+	}
+	return comma(n) + " xp"
+}
+
+func comma(n int64) string {
+	s := strconv.FormatInt(n, 10)
+	for i := len(s) - 3; i > 0; i -= 3 {
+		s = s[:i] + "," + s[i:]
+	}
+	return s
+}
+
+// snapshot is a WOM snapshot's numbers.
+type snapshot struct {
+	Data struct {
+		Skills map[string]struct {
+			Experience int64 `json:"experience"`
+		} `json:"skills"`
+		Bosses map[string]struct {
+			Kills int64 `json:"kills"`
+		} `json:"bosses"`
+		Activities map[string]struct {
+			Score int64 `json:"score"`
+		} `json:"activities"`
+	} `json:"data"`
+}
+
+func (s snapshot) stats() stats {
+	out := stats{}
+	set := func(id string, n int64) { out[id] = max(n, 0) }
+	for id, v := range s.Data.Skills {
+		set(id, v.Experience)
+	}
+	for id, v := range s.Data.Bosses {
+		set(id, v.Kills)
+	}
+	for id, v := range s.Data.Activities {
+		set(id, v.Score)
+	}
+	return out
+}
+
+// update asks WOM to read the player's hiscores again and returns the
+// result. Asked again within a minute or so, WOM refuses (429), and the
+// latest snapshot it has does.
+func (m *Monitor) update(ctx context.Context, client *http.Client) (stats, error) {
+	path := "/players/" + url.PathEscape(m.cfg.Player)
+	var player struct {
+		Latest *snapshot `json:"latestSnapshot"`
+	}
+	status, err := m.call(ctx, client, http.MethodPost, path, &player)
+	if status == http.StatusTooManyRequests {
+		status, err = m.call(ctx, client, http.MethodGet, path, &player)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if player.Latest == nil {
+		return nil, fmt.Errorf("Wise Old Man has no stats for %s", m.cfg.Player)
+	}
+	return player.Latest.stats(), nil
+}
+
+// before is the player's last snapshot before t (within 30 days), or nil.
+func (m *Monitor) before(ctx context.Context, client *http.Client, t time.Time) (stats, error) {
+	q := url.Values{
+		"startDate": {t.AddDate(0, 0, -30).UTC().Format(time.RFC3339)},
+		"endDate":   {t.UTC().Format(time.RFC3339)},
+		"limit":     {"1"},
+	}
+	var snaps []snapshot // newest first
+	if _, err := m.call(ctx, client, http.MethodGet, "/players/"+url.PathEscape(m.cfg.Player)+"/snapshots?"+q.Encode(), &snaps); err != nil {
+		return nil, err
+	}
+	if len(snaps) == 0 {
+		return nil, nil
+	}
+	return snaps[0].stats(), nil
+}
+
+// call makes a request to WOM and decodes its reply into v, returning the
+// status too.
+func (m *Monitor) call(ctx context.Context, client *http.Client, method, path string, v any) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, method, m.cfg.WOMURL+path, nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("User-Agent", userAgent)
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return resp.StatusCode, fmt.Errorf("Wise Old Man %s %s: %s", method, path, resp.Status)
+	}
+	return resp.StatusCode, json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(v)
+}

@@ -3,7 +3,8 @@
 A small self-hosted service that keeps an eye on things for you (stock
 prices, NFL games, your fantasy football teams, the weather, car adverts,
 your calendars, a to-do list, recurring chores, the orders and
-bookings in your email, and the daily puzzle games you haven't played yet) and tells your devices when something happens. Clients get a live dashboard of everything being watched and a
+bookings in your email, the daily puzzle games you haven't played yet, and
+a day's progress towards OSRS pets) and tells your devices when something happens. Clients get a live dashboard of everything being watched and a
 notification for each event.
 
 - **Server**: Go, one binary, SQLite. Runs the monitors on their intervals,
@@ -31,6 +32,7 @@ notification for each event.
 | `football` | `nfl` and `fantasy` together as one panel (see below) | what each of them notifies |
 | `mail` | IMAP (e.g. Gmail) and Outlook mailboxes, read by Gemini for bookings, orders and things to do, which it adds to the calendar, to-do list and chores (below) | nothing itself (each finding is a quiet event); a sign-in code when an Outlook account needs one |
 | `dailies` | a dailies tracker (a separate app)'s games and today's results: every game, linked and marked once `player` has logged it; the summary is a chip for each (`names` gives them shorter names by game ID), green once played. Its paste button logs a game's share text from the clipboard | what happened to each paste, logged or not and why, as a temporary event |
+| `osrs` | [Wise Old Man](https://wiseoldman.net): an Old School RuneScape `player`'s gains since midnight towards pets only: boss kills, Guardians of the Rift, Soul Wars zeal, master clues, and XP in the skills with a pet (not combat). It asks WOM to update the player each poll and just after midnight, and compares with the last snapshot from before midnight. The summary is a chip per gain | nothing |
 
 Each monitor also returns a dashboard panel and a short summary (shown when
 space is short), polls on its own interval and can ask to be polled sooner

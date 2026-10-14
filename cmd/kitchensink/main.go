@@ -32,6 +32,7 @@ import (
 	_ "github.com/seventy-two/kitchensink/monitors/football"
 	_ "github.com/seventy-two/kitchensink/monitors/mail"
 	_ "github.com/seventy-two/kitchensink/monitors/nfl"
+	_ "github.com/seventy-two/kitchensink/monitors/osrs"
 	_ "github.com/seventy-two/kitchensink/monitors/stocks"
 	_ "github.com/seventy-two/kitchensink/monitors/todo"
 	_ "github.com/seventy-two/kitchensink/monitors/weather"
