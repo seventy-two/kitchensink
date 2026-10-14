@@ -1,6 +1,8 @@
 // Package osrs shows what an Old School RuneScape player has done today
 // towards pets: boss kills, and XP in the skills that have a pet, from
-// Wise Old Man (https://docs.wiseoldman.net/).
+// Wise Old Man (https://docs.wiseoldman.net/), plus big drops and pets.
+// RuneLite's Dink plugin, sending to the monitor's hook, makes it live (see
+// dink.go).
 package osrs
 
 import (
@@ -12,6 +14,7 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/seventy-two/kitchensink/monitor"
@@ -33,14 +36,28 @@ type Config struct {
 	// Timezone is where the day starts at midnight. It defaults to
 	// Europe/London.
 	Timezone string `json:"timezone"`
+	// HookSecret turns on the hook for Dink's webhooks, at
+	// /api/hooks/{monitor}/{secret}. Use "${ENV_VAR}".
+	HookSecret string `json:"hookSecret"`
+	// BigLoot is the least a drop must be worth (in coins) to show and
+	// notify. It defaults to 50m.
+	BigLoot int64 `json:"bigLoot"`
 	// WOMURL replaces Wise Old Man's API, for tests.
 	WOMURL string `json:"womURL"`
 }
+
+// womEvery is how often Wise Old Man is asked to update the player, at
+// most: Dink's hooks have the monitor poll after every kill.
+const womEvery = 5 * time.Minute
 
 // Monitor is the OSRS monitor.
 type Monitor struct {
 	cfg Config
 	loc *time.Location
+
+	// The player's stats from WOM, and when.
+	wom   stats
+	womAt time.Time
 }
 
 // New builds the monitor from its JSON config.
@@ -54,6 +71,9 @@ func New(raw json.RawMessage) (*Monitor, error) {
 	}
 	if c.Timezone == "" {
 		c.Timezone = "Europe/London"
+	}
+	if c.BigLoot == 0 {
+		c.BigLoot = 50_000_000
 	}
 	if c.WOMURL == "" {
 		c.WOMURL = defaultWOM
@@ -86,10 +106,14 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, m.loc)
 	day := midnight.Format(time.DateOnly)
 
-	current, err := m.update(ctx, env.HTTP)
-	if err != nil {
-		return monitor.Result{}, err
+	if m.wom == nil || env.Now().Sub(m.womAt) >= womEvery {
+		wom, err := m.update(ctx, env.HTTP)
+		if err != nil {
+			return monitor.Result{}, err
+		}
+		m.wom, m.womAt = wom, env.Now()
 	}
+	current := m.wom
 	var base baseline
 	if _, err := env.State.Get(baselineKey, &base); err != nil {
 		return monitor.Result{}, err
@@ -107,14 +131,60 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 			return monitor.Result{}, err
 		}
 	}
-	rows := gains(base.Stats, current)
+
+	// What Dink has sent is newer than WOM's, until WOM catches up.
+	var live stats
+	var td today
+	if _, err := env.State.Get(liveKey, &live); err != nil {
+		return monitor.Result{}, err
+	}
+	if _, err := env.State.Get(todayKey, &td); err != nil {
+		return monitor.Result{}, err
+	}
+	from := base.Stats
+	if td.Day == day && len(td.Starts) > 0 {
+		from = merged(base.Stats, td.Starts)
+	}
+	rows := gains(from, merged(current, live))
+	drops, events := dropsToday(td, day)
+
+	blocks := []monitor.Block{table(rows)}
+	if len(drops) > 0 {
+		blocks = append(blocks, dropTable(drops, m.loc))
+	}
 	return monitor.Result{
 		Subtitle:     m.cfg.Player + " · since midnight",
-		Blocks:       []monitor.Block{table(rows)},
-		Summary:      summary(rows),
+		Blocks:       blocks,
+		Summary:      append(dropChips(drops), summary(rows, len(drops) > 0)...),
 		SummaryStyle: monitor.SummaryChips,
+		Events:       events,
 		Next:         midnight.AddDate(0, 0, 1).Add(time.Minute).Sub(now),
 	}, nil
+}
+
+// merged is a with each of b's numbers that's higher.
+func merged(a, b stats) stats {
+	out := stats{}
+	for id, n := range a {
+		out[id] = n
+	}
+	for id, n := range b {
+		out[id] = max(out[id], n)
+	}
+	return out
+}
+
+// dropChips are a chip for each of today's pets and big drops.
+func dropChips(drops []drop) []monitor.Stat {
+	var out []monitor.Stat
+	for _, dr := range drops {
+		if dr.Pet {
+			out = append(out, monitor.Stat{Label: "Pet", Value: petName(dr), Tone: monitor.ToneAccent})
+		} else {
+			out = append(out, monitor.Stat{Label: dr.Item, Value: gp(dr.Value), Tone: monitor.ToneGood, URL: wiki(strings.SplitN(dr.Item, " ×", 2)[0])})
+		}
+	}
+	return out
 }
 
 // gain is one metric's progress today.
@@ -163,7 +233,12 @@ func table(rows []gain) monitor.Block {
 	return b
 }
 
-func summary(rows []gain) []monitor.Stat {
+// summary is a chip per gain; with none, one saying so, unless there are
+// drops to show instead.
+func summary(rows []gain, drops bool) []monitor.Stat {
+	if len(rows) == 0 && drops {
+		return nil
+	}
 	if len(rows) == 0 {
 		return []monitor.Stat{{Label: "Today", Value: "Nothing yet", Tone: monitor.ToneMuted}}
 	}

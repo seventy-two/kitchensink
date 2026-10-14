@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -24,6 +26,7 @@ type Engine interface {
 	Snapshots() []monitor.Snapshot
 	Refresh(id string) bool
 	Act(ctx context.Context, id string, a monitor.Action) error
+	HookSecret(id string) string
 	Subscribe() (<-chan engine.Message, func())
 }
 
@@ -48,6 +51,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/monitors", s.auth(s.monitors))
 	mux.Handle("POST /api/monitors/{id}/refresh", s.auth(s.refresh))
 	mux.Handle("POST /api/monitors/{id}/actions", s.auth(s.act))
+	mux.HandleFunc("POST /api/hooks/{id}/{secret}", s.hook)
 	mux.Handle("GET /api/events", s.auth(s.events))
 	mux.Handle("GET /api/stream", s.auth(s.stream))
 	return mux
@@ -86,7 +90,11 @@ func (s *Server) act(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad action: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	err := s.Engine.Act(r.Context(), r.PathValue("id"), a)
+	s.answer(w, r, r.PathValue("id"), s.Engine.Act(r.Context(), r.PathValue("id"), a))
+}
+
+// answer writes the reply for an Act on monitor id.
+func (s *Server) answer(w http.ResponseWriter, r *http.Request, id string, err error) {
 	switch {
 	case err == nil:
 		w.WriteHeader(http.StatusNoContent)
@@ -97,9 +105,68 @@ func (s *Server) act(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, monitor.ErrBadAction):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	default:
-		s.Log.Error("action failed", "monitor", r.PathValue("id"), "err", err)
+		s.Log.Error("action failed", "monitor", id, "err", err)
 		http.Error(w, "action failed", http.StatusInternalServerError)
 	}
+}
+
+// hook passes a webhook to a monitor.Hooked. The secret in the URL stands
+// in for the token. Bodies are JSON or, as Discord's webhooks take (which
+// is what senders like RuneLite's Dink plugin speak), a multipart form
+// whose payload_json part is the JSON; other parts, such as screenshots,
+// are dropped. It answers 204 like Discord.
+func (s *Server) hook(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	want := s.Engine.HookSecret(id)
+	if want == "" || subtle.ConstantTimeCompare([]byte(r.PathValue("secret")), []byte(want)) != 1 {
+		http.Error(w, "unauthorised", http.StatusUnauthorized)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<20)
+	var body []byte
+	var err error
+	if mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mt == "multipart/form-data" {
+		body, err = payloadJSON(r)
+	} else {
+		body, err = io.ReadAll(r.Body)
+	}
+	if err == nil && !json.Valid(body) {
+		err = errors.New("not JSON")
+	}
+	if err != nil {
+		http.Error(w, "bad hook: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.answer(w, r, id, s.Engine.Act(r.Context(), id, monitor.Action{Type: monitor.HookAction, Data: body}))
+}
+
+// payloadJSON reads a multipart body's payload_json part, skipping the
+// rest without keeping it.
+func payloadJSON(r *http.Request) ([]byte, error) {
+	mr, err := r.MultipartReader()
+	if err != nil {
+		return nil, err
+	}
+	var body []byte
+	for {
+		p, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if p.FormName() == "payload_json" {
+			if body, err = io.ReadAll(io.LimitReader(p, 1<<20)); err != nil {
+				return nil, err
+			}
+		}
+		p.Close()
+	}
+	if body == nil {
+		return nil, errors.New("no payload_json")
+	}
+	return body, nil
 }
 
 // events returns events after ?since=ID, or the latest ones if since isn't

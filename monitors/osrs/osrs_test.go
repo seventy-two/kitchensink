@@ -3,6 +3,7 @@ package osrs
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -89,7 +90,7 @@ func (f *fakeWOM) count(req string) int {
 }
 
 func newMonitor(t *testing.T, f *fakeWOM) *Monitor {
-	raw, _ := json.Marshal(map[string]any{"player": "GTX 480", "womURL": f.URL})
+	raw, _ := json.Marshal(map[string]any{"player": "GTX 480", "womURL": f.URL, "hookSecret": "s3cret"})
 	m, err := New(raw)
 	require.NoError(t, err)
 	return m
@@ -119,12 +120,18 @@ func TestToday(t *testing.T) {
 	assert.Equal(t, "13.25M xp", res.Blocks[0].Rows[3][2].Text)
 	assert.Equal(t, 4*time.Hour+time.Minute, res.Next, "wakes just after midnight to mark the new day")
 
+	// A poll soon after (as after a hook) doesn't ask WOM again.
+	env.Now = func() time.Time { return now.Add(4 * time.Minute) }
+	_, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Equal(t, 1, f.count("POST /players/GTX 480"))
+
 	// Later the same day: WOM refuses an update so soon, so the latest
 	// snapshot does; the day's start is kept.
 	f.mu.Lock()
 	f.limited = true
 	f.mu.Unlock()
-	env.Now = func() time.Time { return now.Add(30 * time.Second) }
+	env.Now = func() time.Time { return now.Add(5 * time.Minute) }
 	res, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
 	assert.Len(t, res.Summary, 4)
@@ -139,7 +146,8 @@ func TestToday(t *testing.T) {
 }
 
 func TestNothingYet(t *testing.T) {
-	assert.Equal(t, []monitor.Stat{{Label: "Today", Value: "Nothing yet", Tone: monitor.ToneMuted}}, summary(nil))
+	assert.Equal(t, []monitor.Stat{{Label: "Today", Value: "Nothing yet", Tone: monitor.ToneMuted}}, summary(nil, false))
+	assert.Empty(t, summary(nil, true), "drops show instead")
 	assert.Equal(t, "Nothing towards a pet yet today.", table(nil).Text)
 	assert.Empty(t, gains(stats{"attack": 1, "vorkath": 5}, stats{"attack": 9, "vorkath": 5}))
 }
@@ -166,4 +174,120 @@ func TestTrackedNames(t *testing.T) {
 func TestConfig(t *testing.T) {
 	_, err := New(json.RawMessage(`{}`))
 	assert.Error(t, err)
+}
+
+// hook sends a Dink notification of the given type.
+func hook(t *testing.T, m *Monitor, env monitor.Env, typ string, extra string, more ...string) {
+	t.Helper()
+	body := `{"type":"` + typ + `","playerName":"GTX 480","accountType":"NORMAL","seasonalWorld":false,"extra":` + extra + strings.Join(more, "") + `}`
+	require.NoError(t, m.Act(context.Background(), env, monitor.Action{Type: monitor.HookAction, Data: json.RawMessage(body)}))
+}
+
+func TestDink(t *testing.T) {
+	f := newFakeWOM(t)
+	m := newMonitor(t, f)
+	assert.Equal(t, "s3cret", m.HookSecret())
+	env := monitortest.Env(now)
+	_, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+
+	later := now.Add(time.Minute)
+	env.Now = func() time.Time { return later }
+	hook(t, m, env, "KILL_COUNT", `{"boss":"Vorkath","count":115,"gameMessage":"Your Vorkath kill count is: 115."}`)
+	// Unranked on the hiscores, so the day's baseline has 0.
+	hook(t, m, env, "KILL_COUNT", `{"boss":"Scurrius","count":4}`)
+	hook(t, m, env, "LOOT", `{"source":"Phosani's Nightmare","category":"NPC","killCount":400,"items":[
+		{"id":24419,"name":"Inquisitor's great helm","quantity":1,"priceEach":92754634},
+		{"id":560,"name":"Death rune","quantity":231,"priceEach":192}]}`)
+	hook(t, m, env, "LOOT", `{"source":"Vorkath","category":"NPC","killCount":115,"items":[{"name":"Dragon bones","quantity":2,"priceEach":3000}]}`)
+	hook(t, m, env, "CLUE", `{"clueType":"Master","numberCompleted":43,"items":[{"name":"Coins","quantity":5000,"priceEach":1}]}`)
+	hook(t, m, env, "LOGIN", `{"world":302,"skills":{"experience":{"Mining":13300000,"Attack":6000000}}}`)
+	env.Now = func() time.Time { return later.Add(time.Minute) }
+	hook(t, m, env, "PET", `{"petName":"Little nightmare","duplicate":false}`)
+
+	// Not this account, a league, or not used.
+	hook(t, m, env, "KILL_COUNT", `{"boss":"Vorkath","count":999}`, `,"playerName":"TariffEvader"`)
+	hook(t, m, env, "KILL_COUNT", `{"boss":"Vorkath","count":999}`, `,"seasonalWorld":true`)
+	hook(t, m, env, "KILL_COUNT", `{"boss":"Vorkath","count":999}`, `,"seasonalWorld":"true"`)
+	hook(t, m, env, "DEATH", `{}`)
+	assert.ErrorIs(t, m.Act(context.Background(), env, monitor.Action{Type: "add"}), monitor.ErrBadAction)
+
+	res, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Equal(t, 1, f.count("POST /players/GTX 480"), "WOM isn't asked again so soon")
+	helm := "https://oldschool.runescape.wiki/w/Inquisitor%27s_great_helm"
+	assert.Equal(t, []monitor.Stat{
+		{Label: "Pet", Value: "Little nightmare", Tone: monitor.ToneAccent},
+		{Label: "Inquisitor's great helm", Value: "92.8m", Tone: monitor.ToneGood, URL: helm},
+		{Label: "Vorkath", Value: "+15", Tone: monitor.ToneGood},
+		{Label: "Master clues", Value: "+3", Tone: monitor.ToneGood},
+		{Label: "Phosani's Nightmare", Value: "+1", Tone: monitor.ToneGood},
+		{Label: "Scurrius", Value: "+1", Tone: monitor.ToneGood},
+		{Label: "Mining", Value: "+200.0k xp", Tone: monitor.ToneGood},
+	}, res.Summary, "Dink's counts beat WOM's; Scurrius from its first kill Dink saw")
+
+	require.Len(t, res.Blocks, 2)
+	assert.Equal(t, "Big drops", res.Blocks[1].Title)
+	assert.Equal(t, []monitor.Cell{
+		{Text: "20:01", Tone: monitor.ToneMuted}, {Text: "Inquisitor's great helm", URL: helm},
+		{Text: "92.8m", Tone: monitor.ToneGood}, {Text: "Phosani's Nightmare, kill 400", Tone: monitor.ToneMuted},
+	}, res.Blocks[1].Rows[1])
+
+	require.Len(t, res.Events, 2)
+	assert.Equal(t, "Pet: Little nightmare", res.Events[0].Title)
+	assert.Equal(t, monitor.PriorityHigh, res.Events[0].Priority)
+	assert.True(t, later.Equal(res.Events[1].Time))
+	assert.Equal(t, monitor.Event{
+		Key: fmt.Sprintf("drop:%d", later.UnixMilli()), Time: res.Events[1].Time, Title: "Inquisitor's great helm · 92.8m",
+		Body: "Phosani's Nightmare, kill 400", URL: helm, Priority: monitor.PriorityNormal,
+	}, res.Events[1])
+
+	// Tomorrow they're gone; the counts stay.
+	env.Now = func() time.Time { return now.Add(5 * time.Hour) }
+	res, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Len(t, res.Blocks, 1)
+	assert.Empty(t, res.Events)
+}
+
+func TestMetricFor(t *testing.T) {
+	for name, want := range map[string]string{
+		"Vorkath":                          "vorkath",
+		"Phosani's Nightmare":              "phosanis_nightmare",
+		"The Nightmare":                    "nightmare",
+		"Nightmare":                        "nightmare",
+		"K'ril Tsutsaroth":                 "kril_tsutsaroth",
+		"Kree'arra":                        "kreearra",
+		"Vet'ion":                          "vetion",
+		"TzKal-Zuk":                        "tzkal_zuk",
+		"Chambers of Xeric":                "chambers_of_xeric",
+		"Chambers of Xeric Challenge Mode": "chambers_of_xeric_challenge_mode",
+		"Tombs of Amascut: Expert Mode":    "tombs_of_amascut_expert",
+		"Theatre of Blood: Hard Mode":      "theatre_of_blood_hard_mode",
+		"Gauntlet":                         "the_gauntlet",
+		"Corrupted Gauntlet":               "the_corrupted_gauntlet",
+		"Royal Titans":                     "the_royal_titans",
+		"Hueycoatl":                        "the_hueycoatl",
+		"Wintertodt":                       "wintertodt",
+		"Supply crate (Wintertodt)":        "wintertodt",
+		"Guardians of the Rift":            "guardians_of_the_rift",
+	} {
+		got, ok := metricFor(name)
+		assert.True(t, ok, name)
+		assert.Equal(t, want, got, name)
+	}
+	for _, none := range []string{"Barrows", "Penance Queen", "Clue Scroll (Master)", "Mining", "Giant rat", ""} {
+		_, ok := metricFor(none)
+		assert.False(t, ok, none)
+	}
+	assert.Equal(t, "runecrafting", skillMetric("Runecraft"))
+	assert.True(t, samePlayer("gtx_480", "GTX 480"))
+}
+
+func TestGP(t *testing.T) {
+	assert.Equal(t, "92.8m", gp(92_754_634))
+	assert.Equal(t, "50m", gp(50_000_000))
+	assert.Equal(t, "1.25b", gp(1_250_000_000))
+	assert.Equal(t, "12k", gp(12_345))
+	assert.Equal(t, "999", gp(999))
 }

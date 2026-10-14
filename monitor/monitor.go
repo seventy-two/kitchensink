@@ -33,6 +33,19 @@ type Actor interface {
 	Act(ctx context.Context, env Env, a Action) error
 }
 
+// Hooked is an Actor that also takes webhooks from outside kitchensink,
+// such as a game plugin that can't send the API token, at
+// POST /api/hooks/{monitor}/{secret}. HookSecret is the secret the URL
+// must carry (empty turns the hook off). Each hook reaches Act as an
+// Action of type HookAction with the body's JSON as Data.
+type Hooked interface {
+	Actor
+	HookSecret() string
+}
+
+// HookAction is the Action type a webhook arrives as.
+const HookAction = "hook"
+
 // Action is a change a client (or another monitor) asks for. Type says
 // what, e.g. "add", "toggle" or "delete"; ID names the item, Text carries
 // new text and Data anything more, as JSON.

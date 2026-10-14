@@ -2,12 +2,14 @@ package server
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -38,13 +40,19 @@ func (f *fakeEngine) Act(ctx context.Context, id string, a monitor.Action) error
 		return engine.ErrNoMonitor
 	case a.Type == "explode":
 		return errors.New("disk full")
-	case a.Type != "add":
+	case a.Type != "add" && a.Type != monitor.HookAction:
 		return fmt.Errorf("%w: unknown type", monitor.ErrBadAction)
 	}
 	return nil
 }
 
 func (f *fakeEngine) Snapshots() []monitor.Snapshot { return f.snaps }
+func (f *fakeEngine) HookSecret(id string) string {
+	if id == "todo" {
+		return "hooky"
+	}
+	return ""
+}
 func (f *fakeEngine) Refresh(id string) bool {
 	f.refreshed = append(f.refreshed, id)
 	return id == "stocks"
@@ -124,6 +132,36 @@ func TestEvents(t *testing.T) {
 	assert.Equal(t, []string{"b", "c"}, get("?limit=2"), "latest events")
 	assert.Equal(t, []string{"b"}, get("?since=1&limit=1"))
 	assert.Equal(t, http.StatusBadRequest, do(t, "GET", srv.URL+"/api/events?limit=0", "secret").StatusCode)
+}
+
+func TestHook(t *testing.T) {
+	srv, eng, _ := setup(t)
+	post := func(path, contentType, body string) int {
+		t.Helper()
+		resp, err := http.Post(srv.URL+path, contentType, strings.NewReader(body))
+		require.NoError(t, err)
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	assert.Equal(t, http.StatusNoContent, post("/api/hooks/todo/hooky", "application/json; charset=utf-8", `{"type":"add"}`))
+
+	// As Dink sends it with a screenshot.
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	mw.WriteField("payload_json", `{"type":"add","n":2}`)
+	fw, _ := mw.CreateFormFile("file", "image.png")
+	fw.Write([]byte("\x89PNG..."))
+	mw.Close()
+	assert.Equal(t, http.StatusNoContent, post("/api/hooks/todo/hooky", mw.FormDataContentType(), buf.String()))
+
+	require.Len(t, eng.actions, 2)
+	assert.Equal(t, monitor.Action{Type: monitor.HookAction, Data: json.RawMessage(`{"type":"add"}`)}, eng.actions[0])
+	assert.JSONEq(t, `{"type":"add","n":2}`, string(eng.actions[1].Data))
+
+	assert.Equal(t, http.StatusUnauthorized, post("/api/hooks/todo/wrong", "application/json", `{}`))
+	assert.Equal(t, http.StatusUnauthorized, post("/api/hooks/stocks/x", "application/json", `{}`), "takes no hooks")
+	assert.Equal(t, http.StatusBadRequest, post("/api/hooks/todo/hooky", "application/json", `not json`))
+	assert.Len(t, eng.actions, 2)
 }
 
 // sse reads server-sent events from a stream.

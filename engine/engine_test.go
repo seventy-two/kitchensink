@@ -226,6 +226,19 @@ func (a *acting) Act(ctx context.Context, env monitor.Env, act monitor.Action) e
 	return env.State.Set("last", act.Text)
 }
 
+// hooked also takes webhooks.
+type hooked struct{ acting }
+
+func (*hooked) HookSecret() string { return "s3cret" }
+
+func TestHookSecret(t *testing.T) {
+	e, _ := newEngine(t, &hooked{}, &recorder{})
+	assert.Equal(t, "s3cret", e.HookSecret("m"))
+	assert.Empty(t, e.HookSecret("nope"))
+	plain, _ := newEngine(t, &acting{}, &recorder{})
+	assert.Empty(t, plain.HookSecret("m"), "an Actor without a secret takes no hooks")
+}
+
 func TestAct(t *testing.T) {
 	m := &acting{scripted{results: []monitor.Result{{}}, errs: []error{nil}}}
 	e, st := newEngine(t, m, &recorder{})

@@ -50,7 +50,7 @@
       "type": "osrs",
       "title": "OSRS today",
       "interval": "30m",
-      "config": { "player": "Zezima" }
+      "config": { "player": "Zezima", "hookSecret": "${OSRS_HOOK_SECRET}" }
     },
     {
       "type": "mail",

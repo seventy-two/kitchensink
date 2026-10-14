@@ -288,6 +288,17 @@ func (e *Engine) Act(ctx context.Context, id string, a monitor.Action) error {
 	return nil
 }
 
+// HookSecret is the secret a webhook to monitor id must carry, or "" if it
+// takes none.
+func (e *Engine) HookSecret(id string) string {
+	if r, ok := e.byID[id]; ok {
+		if h, ok := r.spec.Monitor.(monitor.Hooked); ok {
+			return h.HookSecret()
+		}
+	}
+	return ""
+}
+
 // Refresh asks a monitor to poll now. It reports false if there's no
 // monitor with that ID.
 func (e *Engine) Refresh(id string) bool {

@@ -32,7 +32,7 @@ notification for each event.
 | `football` | `nfl` and `fantasy` together as one panel (see below) | what each of them notifies |
 | `mail` | IMAP (e.g. Gmail) and Outlook mailboxes, read by Gemini for bookings, orders and things to do, which it adds to the calendar, to-do list and chores (below) | nothing itself (each finding is a quiet event); a sign-in code when an Outlook account needs one |
 | `dailies` | a dailies tracker (a separate app)'s games and today's results: every game, linked and marked once `player` has logged it; the summary is a chip for each (`names` gives them shorter names by game ID), green once played. Its paste button logs a game's share text from the clipboard | what happened to each paste, logged or not and why, as a temporary event |
-| `osrs` | [Wise Old Man](https://wiseoldman.net): an Old School RuneScape `player`'s gains since midnight towards pets only: boss kills, Guardians of the Rift, Soul Wars zeal, master clues, and XP in the skills with a pet (not combat). It asks WOM to update the player each poll and just after midnight, and compares with the last snapshot from before midnight. The summary is a chip per gain | nothing |
+| `osrs` | [Wise Old Man](https://wiseoldman.net): an Old School RuneScape `player`'s gains since midnight towards pets only: boss kills, Guardians of the Rift, Soul Wars zeal, master clues, and XP in the skills with a pet (not combat). It asks WOM to update the player each poll and just after midnight, and compares with the last snapshot from before midnight. The summary is a chip per gain. With `hookSecret` set, the RuneLite plugin [Dink](https://github.com/pajlads/DinkPlugin) can make it live (below): kills count as they happen, and drops worth `bigLoot` or more (default 50m) and pets are listed and notify | `hookSecret` (e.g. `"${OSRS_HOOK_SECRET}"`) |
 
 Each monitor also returns a dashboard panel and a short summary (shown when
 space is short), polls on its own interval and can ask to be polled sooner
@@ -221,6 +221,31 @@ what each email added.
 those IDs; empty leaves one out), `reorders: false` turns reorders off,
 and `ignoreFrom` skips senders whose address contains any of its strings.
 
+### OSRS
+
+Wise Old Man only knows what the hiscores said when it last updated, so
+on its own the panel lags by up to the poll interval. For live updates,
+install [Dink](https://runelite.net/plugin-hub/show/dink) from the
+RuneLite plugin hub and add the monitor's hook,
+`https://<host>/api/hooks/osrs/<hookSecret>`, to its webhook URLs (one per
+line, so it can still post to Discord). Then turn on:
+
+- **Kill Count**, with the interval at 1: every boss kill, raid and
+  Tempoross or Wintertodt count.
+- **Loot**, with **Min Loot value** (an item's) at the panel's `bigLoot`
+  or lower. Drops worth `bigLoot` in all are listed and notify.
+- **Clue**, for master clue counts and big clue rewards.
+- **Pet**: listed and notified at high priority.
+- For skill XP at each login, put the same URL in **Advanced → Custom
+  Metadata Handler**.
+
+Notifications from other accounts and from leagues or Deadman worlds are
+ignored. Each one has the monitor poll, but it asks WOM to update at most
+every five minutes, so skill XP still comes mostly from WOM. Kill counts
+for bosses the hiscores don't rank yet start from the first kill Dink
+reports that day, rather than counting every earlier kill as today's.
+Screenshots are dropped, so they can stay on for Discord.
+
 ## Running it
 
 ```sh
@@ -265,6 +290,7 @@ Every `/api` request needs `Authorization: Bearer <token>`.
 | `GET /api/stream?since=ID&heartbeat=S` | a server-sent events stream (below) |
 | `POST /api/monitors/{id}/refresh` | 202; the monitor polls now |
 | `POST /api/monitors/{id}/actions` | 204; applies a JSON action such as `{"type":"add","text":"Bins"}`, `{"type":"toggle","id":"…"}` or `{"type":"delete","id":"…"}` (some take a `data` object too), then polls. 400 for an action the monitor refuses, 405 for a monitor that takes none |
+| `POST /api/hooks/{id}/{secret}` | 204; a webhook for a monitor that takes them (`osrs`), with the monitor's secret in the URL instead of the token. The body is JSON, or a Discord-style multipart form whose `payload_json` part is (other parts, such as screenshots, are dropped) |
 | `GET /healthz` | `ok`, no token needed |
 
 The stream sends:
@@ -353,6 +379,9 @@ Then import it from `cmd/kitchensink/main.go` and add it to the config.
   `monitor.Actor`. The engine never runs `Act` alongside `Poll`, and polls
   straight after, so changes show at once. Wrap `monitor.ErrBadAction` for
   actions it can't do.
+- A monitor that takes webhooks also implements `monitor.Hooked`: its
+  `HookSecret` guards `POST /api/hooks/{id}/{secret}`, and each hook
+  arrives at `Act` as type `monitor.HookAction` with the JSON as data.
 - A monitor can act on another, as a client would, with `env.Act` (the
   `mail` monitor adds to the calendar this way). It's nil without an
   engine, and a monitor can't act on itself.
