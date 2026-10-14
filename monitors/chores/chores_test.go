@@ -287,7 +287,9 @@ func TestTracked(t *testing.T) {
 func TestMove(t *testing.T) {
 	m := newMonitor(t, laundry)
 	env := monitortest.Env(now)
-	move := func(id, dir string) { require.NoError(t, m.Act(context.Background(), env, monitor.Action{Type: "move", ID: id, Text: dir})) }
+	move := func(id, dir string) {
+		require.NoError(t, m.Act(context.Background(), env, monitor.Action{Type: "move", ID: id, Text: dir}))
+	}
 
 	// Towels from Thursday to tomorrow: the black tees make way.
 	move("towel-wash", "up")

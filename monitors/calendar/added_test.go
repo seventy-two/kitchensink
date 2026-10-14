@@ -3,6 +3,8 @@ package calendar
 import (
 	"context"
 	"encoding/json"
+	"maps"
+	"slices"
 	"testing"
 	"time"
 
@@ -94,4 +96,17 @@ func TestAddedCopiesAndPlaces(t *testing.T) {
 		"22:00 | Pottery class | ",
 	}, rows(res.Blocks[1]), "the email's copy of the film is left out, another event at the time isn't; with two feeds the column stays, empty for email")
 	assert.Contains(t, rows(res.Blocks[2]), "09:00 | Loop Massage · Bristol | ")
+}
+
+func TestAddedReplacesItsCopy(t *testing.T) {
+	_, personal := feeds(t)
+	m := newMonitor(t, personal)
+	env := monitortest.Env(now)
+	at := time.Date(2026, 10, 16, 9, 0, 0, 0, london)
+	require.NoError(t, upsert(t, m, env, Added{Key: "loop-1", Title: "Loop Massage", Location: "Loop Massage, Bristol", Start: at}))
+	require.NoError(t, upsert(t, m, env, Added{Key: "pottery", Title: "Pottery", Start: at}))
+	require.NoError(t, upsert(t, m, env, Added{Key: "loop-reminder", Title: "Loop Massage", Location: "Wapping Wharf, Bristol", Start: at}))
+	added, err := loadAdded(env)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"pottery", "loop-reminder"}, slices.Collect(maps.Keys(added)))
 }

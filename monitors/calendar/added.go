@@ -60,6 +60,13 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 		if e.Source == "" {
 			e.Source = "Added"
 		}
+		// The same thing under another key (a booking's confirmation and
+		// its reminder, say) is replaced: the later has the latest details.
+		for k, o := range added {
+			if k != e.Key && o.AllDay == e.AllDay && o.Start.Equal(e.Start) && sharesWord(o.Title+" "+o.Location, e.Title+" "+e.Location) {
+				delete(added, k)
+			}
+		}
 		added[e.Key] = e
 	case "remove":
 		if _, ok := added[a.ID]; !ok {
@@ -145,15 +152,21 @@ func withoutCopies(added, feeds []occurrence) []occurrence {
 			if f.Cal < 0 || f.AllDay != a.AllDay || !f.Start.Equal(a.Start) {
 				return false
 			}
-			words := wordsOf(f.Title + " " + f.Location)
-			for w := range wordsOf(a.Title + " " + a.Location) {
-				if words[w] {
-					return true
-				}
-			}
-			return false
+			return sharesWord(f.Title+" "+f.Location, a.Title+" "+a.Location)
 		})
 	})
+}
+
+// sharesWord reports whether a and b have a word of four letters or more
+// in common.
+func sharesWord(a, b string) bool {
+	words := wordsOf(a)
+	for w := range wordsOf(b) {
+		if words[w] {
+			return true
+		}
+	}
+	return false
 }
 
 // wordsOf is the words of four letters or more in s, in lower case.
