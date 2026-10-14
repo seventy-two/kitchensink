@@ -102,9 +102,15 @@ const (
 // waiver moves.
 const rosterEvery = 6 * time.Hour
 
+// weekEvery is how often, while the week just played is still shown,
+// Sleeper is asked whether its app has moved on to the new week.
+const weekEvery = 15 * time.Minute
+
 type savedRoster struct {
 	Read   time.Time `json:"read"`
 	Roster *roster   `json:"roster"`
+	// Checked is when Sleeper's shown week was last asked for.
+	Checked time.Time `json:"checked,omitempty"`
 }
 
 // gameState is what's been seen of one game.
@@ -255,7 +261,27 @@ func (m *Monitor) roster(ctx context.Context, env monitor.Env, now time.Time) (*
 	}
 	// One saved before the shown week was kept is read again.
 	if saved.Roster != nil && saved.Roster.Shown > 0 && now.Sub(saved.Read) < rosterEvery {
-		return saved.Roster, nil
+		r := saved.Roster
+		if r.shownWeek() == r.Week || now.Sub(laterOf(saved.Read, saved.Checked)) < weekEvery {
+			return r, nil
+		}
+		// Still showing the week just played: move on when Sleeper does.
+		var state sleeperState
+		if err := getJSON(ctx, env.HTTP, m.cfg.SleeperURL+"/state/nfl", &state); err != nil {
+			env.Log.Warn("reading the shown week", "err", err)
+			return r, nil
+		}
+		if state.Season == r.Season && state.Week == r.Week {
+			if state.DisplayWeek > r.Shown && state.DisplayWeek <= r.Week {
+				r.Shown = state.DisplayWeek
+			}
+			saved.Checked = now
+			if err := env.State.Set(rosterKey, saved); err != nil {
+				return nil, err
+			}
+			return r, nil
+		}
+		// The NFL's week has moved on as well: read everything again.
 	}
 	r, err := m.loadRoster(ctx, env.HTTP)
 	if err != nil {
@@ -429,4 +455,12 @@ func blocks(scores []matchup, notes []noted) []monitor.Block {
 		})
 	}
 	return append(out, plays)
+}
+
+// laterOf is whichever of a and b is later.
+func laterOf(a, b time.Time) time.Time {
+	if a.After(b) {
+		return a
+	}
+	return b
 }

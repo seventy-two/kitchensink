@@ -260,6 +260,31 @@ func TestShowsTheWeekJustPlayed(t *testing.T) {
 	assert.Equal(t, 1, f.count("/sleeper/league/L1/matchups/5"))
 }
 
+func TestMovesOnWithSleeper(t *testing.T) {
+	// Once Sleeper shows the new week, so does the panel, without waiting
+	// for the rosters to be read again.
+	f := newFakeAPIs(t)
+	f.week, f.display, f.period = 6, 5, 6
+	m := newMonitor(t, f)
+	env := monitortest.Env(now)
+	_, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+
+	f.mu.Lock()
+	f.display = 6
+	f.mu.Unlock()
+	env.Now = func() time.Time { return now.Add(5 * time.Minute) }
+	_, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Zero(t, f.count("/sleeper/league/L1/matchups/6"), "not asked again so soon")
+
+	env.Now = func() time.Time { return now.Add(20 * time.Minute) }
+	_, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Equal(t, 1, f.count("/sleeper/league/L1/matchups/6"), "week 6's matchups")
+	assert.Equal(t, 1, f.count("/sleeper/players/nfl"), "rosters aren't read again")
+}
+
 func TestJoiningLate(t *testing.T) {
 	// First seen well after kick-off, a game's plays so far are logged
 	// quietly rather than notified all at once.

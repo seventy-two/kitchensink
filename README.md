@@ -50,8 +50,9 @@ fumbles lost, 50+ yard and missed kicks, and your defences' takeaways,
 sacks, safeties and scores. Plays called back for penalties don't count.
 Its summary is a chip per league with your live matchup score (the
 week Sleeper shows, which stays on the week just played until midweek, so
-Monday night's results are still there the morning after); `names`
-gives leagues shorter names by ID. Rosters are read again every six hours.
+Monday night's results are still there the morning after; until it moves
+on, Sleeper is asked every 15 minutes); `names` gives leagues shorter
+names by ID. Rosters are read again every six hours.
 
 ### Football
 
