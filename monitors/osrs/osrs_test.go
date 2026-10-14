@@ -106,7 +106,11 @@ func TestToday(t *testing.T) {
 	assert.Equal(t, 1, f.count("POST /players/GTX 480"), "asks WOM to update")
 	assert.Contains(t, f.snapQuery, "endDate=2026-10-13T23%3A05%3A00Z", "the last snapshot before UK midnight")
 	assert.Contains(t, f.snapQuery, "limit=1")
-	assert.Equal(t, "GTX 480 · since midnight", res.Subtitle)
+	assert.Empty(t, res.Subtitle)
+	require.NotNil(t, res.SummaryBlock)
+	assert.Len(t, res.SummaryBlock.Rows, 3, "short, the top three rows of the table")
+	assert.Equal(t, res.Blocks[0].Rows[:3], res.SummaryBlock.Rows)
+	assert.Len(t, res.Blocks[0].Rows, 4, "the table itself is whole")
 	assert.Equal(t, []monitor.Stat{
 		{Label: "Vorkath", Value: "+12", Tone: monitor.ToneGood},
 		{Label: "Master clues", Value: "+2", Tone: monitor.ToneGood},
@@ -194,6 +198,14 @@ func TestDink(t *testing.T) {
 
 	later := now.Add(time.Minute)
 	env.Now = func() time.Time { return later }
+	// The last big drops from before Dink, e.g. from Loot Logger.
+	lastBig := func(data string) error {
+		return m.Act(context.Background(), env, monitor.Action{Type: "lastBig", Data: json.RawMessage(data)})
+	}
+	require.NoError(t, lastBig(`{"vorkath":110,"phosanis_nightmare":380}`))
+	assert.ErrorIs(t, lastBig(`{"mining":1}`), monitor.ErrBadAction)
+	assert.ErrorIs(t, lastBig(`{"barrows_chests":1}`), monitor.ErrBadAction)
+
 	hook(t, m, env, "KILL_COUNT", `{"boss":"Vorkath","count":115,"gameMessage":"Your Vorkath kill count is: 115."}`)
 	// Unranked on the hiscores, so the day's baseline has 0.
 	hook(t, m, env, "KILL_COUNT", `{"boss":"Scurrius","count":4}`)
@@ -212,14 +224,6 @@ func TestDink(t *testing.T) {
 	hook(t, m, env, "KILL_COUNT", `{"boss":"Vorkath","count":999}`, `,"seasonalWorld":"true"`)
 	hook(t, m, env, "DEATH", `{}`)
 	assert.ErrorIs(t, m.Act(context.Background(), env, monitor.Action{Type: "add"}), monitor.ErrBadAction)
-
-	// The last big drops from before Dink, e.g. from Loot Logger.
-	lastBig := func(data string) error {
-		return m.Act(context.Background(), env, monitor.Action{Type: "lastBig", Data: json.RawMessage(data)})
-	}
-	require.NoError(t, lastBig(`{"vorkath":110,"phosanis_nightmare":380}`))
-	assert.ErrorIs(t, lastBig(`{"mining":1}`), monitor.ErrBadAction)
-	assert.ErrorIs(t, lastBig(`{"barrows_chests":1}`), monitor.ErrBadAction)
 
 	res, err := m.Poll(context.Background(), env)
 	require.NoError(t, err)
@@ -306,4 +310,30 @@ func TestGP(t *testing.T) {
 	assert.Equal(t, "1.25b", gp(1_250_000_000))
 	assert.Equal(t, "12k", gp(12_345))
 	assert.Equal(t, "999", gp(999))
+}
+
+func TestDinkPet(t *testing.T) {
+	f := newFakeWOM(t)
+	m := newMonitor(t, f)
+	env := monitortest.Env(now)
+	_, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+
+	hook(t, m, env, "KILL_COUNT", `{"boss":"Vorkath","count":113}`)
+	hook(t, m, env, "PET", `{"petName":"Vorki","duplicate":true}`)
+	res, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Equal(t, "Pet: Vorki", res.Events[0].Title)
+	assert.Equal(t, "Vorkath, kill 113. A duplicate: you already have it.", res.Events[0].Body)
+	assert.Equal(t, "0", res.Blocks[0].Rows[0][4].Text, "a pet counts as a big drop")
+	assert.Equal(t, "Vorkath, kill 113", res.Blocks[1].Rows[0][3].Text)
+
+	// A pet with no kill just before it (or from another boss) is kept,
+	// but not put down to anything.
+	env.Now = func() time.Time { return now.Add(time.Hour) }
+	hook(t, m, env, "PET", `{"petName":"Heron"}`)
+	res, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Equal(t, "Pet: Heron", res.Events[0].Title)
+	assert.Equal(t, "You have a funny feeling like you're being followed.", res.Events[0].Body)
 }

@@ -40,7 +40,7 @@ type Config struct {
 	// /api/hooks/{monitor}/{secret}. Use "${ENV_VAR}".
 	HookSecret string `json:"hookSecret"`
 	// BigLoot is the least a drop must be worth (in coins) to show and
-	// notify. It defaults to 50m.
+	// notify. It defaults to 20m.
 	BigLoot int64 `json:"bigLoot"`
 	// WOMURL replaces Wise Old Man's API, for tests.
 	WOMURL string `json:"womURL"`
@@ -75,7 +75,7 @@ func New(raw json.RawMessage) (*Monitor, error) {
 		c.Timezone = "Europe/London"
 	}
 	if c.BigLoot == 0 {
-		c.BigLoot = 50_000_000
+		c.BigLoot = 20_000_000
 	}
 	if c.WOMURL == "" {
 		c.WOMURL = defaultWOM
@@ -157,11 +157,17 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	if len(drops) > 0 {
 		blocks = append(blocks, dropTable(drops, m.loc))
 	}
+	// Short, the panel is its first table cut to the top few rows.
+	short := blocks[0]
+	if len(rows) == 0 && len(drops) > 0 {
+		short = blocks[1]
+	}
+	short.Rows = short.Rows[:min(len(short.Rows), shortRows)]
 	return monitor.Result{
-		Subtitle:     m.cfg.Player + " · since midnight",
 		Blocks:       blocks,
 		Summary:      append(dropChips(drops), summary(rows, len(drops) > 0)...),
 		SummaryStyle: monitor.SummaryChips,
+		SummaryBlock: &short,
 		Events:       events,
 		Next:         midnight.AddDate(0, 0, 1).Add(time.Minute).Sub(now),
 	}, nil
@@ -191,6 +197,9 @@ func dropChips(drops []drop) []monitor.Stat {
 	}
 	return out
 }
+
+// shortRows is how many rows the panel shows when space is short.
+const shortRows = 3
 
 // gain is one metric's progress today.
 type gain struct {
@@ -222,7 +231,7 @@ func gains(from, to stats) []gain {
 }
 
 // table lists the day's gains, with the pet's drop rate and, for bosses
-// that have given a big drop, the kills since the last one.
+// that have given a big drop or a pet, the kills since the last one.
 func table(rows []gain, lastBig stats, bigLoot int64) monitor.Block {
 	if len(rows) == 0 {
 		return monitor.Block{Type: monitor.BlockText, Text: "Nothing towards a pet yet today."}

@@ -60,10 +60,19 @@ const (
 	liveKey  = "live"
 	todayKey = "today"
 	// lastBigKey holds, by metric, the kill count of the last drop worth
-	// bigLoot: from Dink, or set with a "lastBig" action (e.g. from
+	// bigLoot or pet: from Dink, or set with a "lastBig" action (e.g. from
 	// RuneLite's Loot Logger history).
 	lastBigKey = "lastBig"
+	// lastKillKey is the metric Dink last counted a kill for, which a pet
+	// is put down to: Dink doesn't say where a pet came from.
+	lastKillKey = "lastKill"
 )
+
+// lastKill is the last kill Dink reported.
+type lastKill struct {
+	ID   string    `json:"id"`
+	Time time.Time `json:"time"`
+}
 
 // HookSecret is the secret Dink's webhook URL carries.
 func (m *Monitor) HookSecret() string { return m.cfg.HookSecret }
@@ -72,8 +81,8 @@ func (m *Monitor) HookSecret() string { return m.cfg.HookSecret }
 // RuneLite) and those from leagues or Deadman are ignored, as are kinds
 // the panel doesn't use.
 //
-// A "lastBig" action sets the kill count of the last big drop by metric,
-// as data {"vorkath": 1020}; later ones win.
+// A "lastBig" action replaces the kill counts of the last big drops by
+// metric, as data {"vorkath": 1020}.
 func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) error {
 	var lastBig stats
 	if _, err := env.State.Get(lastBigKey, &lastBig); err != nil {
@@ -87,13 +96,12 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 		if err := json.Unmarshal(a.Data, &set); err != nil {
 			return fmt.Errorf("%w: %v", monitor.ErrBadAction, err)
 		}
-		for id, kc := range set {
+		for id := range set {
 			if mt, ok := tracked[id]; !ok || mt.Kind == xp {
 				return fmt.Errorf("%w: no boss %q", monitor.ErrBadAction, id)
 			}
-			lastBig[id] = max(lastBig[id], kc)
 		}
-		return env.State.Set(lastBigKey, lastBig)
+		return env.State.Set(lastBigKey, set)
 	}
 	if a.Type != monitor.HookAction {
 		return fmt.Errorf("%w: %s", monitor.ErrBadAction, a.Type)
@@ -126,6 +134,11 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 	if _, err := env.State.Get(baselineKey, &base); err != nil {
 		return err
 	}
+	var last lastKill
+	if _, err := env.State.Get(lastKillKey, &last); err != nil {
+		return err
+	}
+	killed := func(id string) { last = lastKill{ID: id, Time: now} }
 	// count records a total from the game.
 	count := func(id string, n int64) {
 		if n <= live[id] {
@@ -151,6 +164,7 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 		json.Unmarshal(d.Extra, &x)
 		if id, ok := metricFor(x.Boss); ok {
 			count(id, x.Count)
+			killed(id)
 		}
 	case "LOOT":
 		var x struct {
@@ -162,6 +176,9 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 		id, ok := metricFor(x.Source)
 		if ok && x.KillCount > 0 {
 			count(id, x.KillCount)
+		}
+		if ok {
+			killed(id)
 		}
 		if dr, big := m.big(x.Items); big {
 			dr.Time, dr.Source, dr.KC = now, x.Source, x.KillCount
@@ -193,7 +210,14 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 			Duplicate bool   `json:"duplicate"`
 		}
 		json.Unmarshal(d.Extra, &x)
-		td.Drops = append(td.Drops, drop{Time: now, Item: x.PetName, Pet: true, Dupe: x.Duplicate})
+		dr := drop{Time: now, Item: x.PetName, Pet: true, Dupe: x.Duplicate}
+		// Put down to the kill just before, if that boss gives this pet.
+		if mt, ok := tracked[last.ID]; ok && now.Sub(last.Time) < 10*time.Minute &&
+			(x.PetName == "" || strings.EqualFold(x.PetName, mt.Pet)) {
+			dr.Source, dr.KC = mt.Name, live[last.ID]
+			lastBig[last.ID] = max(lastBig[last.ID], live[last.ID])
+		}
+		td.Drops = append(td.Drops, dr)
 	case "LOGIN", "XP_MILESTONE":
 		var x struct {
 			Skills struct {
@@ -216,6 +240,9 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 		return err
 	}
 	if err := env.State.Set(lastBigKey, lastBig); err != nil {
+		return err
+	}
+	if err := env.State.Set(lastKillKey, last); err != nil {
 		return err
 	}
 	return env.State.Set(todayKey, td)
@@ -256,8 +283,11 @@ func dropsToday(td today, day string) ([]drop, []monitor.Event) {
 		if dr.Pet {
 			ev.Key = fmt.Sprintf("pet:%d", dr.Time.UnixMilli())
 			ev.Title, ev.Body, ev.Priority = "Pet: "+petName(dr), "You have a funny feeling like you're being followed.", monitor.PriorityHigh
+			if dr.Source != "" {
+				ev.Body = dropSource(dr)
+			}
 			if dr.Dupe {
-				ev.Body = "A duplicate: you already have it."
+				ev.Body = strings.TrimPrefix(dropSource(dr)+". ", ". ") + "A duplicate: you already have it."
 			}
 		} else {
 			ev.Title = dr.Item + " · " + gp(dr.Value)
@@ -291,7 +321,8 @@ func dropTable(drops []drop, loc *time.Location) monitor.Block {
 	for _, dr := range drops {
 		row := []monitor.Cell{{Text: dr.Time.In(loc).Format("15:04"), Tone: monitor.ToneMuted}}
 		if dr.Pet {
-			row = append(row, monitor.Cell{Text: petName(dr), Tone: monitor.ToneAccent}, monitor.Cell{Text: "Pet", Tone: monitor.ToneAccent}, monitor.Cell{})
+			row = append(row, monitor.Cell{Text: petName(dr), Tone: monitor.ToneAccent}, monitor.Cell{Text: "Pet", Tone: monitor.ToneAccent},
+				monitor.Cell{Text: dropSource(dr), Tone: monitor.ToneMuted})
 		} else {
 			name := strings.SplitN(dr.Item, " ×", 2)[0]
 			row = append(row, monitor.Cell{Text: dr.Item, URL: wiki(name)},

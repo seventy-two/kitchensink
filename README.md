@@ -32,7 +32,7 @@ notification for each event.
 | `football` | `nfl` and `fantasy` together as one panel (see below) | what each of them notifies |
 | `mail` | IMAP (e.g. Gmail) and Outlook mailboxes, read by Gemini for bookings, orders and things to do, which it adds to the calendar, to-do list and chores (below) | nothing itself (each finding is a quiet event); a sign-in code when an Outlook account needs one |
 | `dailies` | a dailies tracker (a separate app)'s games and today's results: every game, linked and marked once `player` has logged it; the summary is a chip for each (`names` gives them shorter names by game ID), green once played. Its paste button logs a game's share text from the clipboard | what happened to each paste, logged or not and why, as a temporary event |
-| `osrs` | [Wise Old Man](https://wiseoldman.net): an Old School RuneScape `player`'s gains since midnight towards pets only: boss kills, Guardians of the Rift, Soul Wars zeal, master clues, and XP in the skills with a pet (not combat). It asks WOM to update the player each poll and just after midnight, and compares with the last snapshot from before midnight. The table gives each gain's pet drop rate (from the wiki) and, for bosses that have ever given a drop worth `bigLoot`, the kills since the last one. The summary is a chip per gain. With `hookSecret` set, the RuneLite plugin [Dink](https://github.com/pajlads/DinkPlugin) can make it live (below): kills count as they happen, and drops worth `bigLoot` or more (default 50m) and pets are listed and notify | `hookSecret` (e.g. `"${OSRS_HOOK_SECRET}"`) |
+| `osrs` | [Wise Old Man](https://wiseoldman.net): an Old School RuneScape `player`'s gains since midnight towards pets only: boss kills, Guardians of the Rift, Soul Wars zeal, master clues, and XP in the skills with a pet (not combat). It asks WOM to update the player each poll and just after midnight, and compares with the last snapshot from before midnight. The table gives each gain's pet drop rate (from the wiki) and, for bosses that have ever given a drop worth `bigLoot` or a pet, the kills since the last one. Short, it's the table's top three rows (`summaryBlock`); the chips are for clients without that. With `hookSecret` set, the RuneLite plugin [Dink](https://github.com/pajlads/DinkPlugin) can make it live (below): kills count as they happen, and drops worth `bigLoot` or more (default 20m) and pets are listed and notify | `hookSecret` (e.g. `"${OSRS_HOOK_SECRET}"`) |
 
 Each monitor also returns a dashboard panel and a short summary (shown when
 space is short), polls on its own interval and can ask to be polled sooner
@@ -233,7 +233,7 @@ line, so it can still post to Discord). Then turn on:
 - **Kill Count**, with the interval at 1: every boss kill, raid and
   Tempoross or Wintertodt count.
 - **Loot**, with **Min Loot value** (an item's) at the panel's `bigLoot`
-  or lower. Drops worth `bigLoot` in all are listed and notify.
+  (20m) or lower. Drops worth `bigLoot` in all are listed and notify.
 - **Clue**, for master clue counts and big clue rewards.
 - **Pet**: listed and notified at high priority.
 - For skill XP at each login, put the same URL in **Advanced → Custom
@@ -333,7 +333,9 @@ stats (as in a `stats` block) worth seeing at a glance, which clients show
 instead of the blocks when space is short, and `summaryStyle`: empty for
 label/value/detail tiles, or `chips` for small blocks of the same, filled
 with each stat's tone (the watchlist's daily moves, the hourly forecast,
-today's NFL games). A stat or block marked `private` holds personal
+today's NFL games). `summaryBlock`, if set, is one block that clients
+able to draw it show in place of the summary, so the panel looks the same
+short (the OSRS table's top rows). A stat or block marked `private` holds personal
 figures, e.g. money, which clients can hide; a stat marked `lead` is set
 apart from the ones after it (the portfolio's day before the watchlist's
 moves), and one with a `url` opens it when clicked (the dailies' chips).

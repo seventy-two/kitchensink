@@ -95,6 +95,10 @@ type Result struct {
 	Summary []Stat
 	// SummaryStyle says how clients draw the summary.
 	SummaryStyle SummaryStyle
+	// SummaryBlock, if set, is drawn in place of Summary by clients that
+	// can, e.g. the first few rows of the panel's table, so the panel
+	// looks the same short. Keep Summary too for those that can't.
+	SummaryBlock *Block
 	// Timely says when it was updated matters at the moment, e.g. for
 	// prices or a game in progress. Clients only show its age then.
 	Timely bool
@@ -177,6 +181,8 @@ type Snapshot struct {
 	Summary []Stat  `json:"summary,omitempty"`
 	// SummaryStyle is how to draw Summary; empty for plain tiles.
 	SummaryStyle SummaryStyle `json:"summaryStyle,omitempty"`
+	// SummaryBlock is the last good poll's Result.SummaryBlock.
+	SummaryBlock *Block `json:"summaryBlock,omitempty"`
 }
 
 // SummaryStyle is how clients draw a summary.
