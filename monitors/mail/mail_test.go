@@ -308,6 +308,13 @@ func TestFailures(t *testing.T) {
 	assert.Equal(t, "signin:Hotmail:2026-10-13", res.Events[0].Key)
 	assert.False(t, res.Events[0].Quiet)
 
+	// Without the sign-in waiting, a failure retries in a minute.
+	m.accounts = []account{good}
+	res, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Equal(t, retryPoll, res.Next)
+	m.accounts = []account{good, bad, waiting}
+
 	// Gemini's back: the message that's gone is skipped, the other read.
 	g.fail = false
 	res, err = m.Poll(context.Background(), env)
@@ -335,4 +342,28 @@ func TestConfig(t *testing.T) {
 	assert.Equal(t, "", m.todo)
 	assert.Equal(t, "calendar", m.calendar)
 	assert.Equal(t, "abcdefghijklmnop", m.accounts[0].(*imapAccount).password, "Google shows app passwords with spaces")
+}
+
+func TestSkipsWhatGeminiCantRead(t *testing.T) {
+	g := newFakeGemini(t)
+	acc := &fakeAccount{name: "Gmail"}
+	acc.add("Order: huge", "Shop <x@shop.com>", now.Add(-2*time.Hour), "")
+	acc.add("Order: fine", "Shop <x@shop.com>", now.Add(-time.Hour), "")
+	g.answers["Order: fine"] = extraction{Kind: "order", Summary: "Fine", Todos: []string{"Do it"}}
+	m := newMonitor(t, g, acc)
+	acts := &actions{}
+	env := acts.env(monitortest.Env(now))
+	// Each poll tries the first, fails and stops; the last try skips it
+	// and goes on to the next, which fails too.
+	g.fail = true
+	for range maxAttempts {
+		_, err := m.Poll(context.Background(), env)
+		require.NoError(t, err)
+	}
+	g.fail = false
+	res, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Len(t, g.asked, 1, "only the second was asked about again")
+	assert.Equal(t, []string{"todo add Do it"}, acts.sent)
+	assert.Zero(t, res.Next)
 }

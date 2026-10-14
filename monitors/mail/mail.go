@@ -193,6 +193,7 @@ func (s *signIn) Error() string { return "waiting for sign-in" }
 // State keys.
 const (
 	cursorsKey  = "cursors"  // per account
+	failedKey   = "failed"   // Gemini failures, by message ID
 	queueKey    = "queue"    // headers picked out but not yet read
 	seenKey     = "seen"     // message IDs read, with the day
 	foundKey    = "found"    // recent findings, newest first
@@ -203,8 +204,11 @@ const (
 // Limits on each poll's work, so it fits in the engine's poll timeout;
 // a backlog carries on in quick polls.
 const (
-	readPerPoll  = 6
+	readPerPoll  = 10
+	readBudget   = 50 * time.Second // no new email is started after this, so a poll fits in two minutes
 	backlogPoll  = 15 * time.Second
+	retryPoll    = time.Minute // after Gemini fails
+	maxAttempts  = 4           // Gemini failures before an email is skipped
 	keepFound    = 30
 	keepSeenDays = 400
 )
@@ -293,9 +297,14 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	if err != nil {
 		return monitor.Result{}, err
 	}
+	failed := map[string]int{}
+	if _, err := env.State.Get(failedKey, &failed); err != nil {
+		return monitor.Result{}, err
+	}
 	var readErr string
 	read := 0
-	for len(queue) > 0 && read < m.perPoll && ctx.Err() == nil {
+	started := time.Now()
+	for len(queue) > 0 && read < m.perPoll && time.Since(started) < readBudget && ctx.Err() == nil {
 		h := queue[0]
 		s := sessions[h.Account]
 		if s == nil {
@@ -316,10 +325,20 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		read++
 		x, err := m.gemini.extract(ctx, env.HTTP, m.prompt(h, text, now))
 		if err != nil {
-			readErr = "Gemini: " + err.Error()
 			env.Log.Warn("extracting from mail", "subject", h.Subject, "err", err)
-			break // try again next poll
+			if failed[h.ID]++; failed[h.ID] >= maxAttempts {
+				// This one email keeps failing (too long, say): skip it
+				// rather than hold up the rest.
+				env.Log.Warn("skipping mail Gemini can't read", "subject", h.Subject)
+				delete(failed, h.ID)
+				seen[h.ID] = now.Format(time.DateOnly)
+				queue = queue[1:]
+				continue
+			}
+			readErr = "Gemini: " + err.Error()
+			break // try again soon
 		}
+		delete(failed, h.ID)
 		f := m.apply(ctx, env, h, x, now)
 		if len(f.Did) > 0 {
 			found = append([]finding{f}, found...)
@@ -338,12 +357,15 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	cutoff := now.AddDate(0, 0, -keepSeenDays).Format(time.DateOnly)
 	maps.DeleteFunc(seen, func(_, day string) bool { return day < cutoff })
 
-	for k, v := range map[string]any{cursorsKey: cursors, queueKey: queue, seenKey: seen, accountsKey: statuses, foundKey: found} {
+	for k, v := range map[string]any{cursorsKey: cursors, queueKey: queue, seenKey: seen, accountsKey: statuses, foundKey: found, failedKey: failed} {
 		if err := env.State.Set(k, v); err != nil {
 			return monitor.Result{}, fmt.Errorf("saving %s: %w", k, err)
 		}
 	}
-	if len(queue) > 0 && readErr == "" {
+	switch {
+	case readErr != "":
+		soonest(retryPoll)
+	case len(queue) > 0:
 		soonest(backlogPoll)
 	}
 	return monitor.Result{

@@ -37,6 +37,9 @@ type Gemini struct {
 
 type gemini struct{ Gemini }
 
+// geminiTimeout bounds each request to Gemini.
+const geminiTimeout = 60 * time.Second
+
 func newGemini(c Gemini) (*gemini, error) {
 	if c.APIKey == "" {
 		return nil, fmt.Errorf("gemini needs an apiKey")
@@ -151,7 +154,7 @@ func (g *gemini) extract(ctx context.Context, client *http.Client, input string)
 		"model":              g.Model,
 		"input":              input,
 		"system_instruction": sys,
-		"generation_config":  map[string]any{"thinking_level": "medium", "max_output_tokens": 8000},
+		"generation_config":  map[string]any{"thinking_level": "low", "max_output_tokens": 8000},
 		"response_format":    map[string]any{"type": "text", "mime_type": "application/json", "schema": schema},
 		"store":              false,
 	})
@@ -161,7 +164,11 @@ func (g *gemini) extract(ctx context.Context, client *http.Client, input string)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-goog-api-key", g.APIKey)
-	resp, err := client.Do(req)
+	// A long email can take Gemini longer than the engine's usual
+	// timeout.
+	slow := *client
+	slow.Timeout = geminiTimeout
+	resp, err := slow.Do(req)
 	if err != nil {
 		return extraction{}, err
 	}
