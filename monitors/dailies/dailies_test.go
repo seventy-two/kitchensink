@@ -48,7 +48,7 @@ func fakeTracker(t *testing.T, ends ...string) *httptest.Server {
 
 func poll(t *testing.T, srv *httptest.Server, player string) monitor.Result {
 	t.Helper()
-	raw, _ := json.Marshal(map[string]any{"url": srv.URL + "/", "player": player})
+	raw, _ := json.Marshal(map[string]any{"url": srv.URL + "/", "player": player, "names": map[string]string{"wordle": "W"}})
 	m, err := New(raw)
 	require.NoError(t, err)
 	res, err := m.Poll(context.Background(), monitortest.Env(now))
@@ -59,18 +59,17 @@ func poll(t *testing.T, srv *httptest.Server, player string) monitor.Result {
 func TestStillToPlay(t *testing.T) {
 	res := poll(t, fakeTracker(t), "M")
 	require.Len(t, res.Blocks, 1)
-	assert.Equal(t, []monitor.Item{
-		{Title: "Wordle", URL: "https://wordle.test/"},
-		{Title: "Connections", URL: "https://connections.test/"},
-	}, res.Blocks[0].Items, "only M's, in the tracker's order")
-	assert.Equal(t, []monitor.Stat{{Label: "Dailies left", Value: "2 of 3", Detail: "Next: Wordle"}}, res.Summary)
+	want := []monitor.Stat{{Value: "W"}, {Value: "Connections"}}
+	assert.Equal(t, want, res.Blocks[0].Stats, "only M's, in the tracker's order")
+	assert.Equal(t, want, res.Summary)
+	assert.Equal(t, monitor.SummaryChips, res.SummaryStyle)
 	assert.Equal(t, 13*time.Hour+40*time.Minute+30*time.Second, res.Next, "just after UK midnight")
 }
 
 func TestOtherPlayerAndEndingEarly(t *testing.T) {
 	srv := fakeTracker(t)
 	res := poll(t, srv, "J")
-	assert.Equal(t, "Wikidle", res.Blocks[0].Items[0].Title)
+	assert.Equal(t, "Wikidle", res.Summary[0].Value)
 
 	res = poll(t, fakeTracker(t, "M"), "M")
 	assert.Equal(t, "You ended today early.", res.Blocks[0].Text)

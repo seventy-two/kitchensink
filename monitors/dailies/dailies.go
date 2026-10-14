@@ -25,6 +25,9 @@ type Config struct {
 	URL string `json:"url"`
 	// Player is whose games to show, as the tracker names them.
 	Player string `json:"player"`
+	// Names gives games shorter names for the tiles, by the tracker's
+	// game ID, e.g. {"wordle": "W"}.
+	Names map[string]string `json:"names"`
 	// Timezone is the tracker's day, which starts at midnight here. It
 	// defaults to Europe/London.
 	Timezone string `json:"timezone"`
@@ -60,7 +63,6 @@ func New(raw json.RawMessage) (*Monitor, error) {
 type game struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
-	URL  string `json:"url"`
 }
 
 type config struct {
@@ -106,10 +108,12 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 			}
 		}
 	}
+	tiles := m.tiles(left)
 	return monitor.Result{
-		Blocks:  blocks(left, ended),
-		Summary: summary(left, len(c.Games), ended),
-		Next:    m.untilTomorrow(env.Now()),
+		Blocks:       blocks(tiles, ended),
+		Summary:      summary(tiles, ended),
+		SummaryStyle: monitor.SummaryChips,
+		Next:         m.untilTomorrow(env.Now()),
 	}, nil
 }
 
@@ -121,28 +125,38 @@ func (m *Monitor) untilTomorrow(now time.Time) time.Duration {
 	return midnight.Sub(now) + 30*time.Second
 }
 
-func blocks(left []game, ended bool) []monitor.Block {
+func blocks(tiles []monitor.Stat, ended bool) []monitor.Block {
 	switch {
 	case ended:
 		return []monitor.Block{{Type: monitor.BlockText, Text: "You ended today early."}}
-	case len(left) == 0:
+	case len(tiles) == 0:
 		return []monitor.Block{{Type: monitor.BlockText, Text: "All played for today."}}
 	}
-	b := monitor.Block{Type: monitor.BlockList, Title: "Still to play", Items: []monitor.Item{}}
-	for _, g := range left {
-		b.Items = append(b.Items, monitor.Item{Title: g.Name, URL: g.URL})
-	}
-	return []monitor.Block{b}
+	return []monitor.Block{{Type: monitor.BlockStats, Title: "Still to play", Stats: tiles}}
 }
 
-func summary(left []game, total int, ended bool) []monitor.Stat {
+// summary is a chip for each game left, or one saying there are none.
+func summary(tiles []monitor.Stat, ended bool) []monitor.Stat {
 	switch {
 	case ended:
 		return []monitor.Stat{{Label: "Dailies", Value: "Ended early", Tone: monitor.ToneMuted}}
-	case len(left) == 0:
+	case len(tiles) == 0:
 		return []monitor.Stat{{Label: "Dailies", Value: "All played", Tone: monitor.ToneGood}}
 	}
-	return []monitor.Stat{{Label: "Dailies left", Value: fmt.Sprintf("%d of %d", len(left), total), Detail: "Next: " + left[0].Name}}
+	return tiles
+}
+
+// tiles names each game left, by its short name if it has one.
+func (m *Monitor) tiles(left []game) []monitor.Stat {
+	out := make([]monitor.Stat, len(left))
+	for i, g := range left {
+		name := g.Name
+		if short := m.cfg.Names[g.ID]; short != "" {
+			name = short
+		}
+		out[i] = monitor.Stat{Value: name}
+	}
+	return out
 }
 
 func (m *Monitor) get(ctx context.Context, client *http.Client, path string, v any) error {

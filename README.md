@@ -30,7 +30,7 @@ notification for each event.
 | `calendar` | iCalendar (ICS) feeds, e.g. Google or Outlook | each timed event, `remindMinutes` (default 10) before it starts |
 | `football` | `nfl` and `fantasy` together as one panel (see below) | what each of them notifies |
 | `mail` | IMAP (e.g. Gmail) and Outlook mailboxes, read by Gemini for bookings, orders and things to do, which it adds to the calendar, to-do list and chores (below) | nothing itself (each finding is a quiet event); a sign-in code when an Outlook account needs one |
-| `dailies` | a dailies tracker (a separate app)'s games and today's results: the games `player` hasn't logged yet, each linking to the game | nothing |
+| `dailies` | a dailies tracker (a separate app)'s games and today's results: the games `player` hasn't logged yet, as tiles (`names` gives them shorter names by game ID) | nothing |
 
 Each monitor also returns a dashboard panel and a short summary (shown when
 space is short), polls on its own interval and can ask to be polled sooner
