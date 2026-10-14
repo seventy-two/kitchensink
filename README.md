@@ -3,8 +3,8 @@
 A small self-hosted service that keeps an eye on things for you (stock
 prices, NFL games, your fantasy football teams, the weather, car adverts,
 your calendars, a to-do list, recurring chores, the orders and
-bookings in your email, the daily puzzle games you haven't played yet, and
-a day's progress towards OSRS pets) and tells your devices when something happens. Clients get a live dashboard of everything being watched and a
+bookings in your email, the daily puzzle games you haven't played yet,
+a day's progress towards OSRS pets and your Letterboxd watchlist) and tells your devices when something happens. Clients get a live dashboard of everything being watched and a
 notification for each event.
 
 - **Server**: Go, one binary, SQLite. Runs the monitors on their intervals,
@@ -32,6 +32,7 @@ notification for each event.
 | `football` | `nfl` and `fantasy` together as one panel (see below) | what each of them notifies |
 | `mail` | IMAP (e.g. Gmail) and Outlook mailboxes, read by Gemini for bookings, orders and things to do, which it adds to the calendar, to-do list and chores (below) | nothing itself (each finding is a quiet event); a sign-in code when an Outlook account needs one |
 | `dailies` | a dailies tracker (a separate app)'s games and today's results: every game, linked and marked once `player` has logged it; the summary is a chip for each (`names` gives them shorter names by game ID), green once played. With `versus` set to the other player, a played game is instead green when won, red when lost and blue when drawn or still waiting on them (the tracker says who won). Its paste button logs a game's share text from the clipboard | what happened to each paste, logged or not and why, as a temporary event |
+| `letterboxd` | a Letterboxd `user`'s public watchlist, newest additions first, as a table linking each film; short, it's the newest three rows. With `local` set to an app's name (`watchgrab`), each row also has that app's button, which only clients with the app installed draw (below) | each film added, as a quiet event |
 | `osrs` | [Wise Old Man](https://wiseoldman.net): an Old School RuneScape `player`'s gains since midnight towards pets only: boss kills, Guardians of the Rift, Soul Wars zeal, master clues, and XP in the skills with a pet (not combat). It asks WOM to update the player each poll and just after midnight, and compares with the last snapshot from before midnight. The table gives each gain's pet drop rate (from the wiki) and, for bosses that have ever given a drop worth `bigLoot` or a pet, the kills since the last one. Short, it's the table's top three rows (`summaryBlock`); the chips are for clients without that. With `hookSecret` set, the RuneLite plugin [Dink](https://github.com/pajlads/DinkPlugin) can make it live (below): kills count as they happen, and drops worth `bigLoot` or more (default 20m) and pets are listed and notify | `hookSecret` (e.g. `"${OSRS_HOOK_SECRET}"`) |
 
 Each monitor also returns a dashboard panel and a short summary (shown when
@@ -345,7 +346,7 @@ drawn from the same few block types, so clients need no per-monitor code:
 | Block `type` | Fields |
 | --- | --- |
 | `stats` | `stats`: `label`, `value`, `detail`, `tone`, `series` (a sparkline), `icon` (a weather picture by the value: `sun`, `moon`, `sun-cloud`, `moon-cloud`, `cloud`, `fog`, `drizzle`, `rain`, `showers`, `snow` or `storm`), `level` (0 to 1, drawn faintly behind the chip as a chart joined to its neighbours', e.g. the chance of rain; 0 draws along the bottom, absent draws nothing) |
-| `table` | `columns` (`title`, `align`, `fill` for the column that takes spare width) and `rows` of cells (`text`, `tone`, `url`, and `detail` for a smaller line under the text) |
+| `table` | `columns` (`title`, `align`, `fill` for the column that takes spare width) and `rows` of cells (`text`, `tone`, `url`, `detail` for a smaller line under the text, and `local`: `{"app", "arg"}`, a button for an app on the client's own machine, e.g. the watchlist's downloader, drawn only by clients that have it) |
 | `list` | `items`: `title`, `subtitle`, `detail`, `url`, `image`, `tone` |
 | `checklist` | `items` (`id`, `title`, `done`, `tone`) with checkboxes that send `toggle` and `delete` actions; `addHint` adds a box for `add`, `deleteHint` names what delete does when it isn't deleting (the reorders' "Stop tracking") and `noDelete` leaves it out; `movable` adds up and down buttons that send `move` with text `up` or `down` (reordering the to-do list), named by `upHint` and `downHint` when they do something else (the chores' days) |
 | `text` | `text` |

@@ -311,6 +311,16 @@ type Cell struct {
 	URL  string `json:"url,omitempty"`
 	// Detail is a smaller, muted line under the text.
 	Detail string `json:"detail,omitempty"`
+	// Local, if set, is a button for an app on the client's own machine,
+	// e.g. a downloader. Clients that don't have the app draw nothing.
+	Local *Local `json:"local,omitempty"`
+}
+
+// Local is something a client can do with an app installed beside it,
+// rather than through the server: run App with Arg.
+type Local struct {
+	App string `json:"app"`
+	Arg string `json:"arg"`
 }
 
 // Item is an entry in a list or checklist block.

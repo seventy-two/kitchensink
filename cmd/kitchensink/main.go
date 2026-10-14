@@ -30,6 +30,7 @@ import (
 	_ "github.com/seventy-two/kitchensink/monitors/dailies"
 	_ "github.com/seventy-two/kitchensink/monitors/fantasy"
 	_ "github.com/seventy-two/kitchensink/monitors/football"
+	_ "github.com/seventy-two/kitchensink/monitors/letterboxd"
 	_ "github.com/seventy-two/kitchensink/monitors/mail"
 	_ "github.com/seventy-two/kitchensink/monitors/nfl"
 	_ "github.com/seventy-two/kitchensink/monitors/osrs"

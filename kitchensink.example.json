@@ -47,6 +47,12 @@
       "config": { "url": "http://127.0.0.1:6040", "player": "M", "versus": "J", "names": { "wordle": "W" } }
     },
     {
+      "type": "letterboxd",
+      "title": "Letterboxd",
+      "interval": "1h",
+      "config": { "user": "someone", "local": "watchgrab" }
+    },
+    {
       "type": "osrs",
       "title": "OSRS today",
       "interval": "1h",
