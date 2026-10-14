@@ -135,9 +135,12 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	}
 
 	// What Dink has sent is newer than WOM's, until WOM catches up.
-	var live stats
+	var live, lastBig stats
 	var td today
 	if _, err := env.State.Get(liveKey, &live); err != nil {
+		return monitor.Result{}, err
+	}
+	if _, err := env.State.Get(lastBigKey, &lastBig); err != nil {
 		return monitor.Result{}, err
 	}
 	if _, err := env.State.Get(todayKey, &td); err != nil {
@@ -150,7 +153,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	rows := gains(from, merged(current, live))
 	drops, events := dropsToday(td, day)
 
-	blocks := []monitor.Block{table(rows)}
+	blocks := []monitor.Block{table(rows, lastBig, m.cfg.BigLoot)}
 	if len(drops) > 0 {
 		blocks = append(blocks, dropTable(drops, m.loc))
 	}
@@ -192,6 +195,7 @@ func dropChips(drops []drop) []monitor.Stat {
 // gain is one metric's progress today.
 type gain struct {
 	metric
+	ID            string
 	Gained, Total int64
 }
 
@@ -201,7 +205,7 @@ func gains(from, to stats) []gain {
 	var out []gain
 	for id, mt := range tracked {
 		if d := to[id] - from[id]; d > 0 {
-			out = append(out, gain{metric: mt, Gained: d, Total: to[id]})
+			out = append(out, gain{metric: mt, ID: id, Gained: d, Total: to[id]})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -217,19 +221,27 @@ func gains(from, to stats) []gain {
 	return out
 }
 
-func table(rows []gain) monitor.Block {
+// table lists the day's gains, with the pet's drop rate and, for bosses
+// that have given a big drop, the kills since the last one.
+func table(rows []gain, lastBig stats, bigLoot int64) monitor.Block {
 	if len(rows) == 0 {
 		return monitor.Block{Type: monitor.BlockText, Text: "Nothing towards a pet yet today."}
 	}
 	b := monitor.Block{Type: monitor.BlockTable, Columns: []monitor.Column{
-		{Title: ""}, {Title: "Today", Align: monitor.AlignRight}, {Title: "Total", Align: monitor.AlignRight}, {Title: "Pet", Fill: true},
+		{Title: ""}, {Title: "Today", Align: monitor.AlignRight}, {Title: "Total", Align: monitor.AlignRight},
+		{Title: "Pet", Align: monitor.AlignRight}, {Title: "Since " + gp(bigLoot) + "+", Align: monitor.AlignRight},
 	}}
 	for _, g := range rows {
+		since := ""
+		if last, ok := lastBig[g.ID]; ok && g.Kind != xp && g.Total >= last {
+			since = comma(g.Total - last)
+		}
 		b.Rows = append(b.Rows, []monitor.Cell{
 			{Text: g.Name},
 			{Text: "+" + amount(g.Kind, g.Gained), Tone: monitor.ToneGood},
 			{Text: amount(g.Kind, g.Total), Tone: monitor.ToneMuted},
-			{Text: g.Pet, Tone: monitor.ToneMuted},
+			{Text: g.Rate, Tone: monitor.ToneMuted},
+			{Text: since, Tone: monitor.ToneMuted},
 		})
 	}
 	return b

@@ -32,7 +32,7 @@ notification for each event.
 | `football` | `nfl` and `fantasy` together as one panel (see below) | what each of them notifies |
 | `mail` | IMAP (e.g. Gmail) and Outlook mailboxes, read by Gemini for bookings, orders and things to do, which it adds to the calendar, to-do list and chores (below) | nothing itself (each finding is a quiet event); a sign-in code when an Outlook account needs one |
 | `dailies` | a dailies tracker (a separate app)'s games and today's results: every game, linked and marked once `player` has logged it; the summary is a chip for each (`names` gives them shorter names by game ID), green once played. Its paste button logs a game's share text from the clipboard | what happened to each paste, logged or not and why, as a temporary event |
-| `osrs` | [Wise Old Man](https://wiseoldman.net): an Old School RuneScape `player`'s gains since midnight towards pets only: boss kills, Guardians of the Rift, Soul Wars zeal, master clues, and XP in the skills with a pet (not combat). It asks WOM to update the player each poll and just after midnight, and compares with the last snapshot from before midnight. The summary is a chip per gain. With `hookSecret` set, the RuneLite plugin [Dink](https://github.com/pajlads/DinkPlugin) can make it live (below): kills count as they happen, and drops worth `bigLoot` or more (default 50m) and pets are listed and notify | `hookSecret` (e.g. `"${OSRS_HOOK_SECRET}"`) |
+| `osrs` | [Wise Old Man](https://wiseoldman.net): an Old School RuneScape `player`'s gains since midnight towards pets only: boss kills, Guardians of the Rift, Soul Wars zeal, master clues, and XP in the skills with a pet (not combat). It asks WOM to update the player each poll and just after midnight, and compares with the last snapshot from before midnight. The table gives each gain's pet drop rate (from the wiki) and, for bosses that have ever given a drop worth `bigLoot`, the kills since the last one. The summary is a chip per gain. With `hookSecret` set, the RuneLite plugin [Dink](https://github.com/pajlads/DinkPlugin) can make it live (below): kills count as they happen, and drops worth `bigLoot` or more (default 50m) and pets are listed and notify | `hookSecret` (e.g. `"${OSRS_HOOK_SECRET}"`) |
 
 Each monitor also returns a dashboard panel and a short summary (shown when
 space is short), polls on its own interval and can ask to be polled sooner
@@ -245,7 +245,10 @@ hourly (the hiscores only change at logout), so skill XP between logins
 comes from Dink's login summary. Kill counts
 for bosses the hiscores don't rank yet start from the first kill Dink
 reports that day, rather than counting every earlier kill as today's.
-Screenshots are dropped; turn them off unless Dink also posts to
+Big drops from before Dink can be filled in with a `lastBig` action,
+`{"type":"lastBig","data":{"vorkath":1020}}`: the kill count of the last
+one by WOM metric (RuneLite's Loot Logger plugin keeps the history, with
+each drop's price at the time). Screenshots are dropped; turn them off unless Dink also posts to
 Discord, as bodies over 1MB are refused.
 
 ## Running it

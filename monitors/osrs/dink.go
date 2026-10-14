@@ -1,6 +1,7 @@
 package osrs
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -58,6 +59,10 @@ type today struct {
 const (
 	liveKey  = "live"
 	todayKey = "today"
+	// lastBigKey holds, by metric, the kill count of the last drop worth
+	// bigLoot: from Dink, or set with a "lastBig" action (e.g. from
+	// RuneLite's Loot Logger history).
+	lastBigKey = "lastBig"
 )
 
 // HookSecret is the secret Dink's webhook URL carries.
@@ -66,7 +71,30 @@ func (m *Monitor) HookSecret() string { return m.cfg.HookSecret }
 // Act takes Dink's notifications. Other players' (an alt on the same
 // RuneLite) and those from leagues or Deadman are ignored, as are kinds
 // the panel doesn't use.
+//
+// A "lastBig" action sets the kill count of the last big drop by metric,
+// as data {"vorkath": 1020}; later ones win.
 func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) error {
+	var lastBig stats
+	if _, err := env.State.Get(lastBigKey, &lastBig); err != nil {
+		return err
+	}
+	if lastBig == nil {
+		lastBig = stats{}
+	}
+	if a.Type == "lastBig" {
+		var set stats
+		if err := json.Unmarshal(a.Data, &set); err != nil {
+			return fmt.Errorf("%w: %v", monitor.ErrBadAction, err)
+		}
+		for id, kc := range set {
+			if mt, ok := tracked[id]; !ok || mt.Kind == xp {
+				return fmt.Errorf("%w: no boss %q", monitor.ErrBadAction, id)
+			}
+			lastBig[id] = max(lastBig[id], kc)
+		}
+		return env.State.Set(lastBigKey, lastBig)
+	}
 	if a.Type != monitor.HookAction {
 		return fmt.Errorf("%w: %s", monitor.ErrBadAction, a.Type)
 	}
@@ -131,12 +159,16 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 			Items     []dinkItem `json:"items"`
 		}
 		json.Unmarshal(d.Extra, &x)
-		if id, ok := metricFor(x.Source); ok && x.KillCount > 0 {
+		id, ok := metricFor(x.Source)
+		if ok && x.KillCount > 0 {
 			count(id, x.KillCount)
 		}
-		if dr, ok := m.big(x.Items); ok {
+		if dr, big := m.big(x.Items); big {
 			dr.Time, dr.Source, dr.KC = now, x.Source, x.KillCount
 			td.Drops = append(td.Drops, dr)
+			if kc := cmp.Or(x.KillCount, live[id]); ok && kc > 0 {
+				lastBig[id] = max(lastBig[id], kc)
+			}
 		}
 	case "CLUE":
 		var x struct {
@@ -151,6 +183,9 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 		if dr, ok := m.big(x.Items); ok {
 			dr.Time, dr.Source = now, x.ClueType+" clue"
 			td.Drops = append(td.Drops, dr)
+			if strings.EqualFold(x.ClueType, "master") {
+				lastBig["clue_scrolls_master"] = max(lastBig["clue_scrolls_master"], x.NumberCompleted)
+			}
 		}
 	case "PET":
 		var x struct {
@@ -178,6 +213,9 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 		return nil
 	}
 	if err := env.State.Set(liveKey, live); err != nil {
+		return err
+	}
+	if err := env.State.Set(lastBigKey, lastBig); err != nil {
 		return err
 	}
 	return env.State.Set(todayKey, td)

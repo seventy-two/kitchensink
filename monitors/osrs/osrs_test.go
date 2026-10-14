@@ -115,7 +115,8 @@ func TestToday(t *testing.T) {
 	}, res.Summary, "kills first, then XP; no attack XP or Barrows")
 	require.Len(t, res.Blocks, 1)
 	assert.Equal(t, []monitor.Cell{
-		{Text: "Vorkath"}, {Text: "+12", Tone: monitor.ToneGood}, {Text: "112", Tone: monitor.ToneMuted}, {Text: "Vorki", Tone: monitor.ToneMuted},
+		{Text: "Vorkath"}, {Text: "+12", Tone: monitor.ToneGood}, {Text: "112", Tone: monitor.ToneMuted},
+		{Text: "1/3,000", Tone: monitor.ToneMuted}, {Text: "", Tone: monitor.ToneMuted},
 	}, res.Blocks[0].Rows[0])
 	assert.Equal(t, "13.25M xp", res.Blocks[0].Rows[3][2].Text)
 	assert.Equal(t, 4*time.Hour+time.Minute, res.Next, "wakes just after midnight to mark the new day")
@@ -148,7 +149,7 @@ func TestToday(t *testing.T) {
 func TestNothingYet(t *testing.T) {
 	assert.Equal(t, []monitor.Stat{{Label: "Today", Value: "Nothing yet", Tone: monitor.ToneMuted}}, summary(nil, false))
 	assert.Empty(t, summary(nil, true), "drops show instead")
-	assert.Equal(t, "Nothing towards a pet yet today.", table(nil).Text)
+	assert.Equal(t, "Nothing towards a pet yet today.", table(nil, nil, 0).Text)
 	assert.Empty(t, gains(stats{"attack": 1, "vorkath": 5}, stats{"attack": 9, "vorkath": 5}))
 }
 
@@ -212,6 +213,14 @@ func TestDink(t *testing.T) {
 	hook(t, m, env, "DEATH", `{}`)
 	assert.ErrorIs(t, m.Act(context.Background(), env, monitor.Action{Type: "add"}), monitor.ErrBadAction)
 
+	// The last big drops from before Dink, e.g. from Loot Logger.
+	lastBig := func(data string) error {
+		return m.Act(context.Background(), env, monitor.Action{Type: "lastBig", Data: json.RawMessage(data)})
+	}
+	require.NoError(t, lastBig(`{"vorkath":110,"phosanis_nightmare":380}`))
+	assert.ErrorIs(t, lastBig(`{"mining":1}`), monitor.ErrBadAction)
+	assert.ErrorIs(t, lastBig(`{"barrows_chests":1}`), monitor.ErrBadAction)
+
 	res, err := m.Poll(context.Background(), env)
 	require.NoError(t, err)
 	assert.Equal(t, 1, f.count("POST /players/GTX 480"), "WOM isn't asked again so soon")
@@ -227,6 +236,13 @@ func TestDink(t *testing.T) {
 	}, res.Summary, "Dink's counts beat WOM's; Scurrius from its first kill Dink saw")
 
 	require.Len(t, res.Blocks, 2)
+	since := map[string]string{}
+	for _, row := range res.Blocks[0].Rows {
+		since[row[0].Text] = row[4].Text
+	}
+	assert.Equal(t, map[string]string{
+		"Vorkath": "5", "Phosani's Nightmare": "0", "Scurrius": "", "Master clues": "", "Mining": "",
+	}, since, "kills since the last big drop, only where there's been one; the helm at 400 beats 380")
 	assert.Equal(t, "Big drops", res.Blocks[1].Title)
 	assert.Equal(t, []monitor.Cell{
 		{Text: "20:01", Tone: monitor.ToneMuted}, {Text: "Inquisitor's great helm", URL: helm},
