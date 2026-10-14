@@ -28,6 +28,7 @@ import (
 	_ "github.com/seventy-two/kitchensink/monitors/calendar"
 	_ "github.com/seventy-two/kitchensink/monitors/chores"
 	_ "github.com/seventy-two/kitchensink/monitors/dailies"
+	_ "github.com/seventy-two/kitchensink/monitors/ebay"
 	_ "github.com/seventy-two/kitchensink/monitors/fantasy"
 	_ "github.com/seventy-two/kitchensink/monitors/football"
 	_ "github.com/seventy-two/kitchensink/monitors/letterboxd"

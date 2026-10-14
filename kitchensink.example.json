@@ -47,6 +47,18 @@
       "config": { "url": "http://127.0.0.1:6040", "player": "M", "versus": "J", "names": { "wordle": "W" } }
     },
     {
+      "type": "ebay",
+      "title": "Big box",
+      "interval": "15m",
+      "config": {
+        "searchURL": "https://www.ebay.co.uk/sch/i.html?_nkw=big+box+pc&_sacat=0",
+        "clientId": "${EBAY_CLIENT_ID}",
+        "clientSecret": "${EBAY_CLIENT_SECRET}",
+        "name": "a boxed PC game",
+        "gemini": { "apiKey": "${GEMINI_API_KEY}" }
+      }
+    },
+    {
       "type": "letterboxd",
       "title": "Letterboxd",
       "interval": "1h",
