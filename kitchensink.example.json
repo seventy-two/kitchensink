@@ -41,6 +41,12 @@
       }
     },
     {
+      "type": "dailies",
+      "title": "Dailies",
+      "interval": "10m",
+      "config": { "url": "http://127.0.0.1:6040", "player": "M" }
+    },
+    {
       "type": "mail",
       "title": "Mail",
       "interval": "10m",
