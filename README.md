@@ -30,7 +30,7 @@ notification for each event.
 | `calendar` | iCalendar (ICS) feeds, e.g. Google or Outlook | each timed event, `remindMinutes` (default 10) before it starts |
 | `football` | `nfl` and `fantasy` together as one panel (see below) | what each of them notifies |
 | `mail` | IMAP (e.g. Gmail) and Outlook mailboxes, read by Gemini for bookings, orders and things to do, which it adds to the calendar, to-do list and chores (below) | nothing itself (each finding is a quiet event); a sign-in code when an Outlook account needs one |
-| `dailies` | a dailies tracker (a separate app)'s games and today's results: every game, linked and marked once `player` has logged it; the summary is a chip for each (`names` gives them shorter names by game ID), green once played | nothing |
+| `dailies` | a dailies tracker (a separate app)'s games and today's results: every game, linked and marked once `player` has logged it; the summary is a chip for each (`names` gives them shorter names by game ID), green once played. Its paste button logs a game's share text from the clipboard | a pasted result that wasn't logged, and why (a logged one is a quiet event) |
 
 Each monitor also returns a dashboard panel and a short summary (shown when
 space is short), polls on its own interval and can ask to be polled sooner
@@ -291,7 +291,9 @@ search's filters), `timely` (true while when it was updated matters: always
 for the watchlist and AutoTrader, while a game's on for NFL and fantasy;
 the Windows client only shows a panel's age then, on hover), `background`
 (true for a monitor that only feeds others, like `mail`: clients leave it
-off the dashboard and show it with their settings), `blocks` and `summary`: a few
+off the dashboard and show it with their settings), `paste` (if set, the
+panel has a button, with this as its tooltip, that sends a `paste` action
+with the clipboard's text, e.g. the dailies' share text), `blocks` and `summary`: a few
 stats (as in a `stats` block) worth seeing at a glance, which clients show
 instead of the blocks when space is short, and `summaryStyle`: empty for
 label/value/detail tiles, or `chips` for small blocks of the same, filled

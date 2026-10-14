@@ -64,7 +64,7 @@ func TestPollRecordsAndNotifies(t *testing.T) {
 	m := &scripted{
 		results: []monitor.Result{
 			{Blocks: block("one"), Events: []monitor.Event{{Key: "a", Title: "A"}, {Key: "q", Title: "Q", Quiet: true}}},
-			{Blocks: block("two"), Events: []monitor.Event{{Key: "a", Title: "A again"}, {Key: "b", Title: "B"}}, Next: time.Minute, Background: true},
+			{Blocks: block("two"), Events: []monitor.Event{{Key: "a", Title: "A again"}, {Key: "b", Title: "B"}}, Next: time.Minute, Background: true, Paste: "Paste it"},
 			{},
 		},
 		errs: []error{nil, nil, errors.New("site down")},
@@ -94,6 +94,7 @@ func TestPollRecordsAndNotifies(t *testing.T) {
 	assert.Equal(t, "site down", snaps[0].Error)
 	assert.Equal(t, "two", snaps[0].Blocks[0].Text)
 	assert.True(t, snaps[0].Background, "the last good poll's")
+	assert.Equal(t, "Paste it", snaps[0].Paste)
 	assert.Equal(t, "Fake", snaps[0].Title)
 
 	// Subscribers saw snapshots and new events in order.

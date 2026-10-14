@@ -1,10 +1,13 @@
 // Package dailies shows today's daily puzzle games and which of them one
-// player has played, from the dailies tracker (a separate app).
+// player has played, from the dailies tracker (a separate app), and logs
+// results pasted into the dashboard.
 package dailies
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -101,12 +104,88 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	for _, e := range d.Ends {
 		ended = ended || e.Player == m.cfg.Player
 	}
+	// What's been pasted since the last poll; the engine polls straight
+	// after an action.
+	var outcomes []monitor.Event
+	if _, err := env.State.Get(outcomesKey, &outcomes); err != nil {
+		return monitor.Result{}, err
+	}
+	if len(outcomes) > 0 {
+		if err := env.State.Set(outcomesKey, []monitor.Event{}); err != nil {
+			return monitor.Result{}, err
+		}
+	}
 	return monitor.Result{
+		Paste:        "Log a result from the clipboard",
+		Events:       outcomes,
 		Blocks:       []monitor.Block{list(c.Games, played, ended)},
 		Summary:      m.chips(c.Games, played, ended),
 		SummaryStyle: monitor.SummaryChips,
 		Next:         m.untilTomorrow(env.Now()),
 	}, nil
+}
+
+const outcomesKey = "outcomes"
+
+// Act takes a "paste" action: share text from the clipboard, logged as
+// today's result for the player. The tracker works out the game and
+// score. Clients don't show an action's reply, so what happened, logged
+// or not, is an event at the next poll; a refusal notifies, since nothing
+// else on the panel changes.
+func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) error {
+	if a.Type != "paste" {
+		return fmt.Errorf("%w: dailies only takes pasted share text", monitor.ErrBadAction)
+	}
+	ev := monitor.Event{Key: fmt.Sprintf("paste:%d", env.Now().UnixNano()), Priority: monitor.PriorityNormal}
+	msg, err := m.share(ctx, env.HTTP, a.Text)
+	var refused refusal
+	switch {
+	case errors.As(err, &refused):
+		ev.Title, ev.Body = "Not logged", string(refused)
+	case err != nil:
+		return err
+	default:
+		ev.Title, ev.Quiet = msg, true
+	}
+	var outcomes []monitor.Event
+	if _, err := env.State.Get(outcomesKey, &outcomes); err != nil {
+		return err
+	}
+	return env.State.Set(outcomesKey, append(outcomes, ev))
+}
+
+// refusal is the tracker turning down share text, with its reason.
+type refusal string
+
+func (r refusal) Error() string { return string(r) }
+
+// share sends share text to the tracker, returning its message.
+func (m *Monitor) share(ctx context.Context, client *http.Client, text string) (string, error) {
+	body, _ := json.Marshal(map[string]string{"player": m.cfg.Player, "text": text})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.cfg.URL+"/api/share", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Message string `json:"message"`
+		Error   string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", fmt.Errorf("dailies /api/share: %s", resp.Status)
+	}
+	switch {
+	case resp.StatusCode == http.StatusOK:
+		return out.Message, nil
+	case resp.StatusCode == http.StatusConflict || resp.StatusCode == http.StatusUnprocessableEntity:
+		return "", refusal(out.Error)
+	}
+	return "", fmt.Errorf("dailies /api/share: %s: %s", resp.Status, out.Error)
 }
 
 // untilTomorrow is how long until just after the tracker's next day

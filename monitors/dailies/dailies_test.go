@@ -41,6 +41,20 @@ func fakeTracker(t *testing.T, ends ...string) *httptest.Server {
 			map[string]any{"game": "wikidle", "player": "M"},
 		}})
 	})
+	mux.HandleFunc("POST /api/share", func(w http.ResponseWriter, r *http.Request) {
+		var in struct{ Player, Text string }
+		json.NewDecoder(r.Body).Decode(&in)
+		switch in.Text {
+		case "Wordle 1,578 4/6":
+			js(w, map[string]any{"message": "Logged " + in.Player + "'s Wordle: 4/6."})
+		case "broken":
+			w.WriteHeader(http.StatusInternalServerError)
+			js(w, map[string]any{"error": "saving: disk full"})
+		default:
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			js(w, map[string]any{"error": "Couldn't tell which game that's from."})
+		}
+	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
@@ -89,6 +103,36 @@ func tones(stats []monitor.Stat) []monitor.Tone {
 		out = append(out, s.Tone)
 	}
 	return out
+}
+
+func TestPaste(t *testing.T) {
+	srv := fakeTracker(t)
+	raw, _ := json.Marshal(map[string]any{"url": srv.URL, "player": "M"})
+	m, err := New(raw)
+	require.NoError(t, err)
+	env := monitortest.Env(now)
+	ctx := context.Background()
+
+	require.NoError(t, m.Act(ctx, env, monitor.Action{Type: "paste", Text: "Wordle 1,578 4/6"}))
+	env.Now = func() time.Time { return now.Add(time.Second) }
+	require.NoError(t, m.Act(ctx, env, monitor.Action{Type: "paste", Text: "a shopping list"}))
+	res, err := m.Poll(ctx, env)
+	require.NoError(t, err)
+	require.Len(t, res.Events, 2)
+	assert.Equal(t, "Logged M's Wordle: 4/6.", res.Events[0].Title)
+	assert.True(t, res.Events[0].Quiet, "the panel shows it")
+	assert.Equal(t, "Not logged", res.Events[1].Title)
+	assert.Equal(t, "Couldn't tell which game that's from.", res.Events[1].Body)
+	assert.False(t, res.Events[1].Quiet, "a refusal notifies")
+	assert.NotEqual(t, res.Events[0].Key, res.Events[1].Key)
+	assert.NotEmpty(t, res.Paste)
+
+	res, err = m.Poll(ctx, env)
+	require.NoError(t, err)
+	assert.Empty(t, res.Events, "each told once")
+
+	assert.ErrorContains(t, m.Act(ctx, env, monitor.Action{Type: "paste", Text: "broken"}), "disk full")
+	assert.ErrorIs(t, m.Act(ctx, env, monitor.Action{Type: "toggle"}), monitor.ErrBadAction)
 }
 
 func TestConfig(t *testing.T) {

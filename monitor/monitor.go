@@ -89,6 +89,10 @@ type Result struct {
 	// fills the calendar), so clients leave it off the dashboard and show
 	// it with their settings, for diagnosing it.
 	Background bool
+	// Paste, if set, gives the panel a button that sends a "paste" action
+	// with the clipboard's text, e.g. a game's share text for the dailies.
+	// It's the button's tooltip.
+	Paste string
 	// Events are things that happened. The engine drops any whose Key the
 	// monitor has emitted before, so monitors can re-emit freely.
 	Events []Event
@@ -148,9 +152,11 @@ type Snapshot struct {
 	// Timely is the last good poll's Result.Timely.
 	Timely bool `json:"timely,omitempty"`
 	// Background is the last good poll's Result.Background.
-	Background bool    `json:"background,omitempty"`
-	Blocks     []Block `json:"blocks"`
-	Summary    []Stat  `json:"summary,omitempty"`
+	Background bool `json:"background,omitempty"`
+	// Paste is the last good poll's Result.Paste.
+	Paste   string  `json:"paste,omitempty"`
+	Blocks  []Block `json:"blocks"`
+	Summary []Stat  `json:"summary,omitempty"`
 	// SummaryStyle is how to draw Summary; empty for plain tiles.
 	SummaryStyle SummaryStyle `json:"summaryStyle,omitempty"`
 }
