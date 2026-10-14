@@ -146,8 +146,9 @@ in a film's screening or a venue for titles that don't say; changing the
 Other monitors can add events too (the `mail` monitor's bookings): an
 `upsert` action with a `calendar.Added` as its data adds or replaces one
 by its `key`, and `remove` takes it away. They show alongside the feeds',
-with their `source` as the calendar's name, their own `detail` in place
-of a Gemini note, and reminders like any other event.
+with their `source` and own `detail` in place of a Gemini note, and
+reminders like any other event. One a feed already has (the same start,
+and a word in common) is left out.
 
 Each feed's address is a secret, so put it in the environment:
 
