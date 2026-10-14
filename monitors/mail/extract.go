@@ -26,7 +26,8 @@ type Gemini struct {
 	// APIKey is a Gemini API key; use "${NAME}" to keep it in the
 	// environment.
 	APIKey string `json:"apiKey"`
-	// Model defaults to gemini-3.8-flash.
+	// Model defaults to gemini-3.5-flash-lite: picking details out of an
+	// email is simple work, and there can be hundreds on a first read.
 	Model string `json:"model"`
 	// Context tells Gemini a little about you, e.g. who lives with you, to
 	// help it judge how long things last.
@@ -45,7 +46,7 @@ func newGemini(c Gemini) (*gemini, error) {
 		return nil, fmt.Errorf("gemini needs an apiKey")
 	}
 	if c.Model == "" {
-		c.Model = "gemini-3.8-flash"
+		c.Model = "gemini-3.5-flash-lite"
 	}
 	if c.URL == "" {
 		c.URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
@@ -57,7 +58,7 @@ const instruction = `You read one email for someone's personal dashboard and pul
 
 - events: things they'll attend or must be in for, with a date: gigs, matches, films, shows and other tickets; restaurant, hotel and travel bookings (each flight or train leg its own event); appointments (doctor, dentist, haircut, car service); grocery deliveries and other booked delivery or collection slots. Not ordinary parcel deliveries. title is short and specific, as they'd write it ("Vildhjarta", "Dentist", "Waitrose delivery", "Flight to Lisbon"). date is YYYY-MM-DD; start and end are 24-hour HH:MM in UK time (convert if the email gives another zone), empty if unknown (end may be empty); endDate only for stays over several days (the last day). location is the venue and town, or empty. detail is one short line of what's useful on the day, separated by " · " (e.g. "2 tickets · doors 18:30 · ref K8X2P1"), or empty. key identifies the booking across emails, so a confirmation, a later change and a cancellation of the same thing share it: the merchant and its booking or order reference in lower case, plus what each event is if one booking has several, e.g. "easyjet-k8x2p1-outbound"; without a reference, the merchant and date.
 - cancelled: keys of events this email cancels, built the same way.
-- todos: things they must do by a date that the email asks for and that won't happen otherwise: return an item, collect a parcel from a locker, check in online, pay a balance, send a form. One short line each, with the deadline ("Return the boots to Amazon by Fri 30 Oct"). Never reviews, surveys, upsells or marketing. Only what's still to do as of today.
+- todos: things they must do by a date that the email asks for and that won't happen otherwise: return an item, collect a parcel from a locker, check in online, pay a balance, send a form. One short line each, with the deadline as a date without the weekday ("Return the boots to Amazon by 30 Oct"). Not things they merely can do, such as amending an order, managing a booking or rebooking a cancelled appointment, unless the email says they must. Never reviews, surveys, upsells or marketing. Only what's still to do as of today.
 - chores: IDs from the chore list this email shows were done, e.g. an order confirmation for the chore of placing that order. An email only about an order already placed (dispatch, delivery, a reminder) doesn't count.
 - routine: for an order of everyday consumables bought again and again from somewhere other than a supermarket's weekly shop (cleaning products, toiletries, pet food, coffee, filters, batteries, vitamins, contact lenses...), each item as a short generic name in lower case without brand or size ("dishwasher tablets", "cat litter"), with roughly how many days the quantity bought lasts them. Only from the confirmation of an order they placed themselves: not from dispatch, delivery or reminder emails about it, and never from a subscription or recurring order that arrives on its own (they needn't remember to reorder that). Leave out one-off purchases (gadgets, clothes, books, gifts).
 - summary: at most six words saying what the email is, e.g. "Vildhjarta tickets", "Amazon order: dishwasher tablets".`

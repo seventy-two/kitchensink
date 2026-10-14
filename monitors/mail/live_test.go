@@ -13,12 +13,13 @@ import (
 
 // TestLiveGemini sends made-up emails to the real Gemini API, to check the
 // instruction and schema; it runs only with MAIL_LIVE_GEMINI_KEY set.
+// MAIL_LIVE_GEMINI_MODEL tries another model.
 func TestLiveGemini(t *testing.T) {
 	key := os.Getenv("MAIL_LIVE_GEMINI_KEY")
 	if key == "" {
 		t.Skip("MAIL_LIVE_GEMINI_KEY not set")
 	}
-	g, err := newGemini(Gemini{APIKey: key})
+	g, err := newGemini(Gemini{APIKey: key, Model: os.Getenv("MAIL_LIVE_GEMINI_MODEL")})
 	require.NoError(t, err)
 	m := &Monitor{gemini: g, loc: london, chores: "chores",
 		choresDone: map[string]string{"waitrose-order": "a Waitrose groceries order being placed"}}
