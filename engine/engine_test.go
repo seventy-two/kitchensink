@@ -63,7 +63,7 @@ func block(text string) []monitor.Block {
 func TestPollRecordsAndNotifies(t *testing.T) {
 	m := &scripted{
 		results: []monitor.Result{
-			{Blocks: block("one"), Events: []monitor.Event{{Key: "a", Title: "A"}, {Key: "q", Title: "Q", Quiet: true}}},
+			{Blocks: block("one"), Events: []monitor.Event{{Key: "a", Title: "A"}, {Key: "q", Title: "Q", Quiet: true, Expires: now.Add(time.Minute)}}},
 			{Blocks: block("two"), Events: []monitor.Event{{Key: "a", Title: "A again"}, {Key: "b", Title: "B"}}, Next: time.Minute, Background: true, Paste: "Paste it"},
 			{},
 		},
@@ -84,6 +84,8 @@ func TestPollRecordsAndNotifies(t *testing.T) {
 	assert.Equal(t, []string{"A", "Q", "B"}, titles(events))
 	assert.Equal(t, monitor.PriorityNormal, events[0].Priority)
 	assert.Equal(t, "m", events[0].Monitor)
+	assert.True(t, events[0].Expires.IsZero())
+	assert.True(t, events[1].Expires.Equal(now.Add(time.Minute)), "a temporary event's expiry is kept")
 	assert.True(t, events[0].Time.Equal(now))
 	assert.Equal(t, []string{"A", "B"}, titles(n.events))
 

@@ -127,16 +127,19 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 
 const outcomesKey = "outcomes"
 
+// outcomeFor is how long a paste's outcome is shown.
+const outcomeFor = 2 * time.Minute
+
 // Act takes a "paste" action: share text from the clipboard, logged as
 // today's result for the player. The tracker works out the game and
 // score. Clients don't show an action's reply, so what happened, logged
-// or not, is an event at the next poll; a refusal notifies, since nothing
-// else on the panel changes.
+// or not, is a temporary event at the next poll.
 func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) error {
 	if a.Type != "paste" {
 		return fmt.Errorf("%w: dailies only takes pasted share text", monitor.ErrBadAction)
 	}
-	ev := monitor.Event{Key: fmt.Sprintf("paste:%d", env.Now().UnixNano()), Priority: monitor.PriorityNormal}
+	// Only worth seeing now: the user's just pressed the button.
+	ev := monitor.Event{Key: fmt.Sprintf("paste:%d", env.Now().UnixNano()), Quiet: true, Expires: env.Now().Add(outcomeFor)}
 	msg, err := m.share(ctx, env.HTTP, a.Text)
 	var refused refusal
 	switch {
@@ -145,7 +148,7 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 	case err != nil:
 		return err
 	default:
-		ev.Title, ev.Quiet = msg, true
+		ev.Title = msg
 	}
 	var outcomes []monitor.Event
 	if _, err := env.State.Get(outcomesKey, &outcomes); err != nil {

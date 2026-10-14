@@ -137,6 +137,11 @@ type Event struct {
 	// Updated is when the event was last changed by an update, for clients
 	// to replace the copy they have.
 	Updated time.Time `json:"updated,omitzero"`
+	// Expires, if set, makes the event temporary: worth seeing only until
+	// then, like the outcome of something the user just did. Clients show
+	// temporary events apart from the history while they last, then drop
+	// them.
+	Expires time.Time `json:"expires,omitzero"`
 }
 
 // Snapshot is the current state of one monitor, as clients render it.

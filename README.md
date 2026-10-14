@@ -30,7 +30,7 @@ notification for each event.
 | `calendar` | iCalendar (ICS) feeds, e.g. Google or Outlook | each timed event, `remindMinutes` (default 10) before it starts |
 | `football` | `nfl` and `fantasy` together as one panel (see below) | what each of them notifies |
 | `mail` | IMAP (e.g. Gmail) and Outlook mailboxes, read by Gemini for bookings, orders and things to do, which it adds to the calendar, to-do list and chores (below) | nothing itself (each finding is a quiet event); a sign-in code when an Outlook account needs one |
-| `dailies` | a dailies tracker (a separate app)'s games and today's results: every game, linked and marked once `player` has logged it; the summary is a chip for each (`names` gives them shorter names by game ID), green once played. Its paste button logs a game's share text from the clipboard | a pasted result that wasn't logged, and why (a logged one is a quiet event) |
+| `dailies` | a dailies tracker (a separate app)'s games and today's results: every game, linked and marked once `player` has logged it; the summary is a chip for each (`names` gives them shorter names by game ID), green once played. Its paste button logs a game's share text from the clipboard | what happened to each paste, logged or not and why, as a temporary event |
 
 Each monitor also returns a dashboard panel and a short summary (shown when
 space is short), polls on its own interval and can ask to be polled sooner
@@ -277,8 +277,10 @@ The stream sends:
 Each `event` message carries the event's ID as its SSE `id`.
 
 **Event**: `id`, `monitor`, `key`, `time`, `title`, `body`, `url`, `image`,
-`priority` (`low`, `normal`, `high`), `quiet` and `updated`. Quiet events go
-in the history but shouldn't raise a notification. A monitor can update an
+`priority` (`low`, `normal`, `high`), `quiet`, `updated` and `expires`. Quiet events go
+in the history but shouldn't raise a notification. An event with `expires` is
+temporary: it matters only until then (the dailies' paste outcomes), so
+clients show it apart from the history while it lasts, then drop it. A monitor can update an
 event it raised earlier (e.g. a price move that's since changed); the
 stream then sends it again with the same `id` and an `updated` time, and
 clients replace their copy without notifying. A client that reconnects
