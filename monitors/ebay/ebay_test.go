@@ -152,10 +152,7 @@ func TestPoll(t *testing.T) {
 
 	res, err := m.Poll(context.Background(), env)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"listing/v1|2|0", "listing/v1|1|0"}, monitortest.Keys(res.Events))
-	for _, e := range res.Events {
-		assert.True(t, e.Quiet, "listings already up at the first check aren't new")
-	}
+	assert.Empty(t, res.Events, "listings already up at the first check aren't new")
 	assert.Contains(t, eb.queries[0], "q=big+box+pc")
 	assert.Contains(t, eb.queries[0], "sort=newlyListed")
 	assert.NotContains(t, eb.queries[0], "category_ids", "_sacat=0 is all categories")
@@ -243,13 +240,10 @@ func TestRarity(t *testing.T) {
 	}
 	res, err := m.Poll(context.Background(), env)
 	require.NoError(t, err)
-	require.Len(t, res.Events, 3)
-	assert.True(t, res.Events[0].Quiet, "common, so only under Recent")
-	assert.Equal(t, "£20", res.Events[0].Body)
-	assert.False(t, res.Events[1].Quiet)
-	assert.Equal(t, "£35 · uncommon", res.Events[1].Body)
-	assert.False(t, res.Events[2].Quiet)
-	assert.Equal(t, "£150 · rare", res.Events[2].Body)
+	require.Equal(t, []string{"listing/v1|2|0", "listing/v1|3|0"}, monitortest.Keys(res.Events), "common, so only in the panel")
+	assert.False(t, res.Events[0].Quiet)
+	assert.Equal(t, "£35 · uncommon", res.Events[0].Body)
+	assert.Equal(t, "£150 · rare", res.Events[1].Body)
 
 	rows := res.Blocks[0].Rows
 	assert.Equal(t, "", rows[0][0].Detail)
@@ -318,9 +312,9 @@ func TestIgnore(t *testing.T) {
 	eb.items = append([]map[string]any{listing("3", again, "80", now, false, 0)}, eb.items...)
 	res, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
-	require.Equal(t, []string{"listing/v1|3|0"}, monitortest.Keys(res.Events))
-	assert.True(t, res.Events[0].Quiet)
-	assert.Equal(t, "£80", res.Events[0].Body)
+	assert.Empty(t, res.Events, "ignored, so only in the panel")
+	assert.Equal(t, "Wipeout", res.Blocks[0].Rows[0][0].Text)
+	assert.Equal(t, "", res.Blocks[0].Rows[0][0].Detail)
 
 	assert.ErrorIs(t, m.Act(context.Background(), env, monitor.Action{Type: "ignore", ID: "v1|99|0"}), monitor.ErrBadAction)
 	assert.ErrorIs(t, m.Act(context.Background(), env, monitor.Action{Type: "nope"}), monitor.ErrBadAction)

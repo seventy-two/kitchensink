@@ -46,9 +46,9 @@ type Config struct {
 	Name   string `json:"name"`
 	Gemini Gemini `json:"gemini"`
 	// Notify is the least rarity Gemini must give a new listing for it to
-	// notify: "uncommon" or "rare". Others still show under Recent, quietly.
-	// Empty notifies for every new listing, as does one Gemini gave no
-	// rarity.
+	// notify: "uncommon" or "rare". Others make no event, so they're only
+	// in the panel. Empty notifies for every new listing, as does one
+	// Gemini gave no rarity.
 	Notify string `json:"notify"`
 	// Limit is how many of the newest listings to read and show (default
 	// 50, at most 200).
@@ -363,23 +363,26 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 			if _, ok := rarity[it.ItemID]; m.gemini != nil && !ok && !judgedAll {
 				continue
 			}
-			body := it.price()
-			if k := it.kind(); k != "" {
-				body += " · " + k
+			// Only listings worth a notification become events: the
+			// first check's, and those below notify, would only fill
+			// Recent.
+			if r := rarityOf(it); baselined && m.notifies(r) {
+				body := it.price()
+				if k := it.kind(); k != "" {
+					body += " · " + k
+				}
+				if rank(r) > 0 {
+					body += " · " + r
+				}
+				events = append(events, monitor.Event{
+					Key:   "listing/" + it.ItemID,
+					Time:  it.ItemCreationDate,
+					Title: nameOf(it),
+					Body:  body,
+					URL:   it.link(),
+					Image: it.Image.ImageURL,
+				})
 			}
-			r := rarityOf(it)
-			if rank(r) > 0 {
-				body += " · " + r
-			}
-			events = append(events, monitor.Event{
-				Key:   "listing/" + it.ItemID,
-				Time:  it.ItemCreationDate,
-				Title: nameOf(it),
-				Body:  body,
-				URL:   it.link(),
-				Image: it.Image.ImageURL,
-				Quiet: !baselined || !m.notifies(r),
-			})
 		}
 		seen[it.ItemID] = now
 	}
