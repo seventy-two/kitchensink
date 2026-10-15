@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/seventy-two/kitchensink/monitor"
 	"github.com/seventy-two/kitchensink/monitor/monitortest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -76,14 +77,15 @@ func listing(id, title, price string, created time.Time, auction bool, bids int)
 
 type fakeGemini struct {
 	*httptest.Server
-	mu    sync.Mutex
-	names map[string]string // by title
-	asked [][]string
-	fail  bool
+	mu     sync.Mutex
+	names  map[string]string // by title
+	rarity map[string]string // by title
+	asked  [][]string
+	fail   bool
 }
 
 func newFakeGemini(t *testing.T) *fakeGemini {
-	g := &fakeGemini{names: map[string]string{}}
+	g := &fakeGemini{names: map[string]string{}, rarity: map[string]string{}}
 	g.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct{ Input string }
 		json.NewDecoder(r.Body).Decode(&req)
@@ -100,7 +102,7 @@ func newFakeGemini(t *testing.T) *fakeGemini {
 		for _, l := range list {
 			titles = append(titles, l.Title)
 			if n, ok := g.names[l.Title]; ok {
-				out = append(out, map[string]string{"id": l.ID, "name": n})
+				out = append(out, map[string]string{"id": l.ID, "name": n, "rarity": g.rarity[l.Title]})
 			}
 		}
 		g.asked = append(g.asked, titles)
@@ -114,14 +116,22 @@ func newFakeGemini(t *testing.T) *fakeGemini {
 }
 
 func newMonitor(t *testing.T, api, gem string) *Monitor {
-	raw, _ := json.Marshal(map[string]any{
+	return newMonitorWith(t, api, gem, nil)
+}
+
+func newMonitorWith(t *testing.T, api, gem string, extra map[string]any) *Monitor {
+	c := map[string]any{
 		"searchURL":    "https://www.ebay.co.uk/sch/i.html?_nkw=big+box+pc&_sacat=0&_from=R40&_sop=10",
 		"clientId":     "id",
 		"clientSecret": "secret",
 		"name":         "a boxed PC game",
 		"apiURL":       api,
 		"gemini":       map[string]any{"apiKey": "k", "url": gem},
-	})
+	}
+	for k, v := range extra {
+		c[k] = v
+	}
+	raw, _ := json.Marshal(c)
 	m, err := New(raw)
 	require.NoError(t, err)
 	return m
@@ -209,4 +219,68 @@ func TestNeedsKeys(t *testing.T) {
 	assert.Error(t, err)
 	_, err = New(json.RawMessage(`{"clientId":"a","clientSecret":"b"}`))
 	assert.Error(t, err)
+}
+
+func TestRarity(t *testing.T) {
+	eb, gem := newFakeEbay(t), newFakeGemini(t)
+	m := newMonitorWith(t, eb.URL, gem.URL, map[string]any{"notify": "uncommon"})
+	env := monitortest.Env(now)
+	_, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+
+	quake := "QUAKE id software big box RARE!! L@@K"
+	sin := "SiN pc big box activision 1998"
+	ewj := "Earthworm Jim 1 & 2 big box sealed"
+	for title, j := range map[string][2]string{
+		quake: {"Quake", "common"}, sin: {"SiN", "uncommon"}, ewj: {"Earthworm Jim 1 + 2", "rare"},
+	} {
+		gem.names[title], gem.rarity[title] = j[0], j[1]
+	}
+	eb.items = []map[string]any{
+		listing("1", quake, "20", now, false, 0),
+		listing("2", sin, "35", now, false, 0),
+		listing("3", ewj, "150", now, false, 0),
+	}
+	res, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	require.Len(t, res.Events, 3)
+	assert.True(t, res.Events[0].Quiet, "common, so only under Recent")
+	assert.Equal(t, "£20", res.Events[0].Body)
+	assert.False(t, res.Events[1].Quiet)
+	assert.Equal(t, "£35 · uncommon", res.Events[1].Body)
+	assert.False(t, res.Events[2].Quiet)
+	assert.Equal(t, "£150 · rare", res.Events[2].Body)
+
+	rows := res.Blocks[0].Rows
+	assert.Equal(t, "", rows[0][0].Detail)
+	assert.Equal(t, "uncommon", rows[1][0].Detail)
+	assert.Equal(t, monitor.ToneNone, rows[1][0].Tone)
+	assert.Equal(t, "rare", rows[2][0].Detail)
+	assert.Equal(t, monitor.ToneAccent, rows[2][0].Tone)
+}
+
+func TestRarityOfListingsNamedBefore(t *testing.T) {
+	eb, gem := newFakeEbay(t), newFakeGemini(t)
+	m := newMonitorWith(t, eb.URL, gem.URL, map[string]any{"notify": "rare"})
+	env := monitortest.Env(now)
+	title := "DOOM 2 big box gt interactive"
+	eb.items = []map[string]any{listing("5", title, "40", now, false, 0)}
+	require.NoError(t, env.State.Set(baselineKey, true))
+	require.NoError(t, env.State.Set(seenKey, map[string]time.Time{"v1|5|0": now}))
+	require.NoError(t, env.State.Set(namesKey, map[string]string{"v1|5|0": "Doom II"}))
+	gem.names[title], gem.rarity[title] = "Doom II: Hell on Earth", "common"
+
+	res, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Empty(t, res.Events, "already reported")
+	assert.Equal(t, [][]string{{title}}, gem.asked, "asked how rare it is")
+	_, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Len(t, gem.asked, 1, "and only once")
+}
+
+func TestNotifyMustBeARarity(t *testing.T) {
+	raw, _ := json.Marshal(map[string]any{"query": "x", "clientId": "id", "clientSecret": "s", "notify": "legendary"})
+	_, err := New(raw)
+	assert.ErrorContains(t, err, "common, uncommon, rare")
 }

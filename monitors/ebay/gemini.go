@@ -11,13 +11,13 @@ import (
 	"time"
 )
 
-// Gemini names what each listing is.
+// Gemini names what each listing is and says how rare it is.
 type Gemini struct {
 	// APIKey is a Gemini API key; use "${NAME}" to keep it in the
 	// environment.
 	APIKey string `json:"apiKey"`
-	// Model defaults to gemini-3.5-flash-lite: naming a listing is simple
-	// work.
+	// Model defaults to gemini-3.8-flash: judging rarity needs what it
+	// knows about each thing, which the lite model is weaker on.
 	Model string `json:"model"`
 	// URL replaces the Interactions API endpoint, for tests.
 	URL string `json:"url"`
@@ -27,7 +27,7 @@ type gemini struct{ Gemini }
 
 func newGemini(c Gemini) *gemini {
 	if c.Model == "" {
-		c.Model = "gemini-3.5-flash-lite"
+		c.Model = "gemini-3.8-flash"
 	}
 	if c.URL == "" {
 		c.URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
@@ -35,26 +35,47 @@ func newGemini(c Gemini) *gemini {
 	return &gemini{c}
 }
 
-const instruction = `You name eBay listings for a personal dashboard. Sellers pad their titles with keywords (platform, condition, "rare", "vintage", "big box", "PC CD-ROM", "complete", years, publishers, "VGC", "tested"), so give only what's being sold, as it's properly written: its official title with the right capitals and punctuation, e.g. "Ultima VII: The Black Gate", "Half-Life", "SimCity 2000". Keep an edition or extra only when it's part of what's sold ("Collector's Edition", "with Expansion Pack"). For several items, join them with " + ", or say "N games" for a large lot. If you can't tell what it is, tidy the title down to its likely name.`
+const instruction = `You name eBay listings for a personal dashboard. Sellers pad their titles with keywords (platform, condition, "rare", "vintage", "big box", "PC CD-ROM", "complete", years, publishers, "VGC", "tested"), so give only what's being sold, as it's properly written: its official title with the right capitals and punctuation, e.g. "Ultima VII: The Black Gate", "Half-Life", "SimCity 2000". Keep an edition or extra only when it's part of what's sold ("Collector's Edition", "with Expansion Pack"). For several items, join them with " + ", or say "N games" for a large lot. If you can't tell what it is, tidy the title down to its likely name.
+
+Also say how rare it is: how seldom a copy like this one comes up for sale, from what you know about the thing itself: how many were made, how many survive, and how much collectors want it. Ignore what the seller says about rarity ("rare", "HTF", "L@@K", "grail", "vintage") and the asking price; judge the thing, not the listing's words.
+
+Be strict. Most listings are "common", and that includes almost every well-known game, however old: big sellers and classics like Doom II, Duke Nukem 3D, Quake, Half-Life, Myst, Command & Conquer, Theme Park, Tomb Raider, Ultima, Master of Orion, Carmageddon and yearly sports games turned up in their hundreds of thousands, and copies are always for sale. Roughly 1 listing in 10 should be "uncommon": a game that sold poorly or came from a small publisher, a regional release, an early 1980s release, or a sealed copy of a sought-after game. Only about 1 in 50 should be "rare": something collectors actively hunt and seldom see, such as a limited or numbered collector's edition, a pre-release or promotional copy, a game pulled from sale, or a sealed copy of something that's already uncommon. If you're unsure, say "common".`
 
 var schema = map[string]any{
 	"type": "array",
 	"items": map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"id":   map[string]any{"type": "string"},
-			"name": map[string]any{"type": "string"},
+			"id":     map[string]any{"type": "string"},
+			"name":   map[string]any{"type": "string"},
+			"rarity": map[string]any{"type": "string", "enum": rarities},
 		},
-		"required": []string{"id", "name"},
+		"required": []string{"id", "name", "rarity"},
 	},
 }
 
 // geminiTimeout allows for a slow reply naming a page of listings.
 const geminiTimeout = 90 * time.Second
 
-// name asks Gemini what each listing is, by item ID. what says what kind of
-// thing they are, e.g. "a boxed PC game".
-func (g *gemini) name(ctx context.Context, client *http.Client, what string, items []item) (map[string]string, error) {
+// rarities are how rare Gemini can say a listing is, least first.
+var rarities = []string{"common", "uncommon", "rare"}
+
+// rank places a rarity in rarities, or -1 for none or one not known.
+func rank(r string) int {
+	for i, x := range rarities {
+		if x == r {
+			return i
+		}
+	}
+	return -1
+}
+
+// judged is what Gemini said about a listing.
+type judged struct{ Name, Rarity string }
+
+// judge asks Gemini what each listing is and how rare, by item ID. what says
+// what kind of thing they are, e.g. "a boxed PC game".
+func (g *gemini) judge(ctx context.Context, client *http.Client, what string, items []item) (map[string]judged, error) {
 	type in struct {
 		ID    string `json:"id"`
 		Title string `json:"title"`
@@ -70,7 +91,7 @@ func (g *gemini) name(ctx context.Context, client *http.Client, what string, ite
 	}
 	body, _ := json.Marshal(map[string]any{
 		"model":              g.Model,
-		"input":              "Name each listing, by its id:\n" + string(input),
+		"input":              "Name each listing and say how rare it is, by its id:\n" + string(input),
 		"system_instruction": sys,
 		"generation_config":  map[string]any{"thinking_level": "low", "max_output_tokens": 8000},
 		"response_format":    map[string]any{"type": "text", "mime_type": "application/json", "schema": schema},
@@ -116,19 +137,23 @@ func (g *gemini) name(ctx context.Context, client *http.Client, what string, ite
 			}
 		}
 	}
-	var got []struct{ ID, Name string }
+	var got []struct{ ID, Name, Rarity string }
 	if err := json.Unmarshal([]byte(text.String()), &got); err != nil {
 		return nil, fmt.Errorf("Gemini's reply isn't the JSON asked for: %w", err)
 	}
-	names := map[string]string{}
+	judgements := map[string]judged{}
 	asked := map[string]bool{}
 	for _, it := range items {
 		asked[it.ItemID] = true
 	}
 	for _, g := range got {
 		if n := strings.TrimSpace(g.Name); n != "" && asked[g.ID] {
-			names[g.ID] = n
+			j := judged{Name: n}
+			if rank(g.Rarity) >= 0 {
+				j.Rarity = g.Rarity
+			}
+			judgements[g.ID] = j
 		}
 	}
-	return names, nil
+	return judgements, nil
 }

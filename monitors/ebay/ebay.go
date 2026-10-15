@@ -44,6 +44,11 @@ type Config struct {
 	// without Gemini.
 	Name   string `json:"name"`
 	Gemini Gemini `json:"gemini"`
+	// Notify is the least rarity Gemini must give a new listing for it to
+	// notify: "uncommon" or "rare". Others still show under Recent, quietly.
+	// Empty notifies for every new listing, as does one Gemini gave no
+	// rarity.
+	Notify string `json:"notify"`
 	// Limit is how many of the newest listings to read and show (default
 	// 50, at most 200).
 	Limit int `json:"limit"`
@@ -90,6 +95,9 @@ func New(raw json.RawMessage) (*Monitor, error) {
 	}
 	if c.Marketplace == "" {
 		c.Marketplace = "EBAY_GB"
+	}
+	if c.Notify != "" && rank(c.Notify) < 0 {
+		return nil, fmt.Errorf("ebay notify must be one of %s", strings.Join(rarities, ", "))
 	}
 	if c.Limit <= 0 {
 		c.Limit = 50
@@ -273,6 +281,7 @@ const (
 	baselineKey = "baselined" // the first check has run; its listings weren't new
 	seenKey     = "seen"      // listings already reported, by ID, with when
 	namesKey    = "names"     // what Gemini called each listing, by ID
+	rarityKey   = "rarity"    // how rare Gemini said each listing is, by ID
 )
 
 // forget is how long a listing is remembered after it was last in the
@@ -289,26 +298,30 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		return monitor.Result{}, err
 	}
 
-	names := map[string]string{}
+	names, rarity := map[string]string{}, map[string]string{}
 	if _, err := env.State.Get(namesKey, &names); err != nil {
 		return monitor.Result{}, err
 	}
-	var unnamed []item
+	if _, err := env.State.Get(rarityKey, &rarity); err != nil {
+		return monitor.Result{}, err
+	}
+	// Listings named before rarity was asked for are asked about again.
+	var unjudged []item
 	for _, it := range items {
-		if _, ok := names[it.ItemID]; !ok {
-			unnamed = append(unnamed, it)
+		if _, ok := rarity[it.ItemID]; !ok {
+			unjudged = append(unjudged, it)
 		}
 	}
-	named := true
-	if m.gemini != nil && len(unnamed) > 0 {
-		got, err := m.gemini.name(ctx, env.HTTP, m.cfg.Name, unnamed)
+	judgedAll := true
+	if m.gemini != nil && len(unjudged) > 0 {
+		got, err := m.gemini.judge(ctx, env.HTTP, m.cfg.Name, unjudged)
 		if err != nil {
 			// Shown by title for now; tried again next poll.
 			env.Log.Warn("naming listings", "err", err)
-			named = false
+			judgedAll = false
 		}
-		for id, n := range got {
-			names[id] = n
+		for id, j := range got {
+			names[id], rarity[id] = j.Name, j.Rarity
 		}
 	}
 	nameOf := func(it item) string {
@@ -332,14 +345,18 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	var events []monitor.Event
 	for _, it := range items {
 		if _, ok := seen[it.ItemID]; !ok {
-			// Wait for a name before reporting it, unless there's no
-			// Gemini to ask.
-			if m.gemini != nil && names[it.ItemID] == "" && !named {
+			// Wait for Gemini's say before reporting it, unless there's
+			// no Gemini to ask.
+			if _, ok := rarity[it.ItemID]; m.gemini != nil && !ok && !judgedAll {
 				continue
 			}
 			body := it.price()
 			if k := it.kind(); k != "" {
 				body += " · " + k
+			}
+			r := rarity[it.ItemID]
+			if rank(r) > 0 {
+				body += " · " + r
 			}
 			events = append(events, monitor.Event{
 				Key:   "listing/" + it.ItemID,
@@ -348,7 +365,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 				Body:  body,
 				URL:   it.link(),
 				Image: it.Image.ImageURL,
-				Quiet: !baselined,
+				Quiet: !baselined || !m.notifies(r),
 			})
 		}
 		seen[it.ItemID] = now
@@ -357,19 +374,20 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		if now.Sub(t) > forget {
 			delete(seen, id)
 			delete(names, id)
+			delete(rarity, id)
 		}
 	}
 	for _, kv := range []struct {
 		key string
 		v   any
-	}{{seenKey, seen}, {namesKey, names}, {baselineKey, true}} {
+	}{{seenKey, seen}, {namesKey, names}, {rarityKey, rarity}, {baselineKey, true}} {
 		if err := env.State.Set(kv.key, kv.v); err != nil {
 			return monitor.Result{}, err
 		}
 	}
 
-	table := m.table(items, nameOf, now)
-	short := m.table(items[:min(summaryRows, len(items))], nameOf, now)
+	table := m.table(items, nameOf, rarity, now)
+	short := m.table(items[:min(summaryRows, len(items))], nameOf, rarity, now)
 	var summary []monitor.Stat
 	for _, it := range items[:min(summaryRows, len(items))] {
 		summary = append(summary, monitor.Stat{Label: nameOf(it), Value: it.price(), Detail: m.when(it.ItemCreationDate, now)})
@@ -383,7 +401,16 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	}, nil
 }
 
-func (m *Monitor) table(items []item, nameOf func(item) string, now time.Time) monitor.Block {
+// notifies says whether a new listing of this rarity is worth a
+// notification.
+func (m *Monitor) notifies(rarity string) bool {
+	r := rank(rarity)
+	return m.cfg.Notify == "" || r < 0 || r >= rank(m.cfg.Notify)
+}
+
+// table lists the listings; uncommon and rare ones say so under their name,
+// and rare ones stand out.
+func (m *Monitor) table(items []item, nameOf func(item) string, rarity map[string]string, now time.Time) monitor.Block {
 	b := monitor.Block{
 		Type: monitor.BlockTable,
 		Columns: []monitor.Column{
@@ -394,8 +421,15 @@ func (m *Monitor) table(items []item, nameOf func(item) string, now time.Time) m
 		Rows: [][]monitor.Cell{},
 	}
 	for _, it := range items {
+		name := monitor.Cell{Text: nameOf(it), URL: it.link()}
+		if r := rarity[it.ItemID]; rank(r) > 0 {
+			name.Detail = r
+		}
+		if rarity[it.ItemID] == "rare" {
+			name.Tone = monitor.ToneAccent
+		}
 		b.Rows = append(b.Rows, []monitor.Cell{
-			{Text: nameOf(it), URL: it.link()},
+			name,
 			{Text: it.price(), Detail: it.kind()},
 			{Text: m.when(it.ItemCreationDate, now), Tone: monitor.ToneMuted},
 		})
