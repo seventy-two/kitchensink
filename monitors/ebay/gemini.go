@@ -11,7 +11,8 @@ import (
 	"time"
 )
 
-// Gemini names what each listing is and says how rare it is.
+// Gemini names what each listing is and rates how notable it is to a
+// collector.
 type Gemini struct {
 	// APIKey is a Gemini API key; use "${NAME}" to keep it in the
 	// environment.
@@ -37,9 +38,18 @@ func newGemini(c Gemini) *gemini {
 
 const instruction = `You name eBay listings for a personal dashboard. Sellers pad their titles with keywords (platform, condition, "rare", "vintage", "big box", "PC CD-ROM", "complete", years, publishers, "VGC", "tested"), so give only what's being sold, as it's properly written: its official title with the right capitals and punctuation, e.g. "Ultima VII: The Black Gate", "Half-Life", "SimCity 2000". Keep an edition or extra only when it's part of what's sold ("Collector's Edition", "with Expansion Pack"). For several items, join them with " + ", or say "N games" for a large lot. If you can't tell what it is, tidy the title down to its likely name.
 
-Also say how rare it is: how seldom a copy like this one comes up for sale, from what you know about the thing itself: how many were made, how many survive, and how much collectors want it. Ignore what the seller says about rarity ("rare", "HTF", "L@@K", "grail", "vintage") and the asking price; judge the thing, not the listing's words.
+Also rate how notable it is to a collector of big box PC games: "common", "uncommon" or "rare". What counts is a game people have heard of whose boxed PC copy is hard to find, or a special version of a box. Judge the thing itself, from what you know of it; ignore what the seller says ("rare", "HTF", "L@@K", "grail", "vintage") and the asking price.
 
-Be strict. Most listings are "common", and that includes almost every well-known game, however old: big sellers and classics like Doom II, Duke Nukem 3D, Quake, Half-Life, Myst, Command & Conquer, Theme Park, Tomb Raider, Ultima, Master of Orion, Carmageddon and yearly sports games turned up in their hundreds of thousands, and copies are always for sale. Roughly 1 listing in 10 should be "uncommon": a game that sold poorly or came from a small publisher, a regional release, an early 1980s release, or a sealed copy of a sought-after game. Only about 1 in 50 should be "rare": something collectors actively hunt and seldom see, such as a limited or numbered collector's edition, a pre-release or promotional copy, a game pulled from sale, or a sealed copy of something that's already uncommon. If you're unsure, say "common".`
+"rare" is for:
+- A well-known, popular game, often one famous on consoles, whose big box PC release sold few copies or seldom turns up, e.g. Wipeout, Rayman, Croc, Crash Bandicoot, Oddworld: Abe's Oddysee, Metal Gear Solid, Final Fantasy VII, Resident Evil, Silent Hill 2.
+- A special or unique version of a box: a shadowbox (e.g. Unreal's), a tin, a limited, numbered or collector's edition, an oversized or unusual box, a pre-release or promotional copy. Compilations, bundles of a game with its expansions, budget re-releases and "Gold" or "Game of the Year" editions aren't special versions.
+
+"uncommon" is a well-known game whose big box doesn't come up often, but less so than the above.
+
+"common" is everything else, which is most listings:
+- Big sellers and classics, however old, copies of which are always for sale: Doom II, Duke Nukem 3D, Quake, Half-Life, Myst, Command & Conquer, Theme Park, Tomb Raider, Ultima, Master of Orion, Carmageddon, yearly sports games, the standard edition of Unreal.
+- Obscure games few people know, however scarce: no collector is hunting B.A.T. or Iron Assault.
+Being sealed or new doesn't make a listing rare: at most it makes a common game uncommon. If you're unsure, say "common".`
 
 var schema = map[string]any{
 	"type": "array",

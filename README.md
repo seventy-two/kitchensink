@@ -234,8 +234,9 @@ Cert ID as `clientId` and `clientSecret`. The search is a `searchURL`
 copied from the site (its keywords and category are used; the sort is
 always newest first) or a `query` and `category`. `name` says what's
 listed, to help Gemini name things. Gemini also rates each listing
-`common`, `uncommon` or `rare`, from what it knows of the thing itself
-(not the seller's "RARE" or the price); `notify` is the least rarity that
+`common`, `uncommon` or `rare` for a collector, from what it knows of the
+thing itself (not the seller's "RARE" or the price): rare is a well-known
+game whose boxed copy seldom turns up, or a special version of a box; `notify` is the least rarity that
 notifies, the rest going under Recent quietly (empty: every new listing).
 
 ```json
