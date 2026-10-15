@@ -378,7 +378,6 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		Blocks:       []monitor.Block{table},
 		Summary:      summary,
 		SummaryBlock: &short,
-		Subtitle:     fmt.Sprintf("“%s”, newest first", m.cfg.Query),
 		Events:       events,
 		Timely:       true,
 	}, nil
