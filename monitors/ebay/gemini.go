@@ -38,18 +38,21 @@ func newGemini(c Gemini) *gemini {
 
 const instruction = `You name eBay listings for a personal dashboard. Sellers pad their titles with keywords (platform, condition, "rare", "vintage", "big box", "PC CD-ROM", "complete", years, publishers, "VGC", "tested"), so give only what's being sold, as it's properly written: its official title with the right capitals and punctuation, e.g. "Ultima VII: The Black Gate", "Half-Life", "SimCity 2000". Keep an edition or extra only when it's part of what's sold ("Collector's Edition", "with Expansion Pack"). For several items, join them with " + ", or say "N games" for a large lot. If you can't tell what it is, tidy the title down to its likely name.
 
-Also rate how notable it is to a collector of big box PC games: "common", "uncommon" or "rare". What counts is a game people have heard of whose boxed PC copy is hard to find, or a special version of a box. Judge the thing itself, from what you know of it; ignore what the seller says ("rare", "HTF", "L@@K", "grail", "vintage") and the asking price.
+Also rate how notable it is to a collector of big box PC games: "common", "uncommon" or "rare". The collector wants famous games whose boxed PC copy is hard to find, and special versions of boxes; nothing else. Judge the thing itself, from what you know of it; ignore what the seller says ("rare", "HTF", "L@@K", "grail", "vintage", "sealed", "mint") and the asking price.
 
 "rare" is for:
-- A well-known, popular game, often one famous on consoles, whose big box PC release sold few copies or seldom turns up, e.g. Wipeout, Rayman, Croc, Crash Bandicoot, Oddworld: Abe's Oddysee, Metal Gear Solid, Final Fantasy VII, Resident Evil, Silent Hill 2.
-- A special or unique version of a box: a shadowbox (e.g. Unreal's), a tin, a limited, numbered or collector's edition, an oversized or unusual box, a pre-release or promotional copy. Compilations, bundles of a game with its expansions, budget re-releases and "Gold" or "Game of the Year" editions aren't special versions.
+- A household-name game, usually one famous on consoles, whose big box PC release sold few copies and seldom turns up, e.g. Wipeout, Rayman, Croc, Crash Bandicoot, Final Fantasy VII, Metal Gear Solid.
+- A special version of a box: a shadowbox (e.g. Unreal's), a tin, a limited, numbered or collector's edition, an unusually shaped or oversized box, a pre-release or promotional copy.
 
-"uncommon" is a well-known game whose big box doesn't come up often, but less so than the above.
+"uncommon" is the same kind of thing, a little less striking: a well-known game, often one famous on consoles or from a big series, whose PC big box doesn't turn up often, e.g. Little Big Adventure.
 
-"common" is everything else, which is most listings:
-- Big sellers and classics, however old, copies of which are always for sale: Doom II, Duke Nukem 3D, Quake, Half-Life, Myst, Command & Conquer, Theme Park, Tomb Raider, Ultima, Master of Orion, Carmageddon, yearly sports games, the standard edition of Unreal.
-- Obscure games few people know, however scarce: no collector is hunting B.A.T. or Iron Assault.
-Being sealed or new doesn't make a listing rare: at most it makes a common game uncommon. If you're unsure, say "common".`
+"common" is everything else, which is nearly every listing, including:
+- PC games of the DOS and early Windows era, however old, classic or loved: their big boxes turn up all the time. Sierra and LucasArts adventures, Ultima, Origin, MicroProse, Westwood, Bullfrog, Apogee and id shooters, Doom, Quake, Duke Nukem 3D, Rise of the Triad, Simon the Sorcerer, Myst, Half-Life, Tomb Raider, Carmageddon, Worms, the standard edition of Unreal.
+- Expansion packs, mission packs, add-ons, compilations, bundles, budget re-releases and "Gold" or "Game of the Year" editions.
+- Versions for anything but the PC (Apple II, Amiga, Atari ST, C64, Mac).
+- Obscure games few people have heard of, however scarce.
+- Sports, flight sims, edutainment and licensed kids' games.
+Being sealed or new never makes a listing more notable. If you're unsure, say "common".`
 
 var schema = map[string]any{
 	"type": "array",
