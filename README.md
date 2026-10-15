@@ -239,7 +239,7 @@ thing itself (not the seller's "RARE" or the price): rare is a famous game
 (often a console one) whose boxed PC copy seldom turns up, or a special
 version of a box; uncommon the same, less striking; everything else
 (DOS-era PC classics, expansions, sealed copies, other platforms, obscure
-games) is common; `notify` is the least rarity that
+games, anything after about 2004) is common; `notify` is the least rarity that
 notifies, the rest going under Recent quietly (empty: every new listing).
 
 ```json

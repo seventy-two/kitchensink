@@ -52,6 +52,7 @@ Also rate how notable it is to a collector of big box PC games: "common", "uncom
 - Versions for anything but the PC (Apple II, Amiga, Atari ST, C64, Mac).
 - Obscure games few people have heard of, however scarce.
 - Sports, flight sims, edutainment and licensed kids' games.
+- Anything released after about 2004, when big boxes had given way to DVD cases, collector's and limited editions included: they were made for collectors and kept boxed.
 Being sealed or new never makes a listing more notable. If you're unsure, say "common".`
 
 var schema = map[string]any{
