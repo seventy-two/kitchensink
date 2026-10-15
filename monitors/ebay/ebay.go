@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/seventy-two/kitchensink/monitor"
 )
@@ -282,6 +283,7 @@ const (
 	seenKey     = "seen"      // listings already reported, by ID, with when
 	namesKey    = "names"     // what Gemini called each listing, by ID
 	rarityKey   = "rarity"    // how rare Gemini said each listing is, by ID
+	ignoredKey  = "ignored"   // games never to flag, by key(name), with their names
 )
 
 // forget is how long a listing is remembered after it was last in the
@@ -303,6 +305,10 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		return monitor.Result{}, err
 	}
 	if _, err := env.State.Get(rarityKey, &rarity); err != nil {
+		return monitor.Result{}, err
+	}
+	ignored := map[string]string{}
+	if _, err := env.State.Get(ignoredKey, &ignored); err != nil {
 		return monitor.Result{}, err
 	}
 	// Listings named before rarity was asked for are asked about again.
@@ -330,6 +336,13 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		}
 		return strings.TrimSpace(it.Title)
 	}
+	// An ignored game counts as common, whatever Gemini says.
+	rarityOf := func(it item) string {
+		if _, ok := ignored[key(nameOf(it))]; ok {
+			return "common"
+		}
+		return rarity[it.ItemID]
+	}
 
 	var seen map[string]time.Time
 	if _, err := env.State.Get(seenKey, &seen); err != nil {
@@ -354,7 +367,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 			if k := it.kind(); k != "" {
 				body += " · " + k
 			}
-			r := rarity[it.ItemID]
+			r := rarityOf(it)
 			if rank(r) > 0 {
 				body += " · " + r
 			}
@@ -386,8 +399,8 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		}
 	}
 
-	table := m.table(items, nameOf, rarity, now)
-	short := m.table(items[:min(summaryRows, len(items))], nameOf, rarity, now)
+	table := m.table(items, nameOf, rarityOf, now)
+	short := m.table(items[:min(summaryRows, len(items))], nameOf, rarityOf, now)
 	var summary []monitor.Stat
 	for _, it := range items[:min(summaryRows, len(items))] {
 		summary = append(summary, monitor.Stat{Label: nameOf(it), Value: it.price(), Detail: m.when(it.ItemCreationDate, now)})
@@ -409,29 +422,34 @@ func (m *Monitor) notifies(rarity string) bool {
 }
 
 // table lists the listings; uncommon and rare ones say so under their name,
-// and rare ones stand out.
-func (m *Monitor) table(items []item, nameOf func(item) string, rarity map[string]string, now time.Time) monitor.Block {
+// rare ones stand out, and both have a button to ignore the game.
+func (m *Monitor) table(items []item, nameOf, rarityOf func(item) string, now time.Time) monitor.Block {
 	b := monitor.Block{
 		Type: monitor.BlockTable,
 		Columns: []monitor.Column{
 			{Title: "Listing", Fill: true},
 			{Title: "Price", Align: monitor.AlignRight},
 			{Title: "Listed", Align: monitor.AlignRight},
+			{Title: ""},
 		},
 		Rows: [][]monitor.Cell{},
 	}
 	for _, it := range items {
 		name := monitor.Cell{Text: nameOf(it), URL: it.link()}
-		if r := rarity[it.ItemID]; rank(r) > 0 {
+		r := rarityOf(it)
+		var ignore monitor.Cell
+		if rank(r) > 0 {
 			name.Detail = r
+			ignore.Action = &monitor.CellAction{Type: ignoreAction, ID: it.ItemID, Label: "Ignore " + nameOf(it) + " from now on"}
 		}
-		if rarity[it.ItemID] == "rare" {
+		if r == "rare" {
 			name.Tone = monitor.ToneAccent
 		}
 		b.Rows = append(b.Rows, []monitor.Cell{
 			name,
 			{Text: it.price(), Detail: it.kind()},
 			{Text: m.when(it.ItemCreationDate, now), Tone: monitor.ToneMuted},
+			ignore,
 		})
 	}
 	return b
@@ -455,4 +473,51 @@ func (m *Monitor) when(t, now time.Time) string {
 		return t.Format("2 Jan")
 	}
 	return t.Format("2 Jan 2006")
+}
+
+// ignoreAction is the action that ignores a listing's game: from then on,
+// its listings count as common, so they're neither marked nor notified.
+const ignoreAction = "ignore"
+
+// key is how game names are matched when ignoring: Gemini may write the
+// same name with different capitals or punctuation.
+func key(name string) string {
+	var b strings.Builder
+	space := false
+	for _, r := range strings.ToLower(name) {
+		switch {
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
+			if space && b.Len() > 0 {
+				b.WriteByte(' ')
+			}
+			b.WriteRune(r)
+			space = false
+		default:
+			space = true
+		}
+	}
+	return b.String()
+}
+
+// Act ignores a listing's game (an action of type "ignore" with the
+// listing's item ID).
+func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) error {
+	if a.Type != ignoreAction {
+		return fmt.Errorf("%w: %s", monitor.ErrBadAction, a.Type)
+	}
+	names := map[string]string{}
+	if _, err := env.State.Get(namesKey, &names); err != nil {
+		return err
+	}
+	name := names[a.ID]
+	if name == "" {
+		return fmt.Errorf("%w: no listing %q with a name", monitor.ErrBadAction, a.ID)
+	}
+	ignored := map[string]string{}
+	if _, err := env.State.Get(ignoredKey, &ignored); err != nil {
+		return err
+	}
+	ignored[key(name)] = name
+	env.Log.Info("ignoring a game", "name", name)
+	return env.State.Set(ignoredKey, ignored)
 }

@@ -284,3 +284,44 @@ func TestNotifyMustBeARarity(t *testing.T) {
 	_, err := New(raw)
 	assert.ErrorContains(t, err, "common, uncommon, rare")
 }
+
+func TestIgnore(t *testing.T) {
+	eb, gem := newFakeEbay(t), newFakeGemini(t)
+	m := newMonitorWith(t, eb.URL, gem.URL, map[string]any{"notify": "uncommon"})
+	env := monitortest.Env(now)
+	_, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+
+	wipeout := "WIPEOUT PC BIG BOX PSYGNOSIS"
+	quake := "quake big box"
+	gem.names[wipeout], gem.rarity[wipeout] = "WipEout", "rare"
+	gem.names[quake], gem.rarity[quake] = "Quake", "common"
+	eb.items = []map[string]any{listing("1", wipeout, "90", now, false, 0), listing("2", quake, "10", now, false, 0)}
+	res, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	rows := res.Blocks[0].Rows
+	require.NotNil(t, rows[0][3].Action, "a rare listing can be ignored")
+	assert.Equal(t, monitor.CellAction{Type: "ignore", ID: "v1|1|0", Label: "Ignore WipEout from now on"}, *rows[0][3].Action)
+	assert.Nil(t, rows[1][3].Action, "a common one has nothing to ignore")
+
+	require.NoError(t, m.Act(context.Background(), env, monitor.Action{Type: "ignore", ID: "v1|1|0"}))
+	res, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	rows = res.Blocks[0].Rows
+	assert.Equal(t, "", rows[0][0].Detail, "now counts as common")
+	assert.Equal(t, monitor.ToneNone, rows[0][0].Tone)
+	assert.Nil(t, rows[0][3].Action)
+
+	// Another copy, named a little differently, is ignored too.
+	again := "Wipeout pc cd rom 1995 RARE"
+	gem.names[again], gem.rarity[again] = "Wipeout", "rare"
+	eb.items = append([]map[string]any{listing("3", again, "80", now, false, 0)}, eb.items...)
+	res, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	require.Equal(t, []string{"listing/v1|3|0"}, monitortest.Keys(res.Events))
+	assert.True(t, res.Events[0].Quiet)
+	assert.Equal(t, "£80", res.Events[0].Body)
+
+	assert.ErrorIs(t, m.Act(context.Background(), env, monitor.Action{Type: "ignore", ID: "v1|99|0"}), monitor.ErrBadAction)
+	assert.ErrorIs(t, m.Act(context.Background(), env, monitor.Action{Type: "nope"}), monitor.ErrBadAction)
+}

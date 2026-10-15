@@ -314,6 +314,18 @@ type Cell struct {
 	// Local, if set, is a button for an app on the client's own machine,
 	// e.g. a downloader. Clients that don't have the app draw nothing.
 	Local *Local `json:"local,omitempty"`
+	// Action, if set, is a button that sends the monitor an action (see
+	// Actor), drawn in place of the cell's text.
+	Action *CellAction `json:"action,omitempty"`
+}
+
+// CellAction is a table cell's button: clicked, the client sends the
+// monitor an Action of this Type and ID. Label says what it does, e.g. for
+// a tooltip.
+type CellAction struct {
+	Type  string `json:"type"`
+	ID    string `json:"id,omitempty"`
+	Label string `json:"label"`
 }
 
 // Local is something a client can do with an app installed beside it,
