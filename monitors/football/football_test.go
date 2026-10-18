@@ -49,6 +49,8 @@ func TestOnePartFailing(t *testing.T) {
 	require.NotEmpty(t, res.Summary)
 	assert.Equal(t, "CHI @ GB", res.Summary[0].Label, "the followed team's game")
 	assert.True(t, res.Timely, "a game's on")
+	assert.True(t, res.Relevant.Contains(now), "relevant while it's on")
+	assert.False(t, res.Relevant.Contains(now.Add(relevantFor)), "until the polls stop")
 	assert.Contains(t, monitortest.Keys(res.Events), "kickoff:401872990")
 	var scores any
 	ok, err := env.State.Get("nfl/scores", &scores)

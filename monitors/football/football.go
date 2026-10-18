@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/seventy-two/kitchensink/monitor"
 	"github.com/seventy-two/kitchensink/monitors/fantasy"
@@ -120,8 +121,16 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 			out.Next = r.Next
 		}
 	}
+	// Relevant while a game's on; the window outlasts the live polls, so
+	// it lapses by itself if they stop.
+	if out.Timely {
+		out.Relevant.Until = env.Now().Add(relevantFor)
+	}
 	return out, nil
 }
+
+// relevantFor is how long a poll during a game keeps the panel relevant.
+const relevantFor = 10 * time.Minute
 
 // prefixed is a monitor's state with its keys under a prefix.
 type prefixed struct {

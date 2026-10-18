@@ -163,7 +163,16 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		short = blocks[1]
 	}
 	short.Rows = short.Rows[:min(len(short.Rows), shortRows)]
+	var seen time.Time
+	if _, err := env.State.Get(seenKey, &seen); err != nil {
+		return monitor.Result{}, err
+	}
+	var relevant monitor.Window
+	if !seen.IsZero() {
+		relevant.Until = seen.Add(playing)
+	}
 	return monitor.Result{
+		Relevant:     relevant,
 		Blocks:       blocks,
 		Summary:      append(dropChips(drops), summary(rows, len(drops) > 0)...),
 		SummaryStyle: monitor.SummaryChips,

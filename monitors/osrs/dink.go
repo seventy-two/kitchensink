@@ -66,7 +66,14 @@ const (
 	// lastKillKey is the metric Dink last counted a kill for, which a pet
 	// is put down to: Dink doesn't say where a pet came from.
 	lastKillKey = "lastKill"
+	// seenKey is when Dink last sent something from the player, i.e.
+	// they're playing.
+	seenKey = "seen"
 )
+
+// playing is how long after Dink's last message the panel counts as
+// relevant.
+const playing = 30 * time.Minute
 
 // lastKill is the last kill Dink reported.
 type lastKill struct {
@@ -235,6 +242,9 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 		}
 	default:
 		return nil
+	}
+	if err := env.State.Set(seenKey, now); err != nil {
+		return err
 	}
 	if err := env.State.Set(liveKey, live); err != nil {
 		return err

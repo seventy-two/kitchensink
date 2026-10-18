@@ -170,6 +170,7 @@ func (e *Engine) poll(ctx context.Context, r *runner) time.Duration {
 		snap.SummaryStyle = res.SummaryStyle
 		snap.SummaryBlock = res.SummaryBlock
 		snap.Timely = res.Timely
+		snap.Relevant = res.Relevant
 		snap.Background = res.Background
 		snap.Paste = res.Paste
 		if snap.Blocks == nil {

@@ -184,11 +184,31 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	}
 	blocks = append(blocks, m.blocks(occs, now, notes)...)
 	return monitor.Result{
-		Blocks:  blocks,
-		Summary: m.summary(occs, now, notes),
-		Events:  m.reminders(occs, now),
-		Next:    m.next(occs, now),
+		Blocks:   blocks,
+		Summary:  m.summary(occs, now, notes),
+		Events:   m.reminders(occs, now),
+		Next:     m.next(occs, now),
+		Relevant: relevant(occs, now),
 	}, nil
+}
+
+// lead is how long before an event the panel becomes relevant.
+const lead = time.Hour
+
+// relevant is when the panel matters most: from an hour before the
+// current or next timed event until it ends. All-day events don't count.
+func relevant(occs []occurrence, now time.Time) monitor.Window {
+	for _, o := range occs {
+		if o.AllDay || over(o, now) {
+			continue
+		}
+		end := o.End
+		if !end.After(o.Start) {
+			end = o.Start.Add(15 * time.Minute)
+		}
+		return monitor.Window{From: o.Start.Add(-lead), Until: end}
+	}
+	return monitor.Window{}
 }
 
 // summary is the next event: when, what, and its note (or, without one,

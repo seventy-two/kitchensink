@@ -354,7 +354,11 @@ with `since` also gets the events it had that were updated after event
 poll's, with the last good blocks kept), `subtitle` (what it's watching, when that isn't obvious, e.g. a car
 search's filters), `timely` (true while when it was updated matters: always
 for the watchlist and AutoTrader, while a game's on for NFL and fantasy;
-the Windows client only shows a panel's age then, on hover), `background`
+the Windows client only shows a panel's age then, on hover), `relevant`
+(`from`, which may be absent, and `until`: when the panel matters most,
+e.g. while a game's on, from an hour before a calendar event until it ends,
+or for half an hour after Dink last heard from the OSRS player; the Windows
+client moves it under its Recent column then), `background`
 (true for a monitor that only feeds others, like `mail`: clients leave it
 off the dashboard and show it with their settings), `paste` (if set, the
 panel has a button, with this as its tooltip, that sends a `paste` action

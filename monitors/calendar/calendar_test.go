@@ -117,6 +117,27 @@ func TestReminders(t *testing.T) {
 	assert.Equal(t, 5*time.Hour+58*time.Minute, res.Next)
 }
 
+func TestRelevant(t *testing.T) {
+	work, _ := feeds(t)
+	m := newMonitor(t, work)
+	at := func(h, min int) time.Time { return time.Date(2026, 10, 12, h, min, 0, 0, london) }
+	for _, c := range []struct {
+		now  time.Time
+		want monitor.Window
+	}{
+		// From an hour before the standup until it ends, including during it.
+		{at(8, 52), monitor.Window{From: at(8, 0), Until: at(9, 15)}},
+		{at(9, 5), monitor.Window{From: at(8, 0), Until: at(9, 15)}},
+		// Then the review.
+		{at(9, 15), monitor.Window{From: at(14, 0), Until: at(16, 0)}},
+	} {
+		res, err := m.Poll(context.Background(), monitortest.Env(c.now))
+		require.NoError(t, err)
+		assert.True(t, c.want.From.Equal(res.Relevant.From), "%v: from %v", c.now, res.Relevant.From)
+		assert.True(t, c.want.Until.Equal(res.Relevant.Until), "%v: until %v", c.now, res.Relevant.Until)
+	}
+}
+
 func TestNextAtMidnight(t *testing.T) {
 	work, _ := feeds(t)
 	m := newMonitor(t, work)

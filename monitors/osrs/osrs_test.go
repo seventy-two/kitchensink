@@ -193,8 +193,9 @@ func TestDink(t *testing.T) {
 	m := newMonitor(t, f)
 	assert.Equal(t, "s3cret", m.HookSecret())
 	env := monitortest.Env(now)
-	_, err := m.Poll(context.Background(), env)
+	res, err := m.Poll(context.Background(), env)
 	require.NoError(t, err)
+	assert.Zero(t, res.Relevant, "not relevant before Dink's heard from")
 
 	later := now.Add(time.Minute)
 	env.Now = func() time.Time { return later }
@@ -225,9 +226,12 @@ func TestDink(t *testing.T) {
 	hook(t, m, env, "DEATH", `{}`)
 	assert.ErrorIs(t, m.Act(context.Background(), env, monitor.Action{Type: "add"}), monitor.ErrBadAction)
 
-	res, err := m.Poll(context.Background(), env)
+	res, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
 	assert.Equal(t, 1, f.count("POST /players/GTX 480"), "WOM isn't asked again so soon")
+	assert.True(t, res.Relevant.From.IsZero())
+	assert.True(t, later.Add(31*time.Minute).Equal(res.Relevant.Until),
+		"relevant for half an hour after Dink's last word from the player: %v", res.Relevant.Until)
 	helm := "https://oldschool.runescape.wiki/w/Inquisitor%27s_great_helm"
 	assert.Equal(t, []monitor.Stat{
 		{Label: "Pet", Value: "Little nightmare", Tone: monitor.ToneAccent},

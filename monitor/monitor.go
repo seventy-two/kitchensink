@@ -102,6 +102,10 @@ type Result struct {
 	// Timely says when it was updated matters at the moment, e.g. for
 	// prices or a game in progress. Clients only show its age then.
 	Timely bool
+	// Relevant, if set, is when the panel matters most, e.g. while a game's
+	// on or just before a meeting: clients with room put it beside their
+	// event history then. From may be zero, for now; Until is exclusive.
+	Relevant Window
 	// Background says the monitor works for others (the mail monitor
 	// fills the calendar), so clients leave it off the dashboard and show
 	// it with their settings, for diagnosing it.
@@ -173,6 +177,8 @@ type Snapshot struct {
 	Subtitle string `json:"subtitle,omitempty"`
 	// Timely is the last good poll's Result.Timely.
 	Timely bool `json:"timely,omitempty"`
+	// Relevant is the last good poll's Result.Relevant.
+	Relevant Window `json:"relevant,omitzero"`
 	// Background is the last good poll's Result.Background.
 	Background bool `json:"background,omitempty"`
 	// Paste is the last good poll's Result.Paste.
@@ -183,6 +189,17 @@ type Snapshot struct {
 	SummaryStyle SummaryStyle `json:"summaryStyle,omitempty"`
 	// SummaryBlock is the last good poll's Result.SummaryBlock.
 	SummaryBlock *Block `json:"summaryBlock,omitempty"`
+}
+
+// Window is a span of time; the zero Window is none.
+type Window struct {
+	From  time.Time `json:"from,omitzero"`
+	Until time.Time `json:"until,omitzero"`
+}
+
+// Contains reports whether t is in the window.
+func (w Window) Contains(t time.Time) bool {
+	return !w.Until.IsZero() && t.Before(w.Until) && !t.Before(w.From)
 }
 
 // SummaryStyle is how clients draw a summary.
