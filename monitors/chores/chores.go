@@ -492,7 +492,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	if len(reorders.Items) > 0 {
 		blocks = append(blocks, reorders)
 	}
-	res := monitor.Result{Blocks: blocks, Summary: summary(open, items, v.today), SummaryStyle: monitor.SummaryChips}
+	res := monitor.Result{Blocks: blocks, Summary: summary(items, v.today), SummaryStyle: monitor.SummaryChips}
 	midnight := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, m.loc)
 	res.Next = midnight.Sub(now)
 	if m.remindAt >= 0 {
@@ -518,33 +518,26 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	return res, nil
 }
 
-// summaryChips is how many chips the summary has at most: one line of
-// them on a wide dashboard.
-const summaryChips = 6
-
-// summary is a chip for each chore still to do today (or one saying all
-// are done), then a chip for each coming up in the next week, labelled
-// with its day, as many as fit.
-func summary(open, items []planned, today day) []monitor.Stat {
+// summary is a chip for each of today's chores, ticked off or not, so a
+// glance says whether the day's done; or one saying there's nothing today.
+// What's coming up is left to the panel.
+func summary(items []planned, today day) []monitor.Stat {
 	var out []monitor.Stat
-	for _, p := range open {
+	for _, p := range items {
+		if p.on != today {
+			continue
+		}
 		s := monitor.Stat{Label: "Today", Value: p.label(), Tone: monitor.ToneAccent}
-		if p.lateBy() > 0 {
+		switch {
+		case p.done:
+			s.Label, s.Tone = "Done", monitor.ToneGood
+		case p.lateBy() > 0:
 			s.Tone = monitor.ToneWarn
 		}
 		out = append(out, s)
 	}
 	if len(out) == 0 {
-		out = append(out, monitor.Stat{Label: "Today", Value: "All done", Tone: monitor.ToneGood})
-	}
-	for _, p := range items {
-		if len(out) >= summaryChips {
-			break
-		}
-		if p.on > today && p.on < today+7 {
-			d := when(p.on, today)
-			out = append(out, monitor.Stat{Label: strings.ToUpper(d[:1]) + d[1:], Value: p.label()})
-		}
+		out = append(out, monitor.Stat{Label: "Today", Value: "Nothing to do", Tone: monitor.ToneMuted})
 	}
 	return out
 }

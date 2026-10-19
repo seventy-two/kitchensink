@@ -115,7 +115,9 @@ Its panel is two checklists, *Today* and *Coming up* (with the day each is
 planned for). Ticking a chore marks it done today, even one not due yet;
 unticking it the same day undoes that. Its up and down buttons bring it
 forward or put it off a day (a `move` action), and the rest fit around
-it; clients without them can put it off with `delete`.
+it; clients without them can put it off with `delete`. Its summary is
+only today's chores, each marked done or not (or "Nothing to do"); what's
+coming up stays in the panel.
 
 ```json
 "config": {

@@ -99,9 +99,9 @@ func TestDoneAndDueAgain(t *testing.T) {
 	assert.Equal(t, []string{"[ ] Black tee wash · tomorrow", "[ ] Bedsheet wash · Sat"}, later)
 	assert.Equal(t, []monitor.Stat{
 		{Label: "Today", Value: "Waitrose order", Tone: monitor.ToneAccent},
-		{Label: "Tomorrow", Value: "Black tee wash"},
-		{Label: "Sat", Value: "Bedsheet wash"},
-	}, res.Summary, "today's chores, then the week's")
+		{Label: "Done", Value: "Whites wash", Tone: monitor.ToneGood},
+		{Label: "Done", Value: "Towel wash", Tone: monitor.ToneGood},
+	}, res.Summary, "only today's chores, done or not")
 	assert.Equal(t, monitor.SummaryChips, res.SummaryStyle)
 
 	// Unticking undoes it.
@@ -112,15 +112,21 @@ func TestDoneAndDueAgain(t *testing.T) {
 	act(t, m, env, "toggle", "waitrose-order")
 	res = poll(t, m, env)
 	assert.Equal(t, []monitor.Stat{
-		{Label: "Today", Value: "All done", Tone: monitor.ToneGood},
-		{Label: "Tomorrow", Value: "Black tee wash"},
-		{Label: "Sat", Value: "Bedsheet wash"},
+		{Label: "Done", Value: "Whites wash", Tone: monitor.ToneGood},
+		{Label: "Done", Value: "Towel wash", Tone: monitor.ToneGood},
+		{Label: "Done", Value: "Waitrose order", Tone: monitor.ToneGood},
 	}, res.Summary)
+
+	// Tomorrow only the black tee wash is planned; once it's done the day
+	// after has nothing.
+	tomorrow := at(env, now.AddDate(0, 0, 1))
+	assert.Equal(t, []monitor.Stat{{Label: "Today", Value: "Black tee wash", Tone: monitor.ToneAccent}}, poll(t, m, tomorrow).Summary)
+	act(t, m, tomorrow, "toggle", "black-tee-wash")
+	assert.Equal(t, []monitor.Stat{{Label: "Today", Value: "Nothing to do", Tone: monitor.ToneMuted}}, poll(t, m, at(env, now.AddDate(0, 0, 2))).Summary)
 
 	// A week on, whites and towels are both due, and fit around each
 	// other a day apart.
 	week := at(env, now.AddDate(0, 0, 7))
-	act(t, m, at(env, now.AddDate(0, 0, 1)), "toggle", "black-tee-wash")
 	today, later = lines(t, poll(t, m, week))
 	assert.Equal(t, []string{"[ ] Whites wash", "[ ] Waitrose order"}, today)
 	assert.Contains(t, later, "[ ] Towel wash · tomorrow")
