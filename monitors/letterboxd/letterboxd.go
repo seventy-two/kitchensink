@@ -29,12 +29,17 @@ type Config struct {
 	// film, given its Letterboxd slug (watchgrab): each row then has a
 	// button for it on clients that have the app.
 	Local string `json:"local"`
+	// FullEvery is how often the whole watchlist is read (default "1h");
+	// polls in between read only its first page, where additions appear,
+	// so they can come often. Removals show at the next full read.
+	FullEvery string `json:"fullEvery"`
 }
 
 // Monitor is the letterboxd monitor.
 type Monitor struct {
-	cfg  Config
-	base string
+	cfg       Config
+	base      string
+	fullEvery time.Duration
 }
 
 // New builds the monitor from its JSON config.
@@ -46,7 +51,15 @@ func New(raw json.RawMessage) (*Monitor, error) {
 	if c.User == "" {
 		return nil, fmt.Errorf("letterboxd needs a user")
 	}
-	return &Monitor{cfg: c, base: "https://letterboxd.com"}, nil
+	m := &Monitor{cfg: c, base: "https://letterboxd.com", fullEvery: time.Hour}
+	if c.FullEvery != "" {
+		d, err := time.ParseDuration(c.FullEvery)
+		if err != nil || d < 0 {
+			return nil, fmt.Errorf("fullEvery must be a duration like \"1h\"")
+		}
+		m.fullEvery = d
+	}
+	return m, nil
 }
 
 // film is one watchlist entry.
@@ -90,10 +103,10 @@ func parsePage(body string) ([]film, bool) {
 const maxPages = 100
 
 // watchlist reads every page, newest additions first (Letterboxd's
-// default order).
-func (m *Monitor) watchlist(ctx context.Context, client *http.Client) ([]film, error) {
+// default order), or only the first if pages is 1.
+func (m *Monitor) watchlist(ctx context.Context, client *http.Client, pages int) ([]film, error) {
 	var all []film
-	for page := 1; page <= maxPages; page++ {
+	for page := 1; page <= pages; page++ {
 		u := fmt.Sprintf("%s/%s/watchlist/", m.base, m.cfg.User)
 		if page > 1 {
 			u += fmt.Sprintf("page/%d/", page)
@@ -112,7 +125,7 @@ func (m *Monitor) watchlist(ctx context.Context, client *http.Client) ([]film, e
 			return nil, fmt.Errorf("page %d isn't a watchlist page", page)
 		}
 		all = append(all, films...)
-		if !more {
+		if !more || pages == 1 {
 			return all, nil
 		}
 	}
@@ -140,14 +153,53 @@ func get(ctx context.Context, client *http.Client, u string) (string, error) {
 	return string(b), err
 }
 
-const seenKey = "seen"
+// State keys: the slugs seen at the last poll; the whole list as last
+// read, with when it was read in full.
+const (
+	seenKey = "seen"
+	listKey = "list"
+)
+
+// list is the watchlist as last read.
+type list struct {
+	Films []film    `json:"films"`
+	Full  time.Time `json:"full"` // when it was last read in full
+}
 
 // summaryRows is how many of the newest films the short view shows.
 const summaryRows = 3
 
 func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, error) {
-	films, err := m.watchlist(ctx, env.HTTP)
+	var last list
+	if _, err := env.State.Get(listKey, &last); err != nil {
+		return monitor.Result{}, err
+	}
+	now := env.Now()
+	full := m.fullEvery == 0 || now.Sub(last.Full) >= m.fullEvery
+	pages := maxPages
+	if !full {
+		pages = 1
+	}
+	films, err := m.watchlist(ctx, env.HTTP, pages)
 	if err != nil {
+		return monitor.Result{}, err
+	}
+	if full {
+		last.Full = now
+	} else {
+		// The first page, then the rest as last read.
+		top := map[string]bool{}
+		for _, f := range films {
+			top[f.Slug] = true
+		}
+		for _, f := range last.Films {
+			if !top[f.Slug] {
+				films = append(films, f)
+			}
+		}
+	}
+	last.Films = films
+	if err := env.State.Set(listKey, last); err != nil {
 		return monitor.Result{}, err
 	}
 
