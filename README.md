@@ -117,7 +117,7 @@ unticking it the same day undoes that. Its up and down buttons bring it
 forward or put it off a day (a `move` action), and the rest fit around
 it; clients without them can put it off with `delete`. Its summary is
 only today's chores, each marked done or not (or "Nothing to do"); what's
-coming up stays in the panel.
+coming up stays in the panel. It looks like the to-do list's.
 
 ```json
 "config": {

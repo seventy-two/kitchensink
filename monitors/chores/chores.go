@@ -492,7 +492,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	if len(reorders.Items) > 0 {
 		blocks = append(blocks, reorders)
 	}
-	res := monitor.Result{Blocks: blocks, Summary: summary(items, v.today), SummaryStyle: monitor.SummaryChips}
+	res := monitor.Result{Blocks: blocks, Summary: summary(items, v.today)}
 	midnight := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, m.loc)
 	res.Next = midnight.Sub(now)
 	if m.remindAt >= 0 {
@@ -518,8 +518,9 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	return res, nil
 }
 
-// summary is a chip for each of today's chores, ticked off or not, so a
-// glance says whether the day's done; or one saying there's nothing today.
+// summary is each of today's chores, ticked off or not, so a glance says
+// whether the day's done; or one saying there's nothing today. It's drawn
+// like the to-do list's.
 // What's coming up is left to the panel.
 func summary(items []planned, today day) []monitor.Stat {
 	var out []monitor.Stat
@@ -527,7 +528,7 @@ func summary(items []planned, today day) []monitor.Stat {
 		if p.on != today {
 			continue
 		}
-		s := monitor.Stat{Label: "Today", Value: p.label(), Tone: monitor.ToneAccent}
+		s := monitor.Stat{Label: "Today", Value: p.label()}
 		switch {
 		case p.done:
 			s.Label, s.Tone = "Done", monitor.ToneGood

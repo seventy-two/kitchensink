@@ -98,11 +98,11 @@ func TestDoneAndDueAgain(t *testing.T) {
 	assert.Equal(t, []string{"[ ] Waitrose order", "[x] Whites wash", "[x] Towel wash"}, today)
 	assert.Equal(t, []string{"[ ] Black tee wash · tomorrow", "[ ] Bedsheet wash · Sat"}, later)
 	assert.Equal(t, []monitor.Stat{
-		{Label: "Today", Value: "Waitrose order", Tone: monitor.ToneAccent},
+		{Label: "Today", Value: "Waitrose order"},
 		{Label: "Done", Value: "Whites wash", Tone: monitor.ToneGood},
 		{Label: "Done", Value: "Towel wash", Tone: monitor.ToneGood},
 	}, res.Summary, "only today's chores, done or not")
-	assert.Equal(t, monitor.SummaryChips, res.SummaryStyle)
+	assert.Equal(t, monitor.SummaryTiles, res.SummaryStyle, "drawn like the to-do list")
 
 	// Unticking undoes it.
 	act(t, m, env, "toggle", "towel-wash")
@@ -120,7 +120,7 @@ func TestDoneAndDueAgain(t *testing.T) {
 	// Tomorrow only the black tee wash is planned; once it's done the day
 	// after has nothing.
 	tomorrow := at(env, now.AddDate(0, 0, 1))
-	assert.Equal(t, []monitor.Stat{{Label: "Today", Value: "Black tee wash", Tone: monitor.ToneAccent}}, poll(t, m, tomorrow).Summary)
+	assert.Equal(t, []monitor.Stat{{Label: "Today", Value: "Black tee wash"}}, poll(t, m, tomorrow).Summary)
 	act(t, m, tomorrow, "toggle", "black-tee-wash")
 	assert.Equal(t, []monitor.Stat{{Label: "Today", Value: "Nothing to do", Tone: monitor.ToneMuted}}, poll(t, m, at(env, now.AddDate(0, 0, 2))).Summary)
 
