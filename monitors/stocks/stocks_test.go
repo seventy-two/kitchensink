@@ -303,7 +303,7 @@ func TestHoldings(t *testing.T) {
 	for _, s := range res.Summary {
 		summary = append(summary, s.Label)
 	}
-	assert.Equal(t, []string{"FTSE 100", "AAPL"}, summary, "the holdings, in order, not the biggest movers")
+	assert.Equal(t, []string{"FTSE 100", "AAPL", "TSLA", "Bitcoin/USD Coin Metrics"}, summary, "every quote, in the table's order")
 	assert.Contains(t, srv.Requests()[0].Query, "NVDA", "holdings are watched even when not in symbols")
 }
 

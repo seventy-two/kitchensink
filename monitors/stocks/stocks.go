@@ -252,22 +252,13 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	return res, nil
 }
 
-// moversLen is how many symbols the summary shows.
-const moversLen = 4
-
-// summary is your holdings, largest first, or without any the biggest
-// movers today, either way.
+// summary is every quote, as the table orders them, or without holdings
+// the biggest movers today, either way, first. Clients scroll a line of
+// chips that doesn't fit.
 func (m *Monitor) summary(quotes []quote) []monitor.Stat {
 	var picked []quote
 	if len(m.rank) > 0 {
-		for _, q := range quotes {
-			if m.held(q) {
-				picked = append(picked, q)
-			}
-		}
-		sort.SliceStable(picked, func(i, j int) bool {
-			return m.rank[strings.ToUpper(picked[i].Symbol)] < m.rank[strings.ToUpper(picked[j].Symbol)]
-		})
+		picked = m.ordered(quotes)
 	} else {
 		picked = append([]quote(nil), quotes...)
 		sort.SliceStable(picked, func(i, j int) bool {
@@ -275,7 +266,6 @@ func (m *Monitor) summary(quotes []quote) []monitor.Stat {
 			b, _ := parsePct(picked[j].ChangePct)
 			return math.Abs(a) > math.Abs(b)
 		})
-		picked = picked[:min(moversLen, len(picked))]
 	}
 	var out []monitor.Stat
 	for _, q := range picked {
@@ -433,10 +423,9 @@ func (m *Monitor) targetEvents(q quote, crossed map[string]bool, now int64) []mo
 	return events
 }
 
-// table lists your holdings, largest first, then the other quotes,
-// biggest risers first. weekAgo holds closes from a week before, by
-// symbol, for the 1w column.
-func (m *Monitor) table(quotes []quote, weekAgo map[string]float64) monitor.Block {
+// ordered is your holdings, largest first, then the other quotes, biggest
+// risers first.
+func (m *Monitor) ordered(quotes []quote) []quote {
 	sorted := append([]quote(nil), quotes...)
 	sort.SliceStable(sorted, func(i, j int) bool {
 		hi, hj := m.held(sorted[i]), m.held(sorted[j])
@@ -450,6 +439,13 @@ func (m *Monitor) table(quotes []quote, weekAgo map[string]float64) monitor.Bloc
 		b, _ := parsePct(sorted[j].ChangePct)
 		return a > b
 	})
+	return sorted
+}
+
+// table lists the quotes in that order. weekAgo holds closes from a week before, by
+// symbol, for the 1w column.
+func (m *Monitor) table(quotes []quote, weekAgo map[string]float64) monitor.Block {
+	sorted := m.ordered(quotes)
 	b := monitor.Block{
 		Type: monitor.BlockTable,
 		Columns: []monitor.Column{
