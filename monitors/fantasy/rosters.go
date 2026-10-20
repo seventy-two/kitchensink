@@ -347,7 +347,9 @@ type espnLeague struct {
 	Settings struct {
 		Name string `json:"name"`
 	} `json:"settings"`
-	Status struct {
+	// ScoringPeriodID is the NFL week ESPN is on.
+	ScoringPeriodID int `json:"scoringPeriodId"`
+	Status          struct {
 		CurrentMatchupPeriod int `json:"currentMatchupPeriod"`
 	} `json:"status"`
 	Teams    []espnFantasyTeam `json:"teams"`
@@ -457,8 +459,13 @@ func (m *Monitor) matchups(ctx context.Context, client *http.Client, r *roster, 
 				}
 			}
 			// ESPN moves on to the new week's matchups when the NFL does;
-			// step back as far as the shown week is behind.
-			period := data.Status.CurrentMatchupPeriod - (r.Week - r.shownWeek())
+			// step back as far as the shown week is behind ESPN's week.
+			// Not the rosters' week: they may have been read before it moved.
+			week := data.ScoringPeriodID
+			if week == 0 {
+				week = r.Week
+			}
+			period := data.Status.CurrentMatchupPeriod - (week - r.shownWeek())
 			for _, s := range data.Schedule {
 				if s.MatchupPeriodID != period {
 					continue

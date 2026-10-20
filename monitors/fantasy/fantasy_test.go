@@ -93,8 +93,9 @@ func newFakeAPIs(t *testing.T) *fakeAPIs {
 		period := f.period
 		f.mu.Unlock()
 		js(w, map[string]any{
-			"settings": map[string]any{"name": "Office League 2026"},
-			"status":   map[string]any{"currentMatchupPeriod": period},
+			"settings":        map[string]any{"name": "Office League 2026"},
+			"scoringPeriodId": period,
+			"status":          map[string]any{"currentMatchupPeriod": period},
 			"teams": []any{
 				map[string]any{"id": 10, "name": "Mine", "owners": []string{"{ME}"}, "roster": map[string]any{"entries": []any{
 					entry(2577417, "Dak Prescott", 6, 1), entry(3953687, "Brandon Aubrey", 6, 5), entry(-16006, "Cowboys D/ST", 6, 16),
@@ -283,6 +284,25 @@ func TestMovesOnWithSleeper(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, f.count("/sleeper/league/L1/matchups/6"), "week 6's matchups")
 	assert.Equal(t, 1, f.count("/sleeper/players/nfl"), "rosters aren't read again")
+}
+
+func TestESPNMovesOnBeforeTheRosters(t *testing.T) {
+	// The rosters were read early on Tuesday, before the NFL's week moved
+	// on; later ESPN moves on to week 6 while Sleeper still shows week 5.
+	f := newFakeAPIs(t)
+	f.display = 5
+	m := newMonitor(t, f)
+	env := monitortest.Env(now)
+	_, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+
+	f.mu.Lock()
+	f.week, f.period = 6, 6
+	f.mu.Unlock()
+	env.Now = func() time.Time { return now.Add(time.Hour) }
+	res, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Contains(t, res.Summary, monitor.Stat{Label: "Work", Value: "61.5–70.2", Detail: "v Their Team", Tone: monitor.ToneBad}, "still week 5's matchup")
 }
 
 func TestJoiningLate(t *testing.T) {
