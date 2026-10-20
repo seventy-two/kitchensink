@@ -169,3 +169,21 @@ func TestVersus(t *testing.T) {
 	assert.Equal(t, []monitor.Tone{monitor.ToneGood, monitor.ToneBad, monitor.ToneAccent, monitor.ToneAccent, monitor.ToneNone}, tones)
 	assert.Equal(t, "Waiting for J", m.status(waiting).Text)
 }
+
+func TestCoopDay(t *testing.T) {
+	m, err := New(json.RawMessage(`{"url": "http://tracker.test", "player": "M", "versus": "J"}`))
+	require.NoError(t, err)
+	var d day
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"results": [
+			{"game": "wordle", "player": "M"}, {"game": "wordle", "player": "J"},
+			{"game": "flagle", "player": "M"}
+		],
+		"winners": {},
+		"coop": {"hits": 2, "needed": 24, "targets": {"wordle": {"M": true, "J": false}, "flagle": {"M": false}}}
+	}`), &d))
+	got, _ := m.outcomes(d)
+	assert.Equal(t, map[string]outcome{"wordle": hit, "flagle": missed}, got)
+	assert.Equal(t, monitor.ToneGood, m.status(hit).Tone)
+	assert.Equal(t, monitor.ToneBad, m.status(missed).Tone)
+}

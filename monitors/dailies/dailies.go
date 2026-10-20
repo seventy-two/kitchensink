@@ -88,6 +88,11 @@ type day struct {
 	} `json:"ends"`
 	// Winners is who won each game both have played, "" for a tie.
 	Winners map[string]string `json:"winners"`
+	// Coop is set on a co-op day, played as a team to targets: for each
+	// game played, whether each player hit its target.
+	Coop *struct {
+		Targets map[string]map[string]bool `json:"targets"`
+	} `json:"coop"`
 }
 
 // outcome is where a game stands for the player today.
@@ -101,6 +106,8 @@ const (
 	won
 	lost
 	drew
+	hit    // a co-op day's target reached
+	missed // a co-op day's target missed
 )
 
 // status is the panel's word for an outcome, and its tone.
@@ -116,6 +123,10 @@ func (m *Monitor) status(o outcome) monitor.Cell {
 		return monitor.Cell{Text: "Won", Tone: monitor.ToneGood}
 	case lost:
 		return monitor.Cell{Text: "Lost", Tone: monitor.ToneBad}
+	case hit:
+		return monitor.Cell{Text: "Hit target", Tone: monitor.ToneGood}
+	case missed:
+		return monitor.Cell{Text: "Missed target", Tone: monitor.ToneBad}
 	case drew:
 		return monitor.Cell{Text: "Drew", Tone: monitor.ToneAccent}
 	}
@@ -139,6 +150,10 @@ func (m *Monitor) outcomes(d day) (got map[string]outcome, ended bool) {
 	for g := range played[m.cfg.Player] {
 		winner, both := d.Winners[g]
 		switch {
+		case d.Coop != nil && d.Coop.Targets[g][m.cfg.Player]:
+			got[g] = hit
+		case d.Coop != nil:
+			got[g] = missed
 		case m.cfg.Versus == "":
 			got[g] = done
 		case !played[m.cfg.Versus][g] || !both:
