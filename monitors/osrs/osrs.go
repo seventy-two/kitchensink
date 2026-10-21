@@ -42,6 +42,10 @@ type Config struct {
 	// BigLoot is the least a drop must be worth (in coins) to show and
 	// notify. It defaults to 20m.
 	BigLoot int64 `json:"bigLoot"`
+	// Owned are the pets the player already has, by name ("Giant
+	// squirrel", "Kraken"): their skills, bosses and activities aren't
+	// shown. A pet Dink reports that isn't a duplicate is added by itself.
+	Owned []string `json:"owned"`
 	// WOMURL replaces Wise Old Man's API, for tests.
 	WOMURL string `json:"womURL"`
 }
@@ -150,7 +154,11 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	if td.Day == day && len(td.Starts) > 0 {
 		from = merged(base.Stats, td.Starts)
 	}
-	rows := gains(from, merged(current, live))
+	owned, err := m.owned(env)
+	if err != nil {
+		return monitor.Result{}, err
+	}
+	rows := gains(from, merged(current, live), owned)
 	drops, events := dropsToday(td, day)
 
 	blocks := []monitor.Block{table(rows, lastBig, m.cfg.BigLoot)}
@@ -217,11 +225,14 @@ type gain struct {
 	Gained, Total int64
 }
 
-// gains are the tracked metrics that went up: kills and scores first,
-// then XP, each most first.
-func gains(from, to stats) []gain {
+// gains are the tracked metrics that went up, leaving out those whose pet
+// is owned (by petKey): kills and scores first, then XP, each most first.
+func gains(from, to stats, owned map[string]bool) []gain {
 	var out []gain
 	for id, mt := range tracked {
+		if owned[petKey(mt.Pet)] {
+			continue
+		}
 		if d := to[id] - from[id]; d > 0 {
 			out = append(out, gain{metric: mt, ID: id, Gained: d, Total: to[id]})
 		}

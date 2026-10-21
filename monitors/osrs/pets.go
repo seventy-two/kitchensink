@@ -1,5 +1,7 @@
 package osrs
 
+import "strings"
+
 // tracked is what counts towards a pet: each Wise Old Man metric (a skill,
 // boss or activity) that can give one, with how to show it and the pet. A
 // metric not here (combat skills, Barrows, the Mimic...) is left out,
@@ -101,4 +103,11 @@ const (
 type metric struct {
 	Name, Pet, Rate string
 	Kind            kind
+}
+
+// petKey is a pet's name for matching, whoever wrote it: the wiki's "Pet
+// kraken", the game's "Kraken", any case.
+func petKey(name string) string {
+	k := strings.ToLower(strings.TrimSpace(name))
+	return strings.TrimPrefix(k, "pet ")
 }

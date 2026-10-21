@@ -154,7 +154,18 @@ func TestNothingYet(t *testing.T) {
 	assert.Equal(t, []monitor.Stat{{Label: "Today", Value: "Nothing yet", Tone: monitor.ToneMuted}}, summary(nil, false))
 	assert.Empty(t, summary(nil, true), "drops show instead")
 	assert.Equal(t, "Nothing towards a pet yet today.", table(nil, nil, 0).Text)
-	assert.Empty(t, gains(stats{"attack": 1, "vorkath": 5}, stats{"attack": 9, "vorkath": 5}))
+	assert.Empty(t, gains(stats{"attack": 1, "vorkath": 5}, stats{"attack": 9, "vorkath": 5}, nil))
+}
+
+func TestOwnedPetsLeftOut(t *testing.T) {
+	from := stats{"agility": 100, "kraken": 10, "vorkath": 5}
+	to := stats{"agility": 200, "kraken": 12, "vorkath": 6}
+	owned := map[string]bool{petKey("Giant Squirrel"): true, petKey("Kraken"): true}
+	rows := gains(from, to, owned)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "vorkath", rows[0].ID)
+	assert.Equal(t, "kraken", petKey("Pet kraken"))
+	assert.Len(t, gains(from, to, nil), 3)
 }
 
 func TestAmount(t *testing.T) {
@@ -238,10 +249,9 @@ func TestDink(t *testing.T) {
 		{Label: "Inquisitor's great helm", Value: "92.8m", Tone: monitor.ToneGood, URL: helm},
 		{Label: "Vorkath", Value: "+15", Tone: monitor.ToneGood},
 		{Label: "Master clues", Value: "+3", Tone: monitor.ToneGood},
-		{Label: "Phosani's Nightmare", Value: "+1", Tone: monitor.ToneGood},
 		{Label: "Scurrius", Value: "+1", Tone: monitor.ToneGood},
 		{Label: "Mining", Value: "+200.0k xp", Tone: monitor.ToneGood},
-	}, res.Summary, "Dink's counts beat WOM's; Scurrius from its first kill Dink saw")
+	}, res.Summary, "Dink's counts beat WOM's; Scurrius from its first kill Dink saw; Phosani's left out once its pet's owned")
 
 	require.Len(t, res.Blocks, 2)
 	since := map[string]string{}
@@ -249,8 +259,8 @@ func TestDink(t *testing.T) {
 		since[row[0].Text] = row[4].Text
 	}
 	assert.Equal(t, map[string]string{
-		"Vorkath": "5", "Phosani's Nightmare": "0", "Scurrius": "", "Master clues": "", "Mining": "",
-	}, since, "kills since the last big drop, only where there's been one; the helm at 400 beats 380")
+		"Vorkath": "5", "Scurrius": "", "Master clues": "", "Mining": "",
+	}, since, "kills since the last big drop, only where there's been one")
 	assert.Equal(t, "Big drops", res.Blocks[1].Title)
 	assert.Equal(t, []monitor.Cell{
 		{Text: "20:01", Tone: monitor.ToneMuted}, {Text: "Inquisitor's great helm", URL: helm},
@@ -340,4 +350,12 @@ func TestDinkPet(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Pet: Heron", res.Events[0].Title)
 	assert.Equal(t, "You have a funny feeling like you're being followed.", res.Events[0].Body)
+
+	// A new pet (not a duplicate) leaves its boss out from then on.
+	hook(t, m, env, "PET", `{"petName":"Vorki"}`)
+	res, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	for _, row := range res.Blocks[0].Rows {
+		assert.NotEqual(t, "Vorkath", row[0].Text)
+	}
 }

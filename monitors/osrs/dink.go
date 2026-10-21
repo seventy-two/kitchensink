@@ -69,7 +69,22 @@ const (
 	// seenKey is when Dink last sent something from the player, i.e.
 	// they're playing.
 	seenKey = "seen"
+	// ownedKey lists the pets Dink has reported, beyond the config's.
+	ownedKey = "owned"
 )
+
+// owned is every pet the player has, by petKey: the config's and Dink's.
+func (m *Monitor) owned(env monitor.Env) (map[string]bool, error) {
+	var got []string
+	if _, err := env.State.Get(ownedKey, &got); err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	for _, name := range append(got, m.cfg.Owned...) {
+		out[petKey(name)] = true
+	}
+	return out, nil
+}
 
 // playing is how long after Dink's last message the panel counts as
 // relevant.
@@ -225,6 +240,15 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 			lastBig[last.ID] = max(lastBig[last.ID], live[last.ID])
 		}
 		td.Drops = append(td.Drops, dr)
+		if x.PetName != "" && !x.Duplicate {
+			var got []string
+			if _, err := env.State.Get(ownedKey, &got); err != nil {
+				return err
+			}
+			if err := env.State.Set(ownedKey, append(got, x.PetName)); err != nil {
+				return err
+			}
+		}
 	case "LOGIN", "XP_MILESTONE":
 		var x struct {
 			Skills struct {
