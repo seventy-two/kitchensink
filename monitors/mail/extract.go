@@ -58,9 +58,10 @@ const instruction = `You read one email for someone's personal dashboard and pul
 
 - events: things they'll attend or must be in for, with a date: gigs, matches, films, shows and other tickets; restaurant, hotel and travel bookings (each flight or train leg its own event); appointments (doctor, dentist, haircut, car service); grocery deliveries and other booked delivery or collection slots; parcel deliveries once an email gives the day it's due or out for delivery (with the window if given), titled with the carrier or shop and what's in it if known ("Royal Mail parcel", "eBay delivery: Final Fantasy VIII"), but not "dispatched" emails with no day, and nothing once it's been delivered. title is short and specific, as they'd write it ("Vildhjarta", "Dentist", "Waitrose delivery", "Flight to Lisbon"). date is YYYY-MM-DD; start and end are 24-hour HH:MM in UK time (convert if the email gives another zone), empty if unknown (end may be empty); endDate only for stays over several days (the last day). location is the venue and town, or empty. detail is one short line of what's useful on the day, separated by " · " (e.g. "2 tickets · doors 18:30 · ref K8X2P1"), or empty. key identifies the booking across emails, so a confirmation, a later change and a cancellation of the same thing share it: the merchant and its booking or order reference in lower case, plus what each event is if one booking has several, e.g. "easyjet-k8x2p1-outbound"; for a parcel, the shop or carrier and its order or tracking number, so its dispatch, due and out-for-delivery emails share one; without a reference, the merchant and date.
 - cancelled: keys of events this email cancels, built the same way.
+- refs: every order, booking and tracking number in the email, as written (e.g. "11-15308-85027", "VU793801544GB"), so emails about the same thing from the shop and the courier can be matched. Not item, listing, customer or account numbers, phone numbers or prices. Empty if none.
 - todos: things they must do by a date that the email asks for and that won't happen otherwise: return an item, collect a parcel from a locker, check in online, pay a balance, send a form. One short line each, with the deadline as a date without the weekday ("Return the boots to Amazon by 30 Oct"). Not things they merely can do, such as amending an order, managing a booking or rebooking a cancelled appointment, unless the email says they must. Never reviews, surveys, upsells or marketing. Only what's still to do as of today.
 - chores: IDs from the chore list this email shows were done, e.g. an order confirmation for the chore of placing that order. An email only about an order already placed (dispatch, delivery, a reminder) doesn't count.
-- routine: for an order of everyday consumables bought again and again from somewhere other than a supermarket's weekly shop (cleaning products, toiletries, pet food, coffee, filters, batteries, vitamins, contact lenses...), each item as a short generic name in lower case without brand or size ("dishwasher tablets", "cat litter"), with roughly how many days the quantity bought lasts them. Only from the confirmation of an order they placed themselves: not from dispatch, delivery or reminder emails about it, and never from a subscription or recurring order that arrives on its own (they needn't remember to reorder that). Leave out one-off purchases (gadgets, clothes, books, gifts).
+- routine: for an order of everyday consumables bought again and again from somewhere other than a supermarket's weekly shop (cleaning products, toiletries, pet food, coffee, filters, batteries, vitamins, contact lenses...), each item as a short generic name in lower case without brand or size ("dishwasher tablets", "cat litter"), with roughly how many days the quantity bought lasts them. Only from the confirmation of an order they placed themselves: not from dispatch, delivery or reminder emails about it, and never from a subscription or recurring order that arrives on its own (they needn't remember to reorder that). Leave out one-off purchases (gadgets, clothes, books, games, films, collectibles, gifts).
 - summary: at most six words saying what the email is, e.g. "Vildhjarta tickets", "Amazon order: dishwasher tablets".`
 
 // extraction is what Gemini finds in an email.
@@ -69,6 +70,7 @@ type extraction struct {
 	Summary   string   `json:"summary"`
 	Events    []xEvent `json:"events"`
 	Cancelled []string `json:"cancelled"`
+	Refs      []string `json:"refs"`
 	Todos     []string `json:"todos"`
 	Chores    []string `json:"chores"`
 	Routine   []xItem  `json:"routine"`
@@ -120,6 +122,7 @@ var schema = map[string]any{
 			"required": []string{"key", "title", "date", "start", "end", "endDate", "location", "detail"},
 		}),
 		"cancelled": list(str()),
+		"refs":      list(str()),
 		"todos":     list(str()),
 		"chores":    list(str()),
 		"routine": list(map[string]any{
@@ -128,7 +131,7 @@ var schema = map[string]any{
 			"required":   []string{"item", "lastsDays"},
 		}),
 	},
-	"required": []string{"kind", "summary", "events", "cancelled", "todos", "chores", "routine"},
+	"required": []string{"kind", "summary", "events", "cancelled", "refs", "todos", "chores", "routine"},
 }
 
 // prompt is the email as Gemini is asked about it.
@@ -231,12 +234,48 @@ func (m *Monitor) apply(ctx context.Context, env monitor.Env, h header, x extrac
 	}
 	today := midnight(now.In(m.loc))
 
+	// Tie the email's references to the event it's about, so the shop's
+	// and the courier's emails about one parcel share it. An email with
+	// several events (each leg of a trip) keeps Gemini's keys.
+	var joined []string
+	if len(x.Events) <= 1 && len(x.Refs) > 0 {
+		links, linked, err := loadLinks(env)
+		if err != nil {
+			env.Log.Warn("reading links", "err", err)
+		} else {
+			own := ""
+			if len(x.Events) == 1 {
+				own = slug(x.Events[0].Key)
+			}
+			key, merged := linkRefs(links, x.Refs, own, h.Date.In(m.loc).Format(time.DateOnly))
+			if len(x.Events) == 1 {
+				e := x.Events[0]
+				e.Key = key
+				if prev, ok := linked[key]; ok {
+					e = mergeEvent(prev, e)
+				}
+				linked[key] = e
+				x.Events = []xEvent{e} // not Gemini's own copy
+				joined = merged
+			}
+			pruneLinks(links, linked, now)
+			if err := saveLinks(env, links, linked); err != nil {
+				env.Log.Warn("saving links", "err", err)
+			}
+		}
+	}
+
 	if m.calendar != "" {
 		for _, k := range x.Cancelled {
 			// Not on the calendar is fine: it may be past or never added.
 			if err := act(ctx, env, m.calendar, monitor.Action{Type: "remove", ID: eventKey(k)}); err == nil {
 				f.Did = append(f.Did, "Cancelled on the calendar")
 			}
+		}
+		// Events now known to be this one go (if they're there at all);
+		// this email's replaces them.
+		for _, k := range joined {
+			_ = act(ctx, env, m.calendar, monitor.Action{Type: "remove", ID: eventKey(k)})
 		}
 		for _, e := range x.Events {
 			a, ok := m.calendarEvent(e)

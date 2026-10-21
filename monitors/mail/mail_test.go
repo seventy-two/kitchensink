@@ -226,6 +226,69 @@ func TestReadsAndPassesOn(t *testing.T) {
 	assert.Zero(t, res.Next)
 }
 
+// A parcel's emails come from the shop (order number) and the courier
+// (tracking number); the dispatch notice has both, so all share one event.
+func TestLinksParcelEmails(t *testing.T) {
+	g := newFakeGemini(t)
+	mb := &fakeAccount{name: "Outlook"}
+	day := func(d, h int) time.Time { return time.Date(2026, 10, d, h, 0, 0, 0, london) }
+	mb.add("Your Royal Mail parcel is on its way", "Royal Mail <no-reply@royalmail.com>", day(14, 7), "due Thu")
+	mb.add("Order update: Final Fantasy VIII", "eBay <ebay@ebay.com>", day(14, 8), "posted")
+	mb.add("OUT FOR DELIVERY: Final Fantasy VIII", "eBay <ebay@ebay.com>", day(15, 9), "today")
+	mb.add("Your Royal Mail parcel is due to be delivered today", "Royal Mail <no-reply@royalmail.com>", day(15, 10), "today")
+	g.answers["Your Royal Mail parcel is on its way"] = extraction{Kind: "delivery", Refs: []string{"VU793801544GB"},
+		Events: []xEvent{{Key: "royal-mail-vu793801544gb", Title: "Royal Mail parcel", Date: "2026-10-15", Start: "10:05", End: "14:05"}}}
+	g.answers["Order update: Final Fantasy VIII"] = extraction{Kind: "delivery", Refs: []string{"11-15308-85027", "VU 7938 0154 4GB", "1"}}
+	g.answers["OUT FOR DELIVERY: Final Fantasy VIII"] = extraction{Kind: "delivery", Refs: []string{"11-15308-85027"},
+		Events: []xEvent{{Key: "ebay-11-15308-85027", Title: "eBay delivery: Final Fantasy VIII", Date: "2026-10-15"}}}
+	g.answers["Your Royal Mail parcel is due to be delivered today"] = extraction{Kind: "delivery", Refs: []string{"VU793801544GB"},
+		Events: []xEvent{{Key: "royal-mail-vu793801544gb", Title: "Royal Mail parcel", Date: "2026-10-15", Start: "10:00", End: "14:00"}}}
+
+	m := newMonitor(t, g, mb)
+	acts := &actions{}
+	env := acts.env(monitortest.Env(day(15, 11)))
+	_, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		`calendar upsert {"key":"mail:royal-mail-vu793801544gb","title":"Royal Mail parcel","start":"2026-10-15T10:05:00+01:00","end":"2026-10-15T14:05:00+01:00","source":"Email"}`,
+		// eBay's says what it is but not when: the window's kept.
+		`calendar upsert {"key":"mail:royal-mail-vu793801544gb","title":"eBay delivery: Final Fantasy VIII","start":"2026-10-15T10:05:00+01:00","end":"2026-10-15T14:05:00+01:00","source":"Email"}`,
+		// Royal Mail's narrows the window; eBay's title stays.
+		`calendar upsert {"key":"mail:royal-mail-vu793801544gb","title":"eBay delivery: Final Fantasy VIII","start":"2026-10-15T10:00:00+01:00","end":"2026-10-15T14:00:00+01:00","source":"Email"}`,
+	}, acts.sent)
+}
+
+func TestMergeEvent(t *testing.T) {
+	rm := xEvent{Title: "Royal Mail parcel", Date: "2026-10-21", Start: "10:00", End: "14:00", Detail: "tracking VU1"}
+	ebay := xEvent{Title: "eBay delivery: Final Fantasy VIII", Date: "2026-10-21"}
+	assert.Equal(t, xEvent{Title: "eBay delivery: Final Fantasy VIII", Date: "2026-10-21", Start: "10:00", End: "14:00", Detail: "tracking VU1"}, mergeEvent(rm, ebay))
+	// Put off a day: the old day's window doesn't carry over.
+	moved := xEvent{Title: "Royal Mail parcel", Date: "2026-10-22"}
+	assert.Equal(t, moved, mergeEvent(rm, moved))
+}
+
+func TestLinkRefsJoinsEvents(t *testing.T) {
+	links := map[string]link{}
+	k, merged := linkRefs(links, []string{"11-15308-85027"}, "ebay-11-15308-85027", "2026-10-14")
+	assert.Equal(t, "ebay-11-15308-85027", k)
+	assert.Empty(t, merged)
+	k, _ = linkRefs(links, []string{"VU793801544GB"}, "royal-mail-vu793801544gb", "2026-10-14")
+	assert.Equal(t, "royal-mail-vu793801544gb", k)
+	// One email with both: the second event joins the first.
+	k, merged = linkRefs(links, []string{"11-15308-85027", "VU793801544GB"}, "", "2026-10-15")
+	assert.Equal(t, "ebay-11-15308-85027", k)
+	assert.Equal(t, []string{"royal-mail-vu793801544gb"}, merged)
+	assert.Equal(t, "ebay-11-15308-85027", links["VU793801544GB"].Key)
+	// Nothing known and no key of its own: the first reference.
+	k, _ = linkRefs(links, []string{"AB-123456"}, "", "2026-10-15")
+	assert.Equal(t, "ab123456", k)
+	// Forgotten once old.
+	linked := map[string]xEvent{"ab123456": {Title: "x"}}
+	pruneLinks(links, linked, time.Date(2027, 3, 1, 0, 0, 0, 0, london))
+	assert.Empty(t, links)
+	assert.Empty(t, linked)
+}
+
 func TestReorderInterval(t *testing.T) {
 	g := newFakeGemini(t)
 	amazon := &fakeAccount{name: "Gmail"}
