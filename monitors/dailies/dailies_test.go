@@ -187,3 +187,28 @@ func TestCoopDay(t *testing.T) {
 	assert.Equal(t, monitor.ToneGood, m.status(hit).Tone)
 	assert.Equal(t, monitor.ToneBad, m.status(missed).Tone)
 }
+
+func TestHaikudle(t *testing.T) {
+	js := func(w http.ResponseWriter, v any) { json.NewEncoder(w).Encode(v) }
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/config", func(w http.ResponseWriter, r *http.Request) {
+		js(w, map[string]any{"today": "2026-10-14", "games": []any{map[string]any{"id": "wordle", "name": "Wordle", "url": "https://wordle.test/"}}})
+	})
+	mux.HandleFunc("GET /api/day", func(w http.ResponseWriter, r *http.Request) {
+		js(w, map[string]any{"results": []any{}, "haikus": []any{
+			map[string]any{"player": "M", "done": true},
+			map[string]any{"player": "J", "done": false},
+		}})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	res := poll(t, srv, "M")
+	require.Len(t, res.Summary, 2, "haikudle after the games")
+	assert.Equal(t, monitor.Stat{Value: "Haikudle", URL: "https://0x48.io/haikudle/", Tone: monitor.ToneGood}, res.Summary[1])
+	assert.Equal(t, "Done", res.Blocks[0].Rows[1][1].Text, "written, never won or lost")
+	assert.Equal(t, monitor.ToneNone, poll(t, srv, "J").Summary[1].Tone, "J hasn't written one")
+
+	// An older tracker without haikus shows no haikudle.
+	assert.Len(t, poll(t, fakeTracker(t), "M").Summary, 3)
+}

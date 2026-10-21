@@ -93,7 +93,17 @@ type day struct {
 	Coop *struct {
 		Targets map[string]map[string]bool `json:"targets"`
 	} `json:"coop"`
+	// Haikus say who has written haikudle's haiku today. It has no score,
+	// so it's never won or lost, only done.
+	Haikus []struct {
+		Player string `json:"player"`
+		Done   bool   `json:"done"`
+	} `json:"haikus"`
 }
+
+// haikudle is the haiku of the day, shown after the scored games when the
+// tracker has it.
+var haikudle = game{ID: "haikudle", Name: "Haikudle", URL: "https://0x48.io/haikudle/"}
 
 // outcome is where a game stands for the player today.
 type outcome int
@@ -147,6 +157,11 @@ func (m *Monitor) outcomes(d day) (got map[string]outcome, ended bool) {
 		ended = ended || e.Player == m.cfg.Player
 	}
 	got = map[string]outcome{}
+	for _, h := range d.Haikus {
+		if h.Player == m.cfg.Player && h.Done {
+			got[haikudle.ID] = done
+		}
+	}
 	for g := range played[m.cfg.Player] {
 		winner, both := d.Winners[g]
 		switch {
@@ -179,6 +194,9 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		return monitor.Result{}, err
 	}
 	got, ended := m.outcomes(d)
+	if d.Haikus != nil {
+		c.Games = append(c.Games, haikudle)
+	}
 	// What's been pasted since the last poll; the engine polls straight
 	// after an action.
 	var outcomes []monitor.Event
