@@ -64,7 +64,7 @@ func TestPollRecordsAndNotifies(t *testing.T) {
 	m := &scripted{
 		results: []monitor.Result{
 			{Blocks: block("one"), Events: []monitor.Event{{Key: "a", Title: "A"}, {Key: "q", Title: "Q", Quiet: true, Expires: now.Add(time.Minute)}}},
-			{Blocks: block("two"), Events: []monitor.Event{{Key: "a", Title: "A again"}, {Key: "b", Title: "B"}}, Next: time.Minute, Background: true, Paste: "Paste it"},
+			{Blocks: block("two"), Events: []monitor.Event{{Key: "a", Title: "A again"}, {Key: "b", Title: "B", Until: now.Add(time.Hour)}, {Key: "h", Title: "H", Priority: monitor.PriorityHigh, Quiet: true}}, Next: time.Minute, Background: true, Paste: "Paste it"},
 			{},
 		},
 		errs: []error{nil, nil, errors.New("site down")},
@@ -81,12 +81,16 @@ func TestPollRecordsAndNotifies(t *testing.T) {
 	// Repeated keys are dropped; quiet events are stored but not notified.
 	events, err := st.EventsSince(0, 10)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"A", "Q", "B"}, titles(events))
+	assert.Equal(t, []string{"A", "Q", "B", "H"}, titles(events))
 	assert.Equal(t, monitor.PriorityNormal, events[0].Priority)
 	assert.Equal(t, "m", events[0].Monitor)
 	assert.True(t, events[0].Expires.IsZero())
 	assert.True(t, events[1].Expires.Equal(now.Add(time.Minute)), "a temporary event's expiry is kept")
 	assert.True(t, events[0].Time.Equal(now))
+	assert.True(t, events[0].Until.Equal(now.Add(24*time.Hour)), "below high priority, an event goes stale after a day")
+	assert.True(t, events[1].Until.IsZero(), "a temporary event has its expiry instead")
+	assert.True(t, events[2].Until.Equal(now.Add(time.Hour)), "a monitor's own until is kept")
+	assert.True(t, events[3].Until.IsZero(), "high-priority events stay until cleared")
 	assert.Equal(t, []string{"A", "B"}, titles(n.events))
 
 	// A failed poll keeps the last blocks and reports the error.
@@ -109,7 +113,7 @@ func TestPollRecordsAndNotifies(t *testing.T) {
 			got = append(got, "snapshot")
 		}
 	}
-	assert.Equal(t, []string{"snapshot", "event A", "event Q", "snapshot", "event B", "snapshot"}, got)
+	assert.Equal(t, []string{"snapshot", "event A", "event Q", "snapshot", "event B", "event H", "snapshot"}, got)
 }
 
 func TestUpdates(t *testing.T) {

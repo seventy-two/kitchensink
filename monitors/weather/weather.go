@@ -100,7 +100,10 @@ type forecast struct {
 		Gusts       []float64 `json:"wind_gusts_10m"`
 		IsDay       []int     `json:"is_day"`
 	} `json:"hourly"`
-	Daily struct {
+	// Offset is the forecast's zone's offset from UTC, as its times are
+	// local.
+	Offset int `json:"utc_offset_seconds"`
+	Daily  struct {
 		Time     []string  `json:"time"`
 		Code     []int     `json:"weather_code"`
 		High     []float64 `json:"temperature_2m_max"`
@@ -233,6 +236,7 @@ func (m *Monitor) events(f *forecast) []monitor.Event {
 					Key:   "rain:" + hourOf(t),
 					Title: "Rain in " + m.cfg.Place + " around " + clock(t),
 					Body:  fmt.Sprintf("%.1f mm expected in that quarter hour", f.Minutely15.Rain[i]),
+					Until: f.at(t, localLayout).Add(time.Hour),
 				})
 				break
 			}
@@ -248,6 +252,7 @@ func (m *Monitor) events(f *forecast) []monitor.Event {
 				Key:   "frost:" + day,
 				Title: fmt.Sprintf("Frost %s in %s", when, m.cfg.Place),
 				Body:  fmt.Sprintf("Low of %.0f°C", f.Daily.Low[i]),
+				Until: f.at(day, "2006-01-02").AddDate(0, 0, 1),
 			})
 		}
 		if m.gustMPH > 0 && i < len(f.Daily.Gusts) && f.Daily.Gusts[i] >= m.gustMPH {
@@ -256,6 +261,7 @@ func (m *Monitor) events(f *forecast) []monitor.Event {
 				Title:    fmt.Sprintf("Strong winds %s in %s", when, m.cfg.Place),
 				Body:     fmt.Sprintf("Gusts up to %.0f mph", f.Daily.Gusts[i]),
 				Priority: monitor.PriorityHigh,
+				Until:    f.at(day, "2006-01-02").AddDate(0, 0, 1),
 			})
 		}
 	}
@@ -400,6 +406,16 @@ func clock(t string) string {
 		return t
 	}
 	return v.Format("15:04")
+}
+
+// at reads one of the forecast's local times, or gives the zero time
+// (leaving the engine's default) if it can't.
+func (f *forecast) at(t, layout string) time.Time {
+	v, err := time.ParseInLocation(layout, t, time.FixedZone("", f.Offset))
+	if err != nil {
+		return time.Time{}
+	}
+	return v
 }
 
 func hourOf(t string) string {

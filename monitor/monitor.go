@@ -163,6 +163,11 @@ type Event struct {
 	// temporary events apart from the history while they last, then drop
 	// them.
 	Expires time.Time `json:"expires,omitzero"`
+	// Until, if set, is when the event stops being relevant, e.g. the end
+	// of the day a weather alert is about. Clients show it in Recent as
+	// usual until then, then drop it. The engine sets one for events below
+	// high priority that don't (see engine.Options.Stale).
+	Until time.Time `json:"until,omitzero"`
 }
 
 // Snapshot is the current state of one monitor, as clients render it.

@@ -37,6 +37,10 @@ type Options struct {
 	Notifiers []Notifier
 	// PollTimeout bounds each poll. It defaults to two minutes.
 	PollTimeout time.Duration
+	// Stale is how long an event below high priority stays relevant when
+	// its monitor doesn't say (see monitor.Event.Until). It defaults to a
+	// day; high-priority events stay until cleared.
+	Stale time.Duration
 	// Now is the clock, for tests.
 	Now func() time.Time
 }
@@ -91,6 +95,9 @@ func New(st *store.Store, specs []Spec, opts Options) (*Engine, error) {
 	}
 	if opts.PollTimeout == 0 {
 		opts.PollTimeout = 2 * time.Minute
+	}
+	if opts.Stale == 0 {
+		opts.Stale = 24 * time.Hour
 	}
 	if opts.Now == nil {
 		opts.Now = time.Now
@@ -203,6 +210,9 @@ func (e *Engine) record(ctx context.Context, log *slog.Logger, r *runner, ev mon
 	}
 	if ev.Priority == "" {
 		ev.Priority = monitor.PriorityNormal
+	}
+	if ev.Until.IsZero() && ev.Expires.IsZero() && ev.Priority != monitor.PriorityHigh {
+		ev.Until = ev.Time.Add(e.opts.Stale)
 	}
 	if ev.Update {
 		// A change to an earlier event: passed on, never notified.

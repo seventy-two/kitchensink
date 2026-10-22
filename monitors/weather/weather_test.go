@@ -46,6 +46,10 @@ func TestPoll(t *testing.T) {
 	assert.Equal(t, monitor.PriorityHigh, res.Events[1].Priority)
 	assert.Equal(t, "Frost tomorrow in London", res.Events[2].Title)
 	assert.Equal(t, "Low of -2°C", res.Events[2].Body)
+	// Each alert is dropped once what it's about has passed (times are BST).
+	assert.Equal(t, time.Date(2026, 10, 10, 19, 30, 0, 0, time.UTC), res.Events[0].Until.UTC(), "the hour after the rain starts")
+	assert.Equal(t, time.Date(2026, 10, 10, 23, 0, 0, 0, time.UTC), res.Events[1].Until.UTC(), "midnight after the windy day")
+	assert.Equal(t, time.Date(2026, 10, 11, 23, 0, 0, 0, time.UTC), res.Events[2].Until.UTC())
 
 	assert.Equal(t, "12", q.Get("forecast_hours"))
 	assert.Contains(t, q.Get("hourly"), "precipitation_probability")
