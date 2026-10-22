@@ -12,8 +12,8 @@ import (
 )
 
 // run is a farm run: the kinds of patch (RuneLite's implementations) done
-// together. Plant, if set, picks what to plant from crops with the same
-// pet chance, so the cheapest wins.
+// together. Plant, if set, is what to plant: of crops with the same pet
+// chance, the cheapest wins.
 type run struct {
 	ID, Title, Short string
 	Impls            []string
@@ -23,13 +23,14 @@ type run struct {
 // runs are the farm runs that count towards Tangleroot, roughly in the
 // order the wiki's strategy gives them (Tangleroot/Strategies): quick
 // patches a few times a day, then fruit trees, hardwoods and the rest.
-// Herbs, allotments and the like give it rarely and aren't shown.
+// Herbs, allotments and the like give it rarely and aren't shown. Spirit
+// trees aren't either: the player's can't be replanted.
 var runs = []run{
 	{ID: "quick", Title: "Quick patches", Short: "Quick", Impls: []string{"SEAWEED", "BELLADONNA", "MUSHROOM", "CACTUS"}},
-	{ID: "trees", Title: "Trees", Short: "Trees", Impls: []string{"TREE"}},
+	{ID: "trees", Title: "Trees", Short: "Trees", Impls: []string{"TREE"}, Plant: maples},
 	{ID: "fruit", Title: "Fruit trees", Short: "Fruit", Impls: []string{"FRUIT_TREE", "CALQUAT"}, Plant: fruitTrees},
 	{ID: "hardwood", Title: "Hardwood", Short: "Hardwood", Impls: []string{"HARDWOOD_TREE"}, Plant: hardwoods},
-	{ID: "special", Title: "Specials", Short: "Specials", Impls: []string{"CELASTRUS", "REDWOOD", "SPIRIT_TREE", "CRYSTAL_TREE", "HESPORI", "ANIMA"}},
+	{ID: "special", Title: "Specials", Short: "Specials", Impls: []string{"CELASTRUS", "REDWOOD", "CRYSTAL_TREE", "HESPORI", "ANIMA"}},
 }
 
 func runOf(impl string) int {
@@ -40,7 +41,7 @@ func runOf(impl string) int {
 var implNames = map[string]string{
 	"SEAWEED": "Giant seaweed", "BELLADONNA": "Belladonna", "MUSHROOM": "Mushrooms", "CACTUS": "Cacti",
 	"TREE": "Trees", "FRUIT_TREE": "Fruit trees", "CALQUAT": "Calquats", "HARDWOOD_TREE": "Hardwoods",
-	"CELASTRUS": "Celastrus", "REDWOOD": "Redwood", "SPIRIT_TREE": "Spirit trees", "CRYSTAL_TREE": "Crystal tree",
+	"CELASTRUS": "Celastrus", "REDWOOD": "Redwood", "CRYSTAL_TREE": "Crystal tree",
 	"HESPORI": "Hespori", "ANIMA": "Anima plant",
 }
 
@@ -48,7 +49,7 @@ var implNames = map[string]string{
 var patchNames = map[string]string{
 	"SEAWEED": "Seaweed patch", "BELLADONNA": "Belladonna patch", "MUSHROOM": "Mushroom patch", "CACTUS": "Cactus patch",
 	"TREE": "Tree patch", "FRUIT_TREE": "Fruit tree patch", "CALQUAT": "Calquat patch", "HARDWOOD_TREE": "Hardwood patch",
-	"CELASTRUS": "Celastrus patch", "REDWOOD": "Redwood patch", "SPIRIT_TREE": "Spirit tree patch", "CRYSTAL_TREE": "Crystal tree patch",
+	"CELASTRUS": "Celastrus patch", "REDWOOD": "Redwood patch", "CRYSTAL_TREE": "Crystal tree patch",
 	"HESPORI": "Hespori patch", "ANIMA": "Anima patch",
 }
 
@@ -86,6 +87,12 @@ type crop struct {
 	PayName       string
 }
 
+// maples are what the player plants in tree patches: not the cheapest
+// tree, nor the best pet chance, but their choice.
+var maples = []crop{
+	{"MAPLE", 45, 5314, 5372, 1, 5396, "basket of oranges"},
+}
+
 // fruitTrees all have the same pet chance and growth time, so the
 // cheapest is best. Payments are from each tree's wiki page.
 var fruitTrees = []crop{
@@ -112,9 +119,10 @@ var hardwoods = []crop{
 // choice is a crop with what it costs.
 type choice struct {
 	crop
-	Plant   int // the cheaper of seed and sapling
-	Payment int // all of the payment, if protecting
-	Total   int
+	Plant       int  // the cheaper of seed and sapling
+	FromSapling bool // whether the sapling is the cheaper
+	Payment     int  // all of the payment, if protecting
+	Total       int
 }
 
 // cheapest picks the cheapest crop the player can plant, with its costs,
@@ -132,7 +140,7 @@ func cheapest(crops []crop, prices map[int]int, level int, protect bool) (choice
 		}
 		ch := choice{crop: c, Plant: seed}
 		if ch.Plant == 0 || (sapling > 0 && sapling < ch.Plant) {
-			ch.Plant = sapling
+			ch.Plant, ch.FromSapling = sapling, true
 		}
 		if protect {
 			if prices[c.PayItem] == 0 {
@@ -162,8 +170,8 @@ func (m *Monitor) fetchPrices(ctx context.Context, client *http.Client) (map[int
 		return nil, err
 	}
 	out := map[int]int{}
-	for _, list := range [][]crop{fruitTrees, hardwoods} {
-		for _, c := range list {
+	for _, r := range runs {
+		for _, c := range r.Plant {
 			for _, id := range []int{c.Seed, c.Sapling, c.PayItem} {
 				p := body.Data[strconv.Itoa(id)]
 				out[id] = max(p.High, p.Low)

@@ -18,8 +18,13 @@ func (m *Monitor) blocks(b board, now time.Time) []monitor.Block {
 		}
 		run := runs[i]
 		title := run.Title
-		if ch, ok := cheapest(run.Plant, m.prices, b.level, *m.cfg.Protect); ok {
-			title += fmt.Sprintf(" · cheapest is %s, %s a patch", produces[ch.Produce].Name, gp(ch.Total))
+		ch, priced := cheapest(run.Plant, m.prices, b.level, *m.cfg.Protect)
+		if priced {
+			name := produces[ch.Produce].Name
+			if len(run.Plant) > 1 {
+				name = "cheapest is " + name
+			}
+			title += fmt.Sprintf(" · %s, %s a patch", name, gp(ch.Total))
 		}
 		block := monitor.Block{Type: monitor.BlockTable, Title: title, Columns: []monitor.Column{
 			{Title: "Patch", Fill: true}, {Title: "Crop"}, {Title: "Pet", Align: monitor.AlignRight}, {Title: "Ready", Align: monitor.AlignRight},
@@ -37,8 +42,21 @@ func (m *Monitor) blocks(b board, now time.Time) []monitor.Block {
 			block.Rows = append(block.Rows, []monitor.Cell{{Text: r.place()}, crop, pet, {Text: text, Tone: tone}})
 		}
 		blocks = append(blocks, block)
+		if priced && ch.Payment > 0 {
+			blocks = append(blocks, monitor.Block{Type: monitor.BlockText, Text: costs(ch)})
+		}
 	}
 	return blocks
+}
+
+// costs breaks down what a crop costs a patch, e.g. "Protection: 9
+// sweetcorn, 1k. Sapling: 250."
+func costs(ch choice) string {
+	plant := "Seed"
+	if ch.FromSapling {
+		plant = "Sapling"
+	}
+	return fmt.Sprintf("Protection: %d %s, %s. %s: %s.", ch.Pay, ch.PayName, gp(ch.Payment), plant, gp(ch.Plant))
 }
 
 // summary is a chip per run: ready, or when it all will be.
