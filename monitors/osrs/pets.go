@@ -7,7 +7,8 @@ import "strings"
 // metric not here (combat skills, Barrows, the Mimic...) is left out,
 // so a boss WOM adds later only shows once it's listed. From the wiki's
 // Pet page, October 2026, with the pet's drop rate (none for skills, where
-// it depends on level and what's being trained).
+// it depends on level and what's being trained). Orion (The Fractured
+// Archive, 20 Oct 2026) has no published rate yet.
 var tracked = map[string]metric{
 	// Skilling pets, by XP.
 	"agility":      {Name: "Agility", Pet: "Giant squirrel", Kind: xp},
@@ -70,6 +71,7 @@ var tracked = map[string]metric{
 	"tempoross":                        {Name: "Tempoross", Pet: "Tiny tempor", Rate: "1/8,000"},
 	"the_corrupted_gauntlet":           {Name: "Corrupted Gauntlet", Pet: "Youngllef", Rate: "1/800"},
 	"the_gauntlet":                     {Name: "The Gauntlet", Pet: "Youngllef", Rate: "1/2,000"},
+	"the_fractured_archive":            {Name: "The Fractured Archive", Pet: "Orion", Rate: "Unknown"},
 	"the_hueycoatl":                    {Name: "The Hueycoatl", Pet: "Huberte", Rate: "1/400"},
 	"the_leviathan":                    {Name: "The Leviathan", Pet: "Lil'viathan", Rate: "1/2,500"},
 	"the_royal_titans":                 {Name: "Royal Titans", Pet: "Bran", Rate: "1/3,000"},
