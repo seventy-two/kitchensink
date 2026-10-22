@@ -84,7 +84,8 @@ func (s *Server) refresh(w http.ResponseWriter, r *http.Request) {
 // act applies a JSON monitor.Action to a monitor, such as ticking a todo.
 func (s *Server) act(w http.ResponseWriter, r *http.Request) {
 	var a monitor.Action
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
+	// Uploads (see monitor.Upload) can be tens of KB.
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&a); err != nil {
 		http.Error(w, "bad action: "+err.Error(), http.StatusBadRequest)

@@ -36,6 +36,7 @@ notification for each event.
 | `ebay` | an eBay search, newest listings first, through eBay's Browse API (below): what each listing is (named by Gemini from its keyword-stuffed title, with `gemini`; else the title; uncommon and rare ones say so, with a button that ignores the game from then on: action `ignore` with the listing's ID, after which its listings count as common), its price (an auction's current bid, with the bids) and when it went up; short, the newest three rows | each new listing, with its picture; none for those up at the first check or those Gemini rates below `notify`, which are only in the panel |
 | `letterboxd` | a Letterboxd `user`'s public watchlist, newest additions first, as a table linking each film; short, it's the newest three rows. With `local` set to an app's name (`watchgrab`), each row also has that app's button, which only clients with the app installed draw (below). It reads the whole list every `fullEvery` (default `1h`) and only the first page, where additions appear, in between, so it can poll often (every 10 minutes, say) | each film added, as a quiet event |
 | `osrs` | [Wise Old Man](https://wiseoldman.net): an Old School RuneScape `player`'s gains since midnight towards pets only: boss kills, Guardians of the Rift, Soul Wars zeal, master clues, and XP in the skills with a pet (not combat), leaving out any whose pet is in `owned` (pet names) or that Dink has reported as a new pet. It asks WOM to update the player each poll and just after midnight, and compares with the last snapshot from before midnight. The table gives each gain's pet drop rate (from the wiki) and, for bosses that have ever given a drop worth `bigLoot` or a pet, the kills since the last one. Short, it's the table's top three rows (`summaryBlock`); the chips are for clients without that. With `hookSecret` set, the RuneLite plugin [Dink](https://github.com/pajlads/DinkPlugin) can make it live (below): kills count as they happen, and drops worth `bigLoot` or more (default 20m) and pets are listed and notify | `hookSecret` (e.g. `"${OSRS_HOOK_SECRET}"`), `owned` |
+| `farming` | RuneLite's Time Tracking plugin, uploaded by the Windows client (below): an Old School RuneScape account's farm runs that count towards the Tangleroot pet (quick patches, trees, fruit trees, hardwoods and the Farming Guild's specials), a table each: every patch RuneLite has seen, what's in it, the pet chance at the `player`'s Farming level (from Wise Old Man) and when it's ready, or what it needs. For fruit trees and hardwoods, where every crop gives the same chance, the table's title names the cheapest to plant at GE prices (the OSRS Wiki's), with the gardener's payment unless `protect` is false. The summary is a chip per run | when every patch of a kind (fruit trees, say) has finished growing |
 
 Each monitor also returns a dashboard panel and a short summary (shown when
 space is short), polls on its own interval and can ask to be polled sooner
@@ -283,6 +284,21 @@ one by WOM metric (RuneLite's Loot Logger plugin keeps the history, with
 each drop's price at the time). Screenshots are dropped; turn them off unless Dink also posts to
 Discord, as bodies over 1MB are refused.
 
+### Farming
+
+The game doesn't publish farming patches, but RuneLite's Time Tracking
+plugin records each one it sees, with when, in RuneLite's profile file
+(`%USERPROFILE%\.runelite\profiles2\$rsprofile--1.properties`). The
+monitor asks for that file's `timetracking.rsprofile.` lines as an
+`upload` (see the API), which the Windows client sends whenever they
+change, and predicts each patch exactly as the plugin does: its tables
+(`monitors/farming/runelite.go`) are generated from RuneLite's source at a
+fixed commit by `go generate ./monitors/farming` (bump the commit in
+`gen/main.go` for new patches). It follows the account RuneLite last saw
+a patch for, unless `profile` names one (the key after
+`timetracking.rsprofile.`). Keep the plugin on, and visit patches with
+RuneLite running: like the plugin, it only knows what it's seen.
+
 ## Running it
 
 ```sh
@@ -368,7 +384,12 @@ uses it at the moment), `background`
 (true for a monitor that only feeds others, like `mail`: clients leave it
 off the dashboard and show it with their settings), `paste` (if set, the
 panel has a button, with this as its tooltip, that sends a `paste` action
-with the clipboard's text, e.g. the dailies' share text), `blocks` and `summary`: a few
+with the clipboard's text, e.g. the dailies' share text), `upload` (if
+set, `path`, with `%VARS%`, and `prefixes`: a file on the client's machine
+the monitor wants, whose lines starting with one of the prefixes clients
+that can read it send as an `upload` action, `{"type":"upload","text":
+"..."}`, when they start and whenever those lines change; the farming
+monitor's RuneLite data), `blocks` and `summary`: a few
 stats (as in a `stats` block) worth seeing at a glance, which clients show
 instead of the blocks when space is short, and `summaryStyle`: empty for
 label/value/detail tiles, or `chips` for small blocks of the same, filled

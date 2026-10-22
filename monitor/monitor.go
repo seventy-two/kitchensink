@@ -114,6 +114,9 @@ type Result struct {
 	// with the clipboard's text, e.g. a game's share text for the dailies.
 	// It's the button's tooltip.
 	Paste string
+	// Upload, if set, asks clients that can to send the monitor a file
+	// from their own machine, such as a game's saved data.
+	Upload *Upload
 	// Events are things that happened. The engine drops any whose Key the
 	// monitor has emitted before, so monitors can re-emit freely.
 	Events []Event
@@ -187,7 +190,9 @@ type Snapshot struct {
 	// Background is the last good poll's Result.Background.
 	Background bool `json:"background,omitempty"`
 	// Paste is the last good poll's Result.Paste.
-	Paste   string  `json:"paste,omitempty"`
+	Paste string `json:"paste,omitempty"`
+	// Upload is the last good poll's Result.Upload.
+	Upload  *Upload `json:"upload,omitempty"`
 	Blocks  []Block `json:"blocks"`
 	Summary []Stat  `json:"summary,omitempty"`
 	// SummaryStyle is how to draw Summary; empty for plain tiles.
@@ -195,6 +200,20 @@ type Snapshot struct {
 	// SummaryBlock is the last good poll's Result.SummaryBlock.
 	SummaryBlock *Block `json:"summaryBlock,omitempty"`
 }
+
+// Upload is a file on a client's own machine that a monitor wants. Clients
+// that can read it send the monitor an UploadAction whose Text is the
+// file's lines that start with one of Prefixes (all of them if there are
+// none), when they connect and whenever those lines change.
+type Upload struct {
+	// Path is where the file is, with environment variables written
+	// %LIKE_THIS% (a Windows path, as only the Windows client uploads).
+	Path     string   `json:"path"`
+	Prefixes []string `json:"prefixes,omitempty"`
+}
+
+// UploadAction is the Action type an Upload arrives as.
+const UploadAction = "upload"
 
 // Window is a span of time; the zero Window is none.
 type Window struct {

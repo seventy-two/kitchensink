@@ -64,7 +64,8 @@ func TestPollRecordsAndNotifies(t *testing.T) {
 	m := &scripted{
 		results: []monitor.Result{
 			{Blocks: block("one"), Events: []monitor.Event{{Key: "a", Title: "A"}, {Key: "q", Title: "Q", Quiet: true, Expires: now.Add(time.Minute)}}},
-			{Blocks: block("two"), Events: []monitor.Event{{Key: "a", Title: "A again"}, {Key: "b", Title: "B", Until: now.Add(time.Hour)}, {Key: "h", Title: "H", Priority: monitor.PriorityHigh, Quiet: true}}, Next: time.Minute, Background: true, Paste: "Paste it"},
+			{Blocks: block("two"), Events: []monitor.Event{{Key: "a", Title: "A again"}, {Key: "b", Title: "B", Until: now.Add(time.Hour)}, {Key: "h", Title: "H", Priority: monitor.PriorityHigh, Quiet: true}}, Next: time.Minute, Background: true, Paste: "Paste it",
+				Upload: &monitor.Upload{Path: `%APPDATA%\x`, Prefixes: []string{"a."}}},
 			{},
 		},
 		errs: []error{nil, nil, errors.New("site down")},
@@ -101,6 +102,7 @@ func TestPollRecordsAndNotifies(t *testing.T) {
 	assert.Equal(t, "two", snaps[0].Blocks[0].Text)
 	assert.True(t, snaps[0].Background, "the last good poll's")
 	assert.Equal(t, "Paste it", snaps[0].Paste)
+	assert.Equal(t, &monitor.Upload{Path: `%APPDATA%\x`, Prefixes: []string{"a."}}, snaps[0].Upload)
 	assert.Equal(t, "Fake", snaps[0].Title)
 
 	// Subscribers saw snapshots and new events in order.

@@ -71,6 +71,12 @@
       "config": { "player": "Zezima", "hookSecret": "${OSRS_HOOK_SECRET}" }
     },
     {
+      "type": "farming",
+      "title": "Farm runs",
+      "interval": "30m",
+      "config": { "player": "Zezima" }
+    },
+    {
       "type": "mail",
       "title": "Mail",
       "interval": "10m",
