@@ -26,9 +26,14 @@ func (m *Monitor) blocks(b board, now time.Time) []monitor.Block {
 			}
 			title += fmt.Sprintf(" · %s, %s a patch", name, gp(ch.Total))
 		}
-		block := monitor.Block{Type: monitor.BlockTable, Title: title, Columns: []monitor.Column{
-			{Title: "Patch", Fill: true}, {Title: "Crop"}, {Title: "Pet", Align: monitor.AlignRight}, {Title: "Ready", Align: monitor.AlignRight},
-		}}
+		// Where there's a payment, each row says what protecting it costs.
+		pay := priced && ch.Payment > 0
+		columns := []monitor.Column{{Title: "Patch", Fill: true}, {Title: "Crop"}, {Title: "Pet", Align: monitor.AlignRight}}
+		if pay {
+			columns = append(columns, monitor.Column{Title: "Protection", Align: monitor.AlignRight})
+		}
+		columns = append(columns, monitor.Column{Title: "Ready", Align: monitor.AlignRight})
+		block := monitor.Block{Type: monitor.BlockTable, Title: title, Columns: columns}
 		for _, r := range rows {
 			crop := monitor.Cell{Text: produces[r.pred.Produce].Name}
 			if r.pred.Produce == "WEEDS" || r.pred.State == empty {
@@ -39,24 +44,21 @@ func (m *Monitor) blocks(b board, now time.Time) []monitor.Block {
 				pet.Text = fmt.Sprintf("1/%s", thousands(n))
 			}
 			text, tone, _ := r.status(now, m.loc)
-			block.Rows = append(block.Rows, []monitor.Cell{{Text: r.place()}, crop, pet, {Text: text, Tone: tone}})
+			cells := []monitor.Cell{{Text: r.place()}, crop, pet}
+			if pay {
+				cells = append(cells, monitor.Cell{Text: protection(ch), Tone: monitor.ToneMuted})
+			}
+			block.Rows = append(block.Rows, append(cells, monitor.Cell{Text: text, Tone: tone}))
 		}
 		blocks = append(blocks, block)
-		if priced && ch.Payment > 0 {
-			blocks = append(blocks, monitor.Block{Type: monitor.BlockText, Text: costs(ch)})
-		}
 	}
 	return blocks
 }
 
-// costs breaks down what a crop costs a patch, e.g. "Protection: 9
-// sweetcorn, 1k. Sapling: 250."
-func costs(ch choice) string {
-	plant := "Seed"
-	if ch.FromSapling {
-		plant = "Sapling"
-	}
-	return fmt.Sprintf("Protection: %d %s, %s. %s: %s.", ch.Pay, ch.PayName, gp(ch.Payment), plant, gp(ch.Plant))
+// protection is the gardener's payment and its cost, e.g. "9 sweetcorn,
+// 1k".
+func protection(ch choice) string {
+	return fmt.Sprintf("%d %s, %s", ch.Pay, ch.PayName, gp(ch.Payment))
 }
 
 // summary is a chip per run: ready, or when it all will be.

@@ -119,10 +119,9 @@ var hardwoods = []crop{
 // choice is a crop with what it costs.
 type choice struct {
 	crop
-	Plant       int  // the cheaper of seed and sapling
-	FromSapling bool // whether the sapling is the cheaper
-	Payment     int  // all of the payment, if protecting
-	Total       int
+	Plant   int // the cheaper of seed and sapling
+	Payment int // all of the payment, if protecting
+	Total   int
 }
 
 // cheapest picks the cheapest crop the player can plant, with its costs,
@@ -140,7 +139,7 @@ func cheapest(crops []crop, prices map[int]int, level int, protect bool) (choice
 		}
 		ch := choice{crop: c, Plant: seed}
 		if ch.Plant == 0 || (sapling > 0 && sapling < ch.Plant) {
-			ch.Plant, ch.FromSapling = sapling, true
+			ch.Plant = sapling
 		}
 		if protect {
 			if prices[c.PayItem] == 0 {

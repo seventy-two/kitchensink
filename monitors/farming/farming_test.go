@@ -194,15 +194,16 @@ func TestPoll(t *testing.T) {
 
 	res, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
-	assert.Equal(t, "Farming 99 · last seen in game 14 Oct 21:50", res.Subtitle)
-	require.Len(t, res.Blocks, 3)
+	assert.Empty(t, res.Subtitle)
+	require.Len(t, res.Blocks, 2)
 	fruit, hard := res.Blocks[0], res.Blocks[1]
 	assert.Equal(t, "Fruit trees", fruit.Title, "no fruit tree prices")
 	assert.Equal(t, "Hardwood · cheapest is Teak, 2.6k a patch", hard.Title, "seed 80 + 15 × 170 limpwurt")
-	assert.Equal(t, monitor.Block{Type: monitor.BlockText, Text: "Protection: 15 limpwurt roots, 2.5k. Seed: 80."}, res.Blocks[2])
+	assert.Equal(t, "Protection", hard.Columns[3].Title)
 	require.Len(t, hard.Rows, 2)
-	assert.Equal(t, []monitor.Cell{{Text: "Anglers' Retreat"}, {Text: "Teak"}, {Text: "1/2,525", Tone: monitor.ToneMuted}, {Text: "Sun 00:29"}}, hard.Rows[0])
-	assert.Equal(t, []monitor.Cell{{Text: "Fossil Island east"}, {Text: "Hardwood patch", Tone: monitor.ToneMuted}, {Tone: monitor.ToneMuted}, {Text: "Plant", Tone: monitor.ToneAccent}}, hard.Rows[1])
+	assert.Equal(t, []monitor.Cell{{Text: "Anglers' Retreat"}, {Text: "Teak"}, {Text: "1/2,525", Tone: monitor.ToneMuted}, {Text: "15 limpwurt roots, 2.5k", Tone: monitor.ToneMuted}, {Text: "Sun 00:29"}}, hard.Rows[0])
+	assert.Equal(t, []monitor.Cell{{Text: "Fossil Island east"}, {Text: "Hardwood patch", Tone: monitor.ToneMuted}, {Tone: monitor.ToneMuted}, {Text: "15 limpwurt roots, 2.5k", Tone: monitor.ToneMuted}, {Text: "Plant", Tone: monitor.ToneAccent}}, hard.Rows[1])
+	assert.Len(t, fruit.Columns, 4, "no payment without prices")
 	assert.Equal(t, []monitor.Stat{
 		{Label: "Fruit", Value: "Ready", Tone: monitor.ToneGood},
 		{Label: "Hardwood", Value: "Sun 00:29", Detail: "1 of 2 ready", Tone: monitor.ToneAccent},
@@ -241,9 +242,9 @@ func TestTreesPlantMaple(t *testing.T) {
 	m.prices = map[int]int{5314: 30_000, 5372: 25_000, 5396: 1600}
 	pr := profile{"12594.4771": "8:1792011040"} // Lumbridge tree patch: weeds
 	blocks := m.blocks(m.board(pr, time.Unix(1792011040, 0)), time.Unix(1792011040, 0))
-	require.Len(t, blocks, 2)
+	require.Len(t, blocks, 1)
 	assert.Equal(t, "Trees · Maple, 26k a patch", blocks[0].Title)
-	assert.Equal(t, "Protection: 1 basket of oranges, 1.6k. Sapling: 25k.", blocks[1].Text)
+	assert.Equal(t, "1 basket of oranges, 1.6k", blocks[0].Rows[0][3].Text)
 }
 
 func TestNoSpiritTrees(t *testing.T) {

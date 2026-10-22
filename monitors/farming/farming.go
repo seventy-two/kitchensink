@@ -182,7 +182,6 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 
 	now := env.Now()
 	board := m.board(pr, now)
-	res.Subtitle = m.subtitle(board)
 	res.Blocks = m.blocks(board, now)
 	res.Summary = m.summary(board, now)
 	res.SummaryStyle = monitor.SummaryChips
@@ -229,7 +228,6 @@ type row struct {
 type board struct {
 	rows  [][]row // by run
 	level int
-	seen  time.Time // when RuneLite last saw any patch
 }
 
 func (m *Monitor) board(pr profile, now time.Time) board {
@@ -245,9 +243,6 @@ func (m *Monitor) board(pr profile, now time.Time) board {
 				continue
 			}
 			b.rows[i] = append(b.rows[i], row{run: &runs[i], region: r, patch: p, pred: pred})
-			if pred.Seen.After(b.seen) {
-				b.seen = pred.Seen
-			}
 		}
 	}
 	for _, rows := range b.rows {
@@ -339,15 +334,4 @@ func when(t, now time.Time, loc *time.Location) string {
 		return t.Format("Mon 15:04")
 	}
 	return t.Format("2 Jan 15:04")
-}
-
-func (m *Monitor) subtitle(b board) string {
-	var parts []string
-	if b.level > 0 {
-		parts = append(parts, fmt.Sprintf("Farming %d", b.level))
-	}
-	if !b.seen.IsZero() {
-		parts = append(parts, "last seen in game "+b.seen.In(m.loc).Format("2 Jan 15:04"))
-	}
-	return strings.Join(parts, " · ")
 }
