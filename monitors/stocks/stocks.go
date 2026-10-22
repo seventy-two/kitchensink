@@ -335,8 +335,11 @@ type notedMove struct {
 // moveUpdates keeps the day's move events for q up to date as its price
 // changes: while the move's still past its level the event shows the
 // latest figures, and once it's fallen back the event says so and goes
-// quiet, so clients show it muted. news are the move events q raised this
-// poll; ones not seen before are noted, and need no update yet.
+// quiet, so clients show it muted. A move that's passed a higher level
+// since replaces its lower one: that event is ended (until now) and
+// forgotten, so Recent shows one per symbol and direction. news are the
+// move events q raised this poll; ones not seen before are noted, and need
+// no update yet.
 func (m *Monitor) moveUpdates(q quote, now time.Time, news []monitor.Event, moves map[string]notedMove) []monitor.Event {
 	pct, ok := parsePct(q.ChangePct)
 	if !ok || !tradedToday(q, now) {
@@ -356,9 +359,22 @@ func (m *Monitor) moveUpdates(q quote, now time.Time, news []monitor.Event, move
 		dir = "down"
 	}
 	latest := fmt.Sprintf("%s %s (%s)", q.Last, q.CurrencyCode, q.Change)
+	// The highest level noted each way.
+	top := map[bool]float64{}
+	for _, n := range moves {
+		if n.Symbol == q.Symbol && n.Day == day {
+			top[n.Up] = math.Max(top[n.Up], n.Level)
+		}
+	}
 	var out []monitor.Event
 	for key, n := range moves {
 		if n.Symbol != q.Symbol || n.Day != day {
+			continue
+		}
+		if n.Level < top[n.Up] {
+			delete(moves, key)
+			out = append(out, monitor.Event{Key: key, Update: true, Title: fmt.Sprintf("%s %s %.2f%% today", displayName(q), dir, math.Abs(pct)),
+				Body: latest, Until: now})
 			continue
 		}
 		// How far it's gone in the noted direction.

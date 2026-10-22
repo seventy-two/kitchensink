@@ -182,6 +182,34 @@ func TestMovesStayUpToDate(t *testing.T) {
 	assert.Empty(t, moves)
 }
 
+func TestHigherMovesReplaceLower(t *testing.T) {
+	path := openQuotes(t)
+	b, err := os.ReadFile(path)
+	require.NoError(t, err)
+	srv := monitortest.Serve(t, path)
+	srv.Reply(http.StatusOK, []byte(strings.Replace(string(b), `"+2.05%"`, `"+1.50%"`, 1)))
+	m := newMonitor(t, srv.URL, map[string]any{"movePct": 1, "holdings": []string{"tsla"}})
+	env := monitortest.Env(inSession)
+	res, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	require.Equal(t, []string{"move:TSLA:2026-10-09:up1"}, monitortest.Keys(res.Events))
+
+	// Up 2.05%: the new level notifies and the old one's event ends now.
+	srv.Reply(http.StatusOK, b)
+	res, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	require.Len(t, res.Events, 2)
+	assert.Equal(t, "move:TSLA:2026-10-09:up2", res.Events[0].Key)
+	assert.False(t, res.Events[0].Update)
+	assert.Equal(t, monitor.Event{Key: "move:TSLA:2026-10-09:up1", Update: true, Title: "TSLA up 2.05% today",
+		Body: "382.70 USD (+7.70)", Until: inSession}, res.Events[1])
+
+	// And it's forgotten: only the new one is kept up to date.
+	res, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"move:TSLA:2026-10-09:up2", "move:TSLA:2026-10-09:up2"}, monitortest.Keys(res.Events))
+}
+
 func TestTargetsNotifyOncePerCrossing(t *testing.T) {
 	srv := monitortest.Serve(t, "testdata/quotes.json")
 	m := newMonitor(t, srv.URL, map[string]any{

@@ -212,9 +212,6 @@ func (e *Engine) record(ctx context.Context, log *slog.Logger, r *runner, ev mon
 	if ev.Priority == "" {
 		ev.Priority = monitor.PriorityNormal
 	}
-	if ev.Until.IsZero() && ev.Expires.IsZero() && ev.Priority != monitor.PriorityHigh {
-		ev.Until = ev.Time.Add(e.opts.Stale)
-	}
 	if ev.Update {
 		// A change to an earlier event: passed on, never notified.
 		ev.Updated = e.opts.Now()
@@ -226,6 +223,9 @@ func (e *Engine) record(ctx context.Context, log *slog.Logger, r *runner, ev mon
 			e.hub.publish(Message{Type: MessageEvent, Event: changed, Update: true})
 		}
 		return
+	}
+	if ev.Until.IsZero() && ev.Expires.IsZero() && ev.Priority != monitor.PriorityHigh {
+		ev.Until = ev.Time.Add(e.opts.Stale)
 	}
 	ev, isNew, err := e.store.AddEvent(ev)
 	if err != nil {

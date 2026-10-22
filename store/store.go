@@ -110,11 +110,15 @@ func (s *Store) UpdateEvent(u monitor.Event) (monitor.Event, bool, error) {
 	if err := json.Unmarshal(data, &e); err != nil {
 		return u, false, fmt.Errorf("event %d: %w", id, err)
 	}
-	if e.Title == u.Title && e.Body == u.Body && e.Quiet == u.Quiet {
+	until := e.Until
+	if !u.Until.IsZero() {
+		until = u.Until
+	}
+	if e.Title == u.Title && e.Body == u.Body && e.Quiet == u.Quiet && e.Until.Equal(until) {
 		e.ID = id
 		return e, false, nil
 	}
-	e.Title, e.Body, e.Quiet, e.Updated = u.Title, u.Body, u.Quiet, u.Updated
+	e.Title, e.Body, e.Quiet, e.Until, e.Updated = u.Title, u.Body, u.Quiet, until, u.Updated
 	if data, err = json.Marshal(e); err != nil {
 		return u, false, err
 	}

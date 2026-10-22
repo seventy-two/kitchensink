@@ -118,6 +118,17 @@ func TestUpdateEvent(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, changed, "an update never makes an event")
 
+	// An update can end it; one without until leaves that as it was.
+	e, changed, err = s.UpdateEvent(monitor.Event{Monitor: "a", Key: "1", Title: "AMD down 0.71% today", Body: "Earlier down 3.46%", Quiet: true,
+		Until: later, Updated: later})
+	require.NoError(t, err)
+	assert.True(t, changed)
+	assert.True(t, e.Until.Equal(later))
+	e, changed, err = s.UpdateEvent(monitor.Event{Monitor: "a", Key: "1", Title: "AMD down 0.71% today", Body: "Earlier down 3.46%", Quiet: true, Updated: later})
+	require.NoError(t, err)
+	assert.False(t, changed)
+	assert.True(t, e.Until.Equal(later))
+
 	all, err := s.EventsSince(0, 10)
 	require.NoError(t, err)
 	require.Len(t, all, 2)
