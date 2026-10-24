@@ -1,6 +1,7 @@
 package mail
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -81,6 +82,7 @@ type fakeGemini struct {
 	answers map[string]extraction
 	asked   []string
 	fail    bool
+	status  int // of a failure; 503 if unset
 }
 
 var subjectLine = regexp.MustCompile(`(?m)^Subject: (.*)$`)
@@ -95,7 +97,7 @@ func newFakeGemini(t *testing.T) *fakeGemini {
 		g.mu.Lock()
 		defer g.mu.Unlock()
 		if g.fail {
-			http.Error(w, "busy", http.StatusServiceUnavailable)
+			http.Error(w, "busy", cmp.Or(g.status, http.StatusServiceUnavailable))
 			return
 		}
 		subject := subjectLine.FindStringSubmatch(req.Input)[1]
@@ -436,6 +438,25 @@ func TestSkipsWhatGeminiCantRead(t *testing.T) {
 	assert.Len(t, g.asked, 1, "only the second was asked about again")
 	assert.Equal(t, []string{"todo add Do it"}, acts.sent)
 	assert.Zero(t, res.Next)
+}
+
+func TestOutOfCreditSkipsNothing(t *testing.T) {
+	g := newFakeGemini(t)
+	acc := &fakeAccount{name: "Gmail"}
+	acc.add("Order: fine", "Shop <x@shop.com>", now.Add(-time.Hour), "")
+	g.answers["Order: fine"] = extraction{Kind: "order", Summary: "Fine", Todos: []string{"Do it"}}
+	m := newMonitor(t, g, acc)
+	acts := &actions{}
+	env := acts.env(monitortest.Env(now))
+	g.fail, g.status = true, http.StatusPaymentRequired
+	for range maxAttempts * 2 {
+		_, err := m.Poll(context.Background(), env)
+		require.NoError(t, err)
+	}
+	g.fail = false
+	_, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"todo add Do it"}, acts.sent, "read once Gemini's back")
 }
 
 func TestOver(t *testing.T) {

@@ -326,6 +326,12 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		x, err := m.gemini.extract(ctx, env.HTTP, m.prompt(h, text, now))
 		if err != nil {
 			env.Log.Warn("extracting from mail", "subject", h.Subject, "err", err)
+			// Out of credit, say: no fault of this email's, so it keeps
+			// its place (three went unread on 24 Oct 2026 that way).
+			if errors.Is(err, errUnavailable) {
+				readErr = "Gemini: " + err.Error()
+				break
+			}
 			if failed[h.ID]++; failed[h.ID] >= maxAttempts {
 				// This one email keeps failing (too long, say): skip it
 				// rather than hold up the rest.

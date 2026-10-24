@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -149,6 +150,10 @@ func (m *Monitor) prompt(h header, text string, now time.Time) string {
 	return b.String()
 }
 
+// errUnavailable is a Gemini error that isn't about the email: the key's
+// refused, out of credit or rate-limited, so every email would fail.
+var errUnavailable = errors.New("Gemini unavailable")
+
 func (g *gemini) extract(ctx context.Context, client *http.Client, input string) (extraction, error) {
 	sys := instruction
 	if g.Context != "" {
@@ -179,7 +184,12 @@ func (g *gemini) extract(ctx context.Context, client *http.Client, input string)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
-		return extraction{}, fmt.Errorf("returned %s: %s", resp.Status, strings.TrimSpace(string(msg)))
+		err := fmt.Errorf("returned %s: %s", resp.Status, strings.TrimSpace(string(msg)))
+		switch resp.StatusCode {
+		case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden, http.StatusTooManyRequests:
+			return extraction{}, fmt.Errorf("%w: %w", errUnavailable, err)
+		}
+		return extraction{}, err
 	}
 	var in struct {
 		Steps []struct {
