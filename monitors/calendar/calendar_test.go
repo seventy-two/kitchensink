@@ -218,13 +218,14 @@ func TestSummary(t *testing.T) {
 		return out
 	}
 	// The next event, not the rest of the week; today's all-day "Bins out"
-	// waits for a quiet moment.
+	// waits until nothing timed is left today.
 	assert.Equal(t, []string{"in 8 min | Standup | Work"}, brief(now))
 	// What's on now leads.
 	assert.Equal(t, []string{
 		"Now, until 16:00 | Quarterly review | Work",
-		"Tomorrow 10:00 | Standup (moved) | Work",
+		"Today | Bins out | Personal",
 	}, brief(time.Date(2026, 10, 12, 15, 30, 0, 0, london)))
+	assert.Equal(t, []string{"Today | Bins out | Personal"}, brief(time.Date(2026, 10, 12, 17, 0, 0, 0, london)))
 	assert.Equal(t, []string{"Tomorrow 09:00 | Standup | Work"}, brief(time.Date(2026, 10, 14, 20, 0, 0, 0, london)))
 }
 

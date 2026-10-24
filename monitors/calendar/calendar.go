@@ -213,8 +213,8 @@ func relevant(occs []occurrence, now time.Time) monitor.Window {
 
 // summary is the next event: when, what, and its note (or, without one,
 // which calendar it's on, if there's more than one), led by what's on now
-// if anything is. Today's all-day events show only when nothing else is
-// coming up.
+// if anything is. Today's all-day events give way only to timed events
+// still to come today: a parcel due today beats one due on Tuesday.
 func (m *Monitor) summary(occs []occurrence, now time.Time, notes map[string]string) []monitor.Stat {
 	today, tomorrow := midnight(now), midnight(now).AddDate(0, 0, 1)
 	detail := func(o occurrence) string {
@@ -248,7 +248,7 @@ func (m *Monitor) summary(occs []occurrence, now time.Time, notes map[string]str
 		out = append(out, monitor.Stat{Label: "Now, until " + current.End.In(m.loc).Format("15:04"), Value: current.Title,
 			Detail: detail(*current), Tone: monitor.ToneAccent})
 	}
-	if next == nil && current == nil {
+	if allDay != nil && (next == nil && current == nil || next != nil && !next.Start.Before(tomorrow)) {
 		next = allDay
 	}
 	if next != nil {
