@@ -170,6 +170,11 @@ type record struct {
 	// On is the day it's been moved to by hand, kept until it's done or
 	// the day's gone.
 	On string `json:"on,omitempty"`
+	// OnEvery is the chore's interval when it was moved. A move made
+	// under another interval no longer holds: washes pushed to a Saturday
+	// on a weekly cycle all stayed there after going fortnightly, though
+	// none was due.
+	OnEvery int `json:"onEvery,omitempty"`
 }
 
 // keepDone is how many days done each chore remembers.
@@ -274,7 +279,7 @@ func (m *Monitor) view(env monitor.Env) (view, error) {
 				from = d
 			}
 			var on day
-			if d, ok := parseDay(r.On); ok && d >= v.today {
+			if d, ok := parseDay(r.On); ok && d >= v.today && r.OnEvery == c.every {
 				on = d
 			}
 			jobs = append(jobs, job{idx: i, due: p.due, flex: c.flex, from: from, days: c.days, any: c.any, uses: c.uses, never: p.never, on: on})
@@ -329,7 +334,7 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 		if p.done {
 			return fmt.Errorf("%w: %s is done today", monitor.ErrBadAction, p.name)
 		}
-		r.On = (p.on + 1).String()
+		r.moveTo(p.on+1, p.every)
 	case "move":
 		// Up brings it forward a day (not before today), down puts it off
 		// a day; the rest fit around it.
@@ -341,9 +346,9 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 			if p.on <= v.today {
 				return nil // as soon as it can be already
 			}
-			r.On = (p.on - 1).String()
+			r.moveTo(p.on-1, p.every)
 		case "down":
-			r.On = (p.on + 1).String()
+			r.moveTo(p.on+1, p.every)
 		default:
 			return fmt.Errorf("%w: move up or down, not %q", monitor.ErrBadAction, a.Text)
 		}
@@ -365,8 +370,13 @@ func (r *record) done(on day) {
 		r.Done = r.Done[n-keepDone:]
 	}
 	if r.Done[len(r.Done)-1] == s {
-		r.PutOff, r.On = "", ""
+		r.PutOff, r.On, r.OnEvery = "", "", 0
 	}
+}
+
+// moveTo pins the chore to a day by hand, under its current interval.
+func (r *record) moveTo(on day, every int) {
+	r.On, r.OnEvery = on.String(), every
 }
 
 // maxEvery bounds a tracked chore's interval, in days.

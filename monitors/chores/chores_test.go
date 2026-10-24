@@ -334,3 +334,18 @@ func TestMove(t *testing.T) {
 	assert.ErrorIs(t, m.Act(context.Background(), env, monitor.Action{Type: "move", ID: "whites-wash", Text: "sideways"}), monitor.ErrBadAction)
 	assert.ErrorIs(t, m.Act(context.Background(), env, monitor.Action{Type: "move", ID: "towel-wash", Text: "up"}), monitor.ErrBadAction, "done today")
 }
+
+func TestMoveLapsesWithNewInterval(t *testing.T) {
+	m := newMonitor(t, laundry)
+	env := monitortest.Env(now)
+	require.NoError(t, m.Act(context.Background(), env, monitor.Action{Type: "move", ID: "whites-wash", Text: "down"}))
+	_, later := lines(t, poll(t, m, env))
+	assert.Contains(t, later, "[ ] Whites wash · tomorrow")
+
+	// Washes go fortnightly: the move was made for the weekly cycle, so
+	// the planner places the whites afresh.
+	m = newMonitor(t, strings.ReplaceAll(laundry, `"every": 7, "uses"`, `"every": 14, "uses"`))
+	today, later := lines(t, poll(t, m, env))
+	assert.Contains(t, today, "[ ] Whites wash")
+	assert.NotContains(t, later, "[ ] Whites wash · tomorrow")
+}
