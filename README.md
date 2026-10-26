@@ -4,8 +4,8 @@ A small self-hosted service that keeps an eye on things for you (stock
 prices, NFL games, your fantasy football teams, the weather, car adverts,
 your calendars, a to-do list, recurring chores, the orders and
 bookings in your email, the daily puzzle games you haven't played yet,
-a day's progress towards OSRS pets, your Letterboxd watchlist and new
-eBay listings) and tells your devices when something happens. Clients get a live dashboard of everything being watched and a
+a day's progress towards OSRS pets, your Letterboxd watchlist, new
+eBay listings and your smart lights) and tells your devices when something happens. Clients get a live dashboard of everything being watched and a
 notification for each event.
 
 - **Server**: Go, one binary, SQLite. Runs the monitors on their intervals,
@@ -37,6 +37,7 @@ notification for each event.
 | `letterboxd` | a Letterboxd `user`'s public watchlist, newest additions first, as a table linking each film; short, it's the newest three rows. With `local` set to an app's name (`watchgrab`), each row also has that app's button, which only clients with the app installed draw (below). It reads the whole list every `fullEvery` (default `1h`) and only the first page, where additions appear, in between, so it can poll often (every 10 minutes, say) | each film added, as a quiet event |
 | `osrs` | [Wise Old Man](https://wiseoldman.net): an Old School RuneScape `player`'s gains since midnight towards pets only: boss kills, Guardians of the Rift, Soul Wars zeal, master clues, and XP in the skills with a pet (not combat), leaving out any whose pet is in `owned` (pet names) or that Dink has reported as a new pet. It asks WOM to update the player each poll and just after midnight, and compares with the last snapshot from before midnight. The table gives each gain's pet drop rate (from the wiki) and, for bosses that have ever given a drop worth `bigLoot` or a pet, the kills since the last one. Short, it's the table's top three rows (`summaryBlock`); the chips are for clients without that. With `hookSecret` set, the RuneLite plugin [Dink](https://github.com/pajlads/DinkPlugin) can make it live (below): kills count as they happen, and drops worth `bigLoot` or more (default 20m) and pets are listed and notify | `hookSecret` (e.g. `"${OSRS_HOOK_SECRET}"`), `owned` |
 | `farming` | RuneLite's Time Tracking plugin, uploaded by the Windows client (below): an Old School RuneScape account's farm runs that count towards the Tangleroot pet (quick patches, trees, fruit trees, hardwoods and the Farming Guild's specials, spirit trees left out), a table each: every patch RuneLite has seen, what's in it, the pet chance at the `player`'s Farming level (from Wise Old Man) and when it's ready, or what it needs. For fruit trees and hardwoods, where every crop gives the same chance, the table's title names the cheapest to plant at GE prices (the OSRS Wiki's), with the gardener's payment unless `protect` is false; trees are always maples, priced the same way. Each row of those tables has the payment and what it costs. The summary is a chip per run | when every patch of a kind (fruit trees, say) has finished growing |
+| `lights` | [Home Assistant](https://www.home-assistant.io)'s REST API: a checklist row per light (by its name in Home Assistant), switched from clients (below); the summary says how many are on, then a chip for each one that's on | nothing for light changes; one quiet event if Home Assistant can't be reached for `offlineAfter` (default 30 minutes) |
 
 Each monitor also returns a dashboard panel and a short summary (shown when
 space is short), polls on its own interval and can ask to be polled sooner
@@ -298,6 +299,46 @@ fixed commit by `go generate ./monitors/farming` (bump the commit in
 a patch for, unless `profile` names one (the key after
 `timetracking.rsprofile.`). Keep the plugin on, and visit patches with
 RuneLite running: like the plugin, it only knows what it's seen.
+
+### Lights
+
+The `lights` monitor reads and switches lights through Home Assistant's
+REST API, at `url` with a long-lived access token (made on your Home
+Assistant profile page, under Security) as `token`, e.g.
+`"${HOMEASSISTANT_TOKEN}"`. It shows every light, by name, unless given
+`lights` (entity IDs, shown in that order) or `areas` (Home Assistant
+area names or IDs, whose lights follow by name). A light in `lights` that
+Home Assistant no longer has is shown as unavailable, so a renamed entity
+ID is noticed.
+
+The panel is a checklist with a row per light, and an *All lights* row
+when there's more than one. A ticked row is a light that's **off**, so
+ticking a row turns it off and unticking it turns it on (the clients'
+checklists offer their up and down buttons only on unticked rows, which
+here are the lights that are on). Those buttons make a light brighter or
+dimmer, stepping between `levels` (default 10, 25, 50, 75 and 100%). On
+the *All lights* row, ticking turns every light off if any is on, else
+all on, and the buttons step each light that's on. The actions are
+`toggle` and `move` (`up` or `down`) with the light's entity ID or `all`,
+and, for clients or scripts that want it, `brightness` with a percentage
+as text (`0` turns it off).
+
+It polls (every 15 seconds suits it; Home Assistant answers from memory),
+and after an action it polls straight away and again 10 seconds later,
+for lights that report their new state late. When Home Assistant can't be
+reached (it's on a home network, so the server reaches it through a
+tunnel) the panel keeps the last state with the error, and only an
+outage longer than `offlineAfter` (`"0s"` for never) makes an event:
+one quiet one, updated with how long it lasted when it's back.
+
+```json
+"config": {
+  "url": "http://homeassistant.local:8123",
+  "token": "${HOMEASSISTANT_TOKEN}",
+  "lights": ["light.desk_lamp", "light.bedside"],
+  "areas": ["Living room"]
+}
+```
 
 ## Running it
 

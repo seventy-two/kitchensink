@@ -65,6 +65,16 @@
       "config": { "user": "someone", "local": "watchgrab" }
     },
     {
+      "type": "lights",
+      "title": "Lights",
+      "interval": "15s",
+      "config": {
+        "url": "http://homeassistant.local:8123",
+        "token": "${HOMEASSISTANT_TOKEN}",
+        "lights": ["light.desk_lamp", "light.bedside"]
+      }
+    },
+    {
       "type": "osrs",
       "title": "OSRS today",
       "interval": "1h",
