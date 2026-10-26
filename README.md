@@ -34,6 +34,7 @@ notification for each event.
 | `mail` | IMAP (e.g. Gmail) and Outlook mailboxes, read by Gemini for bookings, orders and things to do, which it adds to the calendar, to-do list and chores (below) | nothing itself (each finding is a quiet event); a sign-in code when an Outlook account needs one |
 | `dailies` | a dailies tracker (a separate app)'s games and today's results: every game, linked and marked once `player` has logged it; the summary is a chip for each (`names` gives them shorter names by game ID), green once played. With `versus` set to the other player, a played game is instead green when won, red when lost and blue when drawn or still waiting on them (the tracker says who won). On the tracker's co-op days, played games are green when they hit the day's target and red when they miss it. When the tracker has haikudle's haiku of the day, it comes last, green once `player` has written theirs (never won or lost). Its paste button logs a game's share text from the clipboard | what happened to each paste, logged or not and why, as a temporary event |
 | `ebay` | an eBay search, newest listings first, through eBay's Browse API (below): what each listing is (named by Gemini from its keyword-stuffed title, with `gemini`; else the title; uncommon and rare ones say so, with a button that ignores the game from then on: action `ignore` with the listing's ID, after which its listings count as common), its price (an auction's current bid, with the bids) and when it went up; short, the newest three rows | each new listing, with its picture; none for those up at the first check or those Gemini rates below `notify`, which are only in the panel |
+| `reverb` | [Reverb](https://reverb.com) `searches`, their listings together, newest first, through Reverb's API (below), keeping only those Gemini says are what you `want` (parts, cases and lookalike models turn up in any search): what each is (Gemini's name for it), its condition and a note (the version, say), its price and postage to `shipsTo` (default `GB`; only listings that ship there are found) and when it went up, with a button to turn down one Gemini let through (action `reject` with the listing's ID); short, the newest three rows | each new listing that's wanted, with its picture; none for those up at the first check |
 | `letterboxd` | a Letterboxd `user`'s public watchlist, newest additions first, as a table linking each film; short, it's the newest three rows. With `local` set to an app's name (`watchgrab`), each row also has that app's button, which only clients with the app installed draw (below). It reads the whole list every `fullEvery` (default `1h`) and only the first page, where additions appear, in between, so it can poll often (every 10 minutes, say) | each film added, as a quiet event |
 | `osrs` | [Wise Old Man](https://wiseoldman.net): an Old School RuneScape `player`'s gains since midnight towards pets only: boss kills, Guardians of the Rift, Soul Wars zeal, master clues, and XP in the skills with a pet (not combat), leaving out any whose pet is in `owned` (pet names) or that Dink has reported as a new pet. It asks WOM to update the player each poll and just after midnight, and compares with the last snapshot from before midnight. The table gives each gain's pet drop rate (from the wiki) and, for bosses that have ever given a drop worth `bigLoot` or a pet, the kills since the last one. Short, it's the table's top three rows (`summaryBlock`); the chips are for clients without that. With `hookSecret` set, the RuneLite plugin [Dink](https://github.com/pajlads/DinkPlugin) can make it live (below): kills count as they happen, and drops worth `bigLoot` or more (default 20m) and pets are listed and notify | `hookSecret` (e.g. `"${OSRS_HOOK_SECRET}"`), `owned` |
 | `farming` | RuneLite's Time Tracking plugin, uploaded by the Windows client (below): an Old School RuneScape account's farm runs that count towards the Tangleroot pet (quick patches, trees, fruit trees, hardwoods and the Farming Guild's specials, spirit trees left out), a table each: every patch RuneLite has seen, what's in it, the pet chance at the `player`'s Farming level (from Wise Old Man) and when it's ready, or what it needs. For fruit trees and hardwoods, where every crop gives the same chance, the table's title names the cheapest to plant at GE prices (the OSRS Wiki's), with the gardener's payment unless `protect` is false; trees are always maples, priced the same way. Each row of those tables has the payment and what it costs. The summary is a chip per run | when every patch of a kind (fruit trees, say) has finished growing |
@@ -254,6 +255,25 @@ notifies; the rest make no event and are only in the panel (empty: every new lis
   "searchURL": "https://www.ebay.co.uk/sch/i.html?_nkw=big+box+pc&_sacat=0",
   "clientId": "${EBAY_CLIENT_ID}", "clientSecret": "${EBAY_CLIENT_SECRET}",
   "name": "a boxed PC game", "notify": "uncommon",
+  "gemini": { "apiKey": "${GEMINI_API_KEY}" }
+}
+```
+
+### Reverb
+
+The `reverb` monitor needs a Reverb personal access token (reverb.com,
+My Account, API & Integrations; read access is enough) as `token`. Each of
+`searches` is a search on the site; a listing found by several is shown
+once. With `gemini`, each new listing is checked once against `want`,
+which says in plain words what's wanted and what isn't (versions to leave
+out, model codes sellers use in place of a name); without it, every listing
+is shown. Prices are in `currency` (default `GBP`).
+
+```json
+"config": {
+  "searches": ["ibanez xiphos", "ibanez xpt", "schecter km-6"],
+  "token": "${REVERB_TOKEN}",
+  "want": "An Ibanez Xiphos (an XPT model; sellers often give only the code), or a Schecter KM-6 Mk I or Mk II, not the Mk III.",
   "gemini": { "apiKey": "${GEMINI_API_KEY}" }
 }
 ```

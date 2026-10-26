@@ -59,6 +59,17 @@
       }
     },
     {
+      "type": "reverb",
+      "title": "Reverb",
+      "interval": "30m",
+      "config": {
+        "searches": ["ibanez xiphos", "schecter km-6"],
+        "token": "${REVERB_TOKEN}",
+        "want": "An Ibanez Xiphos, or a Schecter KM-6 Mk I or Mk II (not the Mk III).",
+        "gemini": { "apiKey": "${GEMINI_API_KEY}" }
+      }
+    },
+    {
       "type": "letterboxd",
       "title": "Letterboxd",
       "interval": "1h",
