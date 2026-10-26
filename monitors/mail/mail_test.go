@@ -267,6 +267,9 @@ func TestMergeEvent(t *testing.T) {
 	// Put off a day: the old day's window doesn't carry over.
 	moved := xEvent{Title: "Royal Mail parcel", Date: "2026-10-22"}
 	assert.Equal(t, moved, mergeEvent(rm, moved))
+	// Came a day early: still the shop's title, so it says what's come.
+	early := xEvent{Title: "Amazon parcel", Date: "2026-10-20", Delivered: true}
+	assert.Equal(t, xEvent{Title: "eBay delivery: Final Fantasy VIII", Date: "2026-10-20", Delivered: true}, mergeEvent(ebay, early))
 }
 
 func TestLinkRefsJoinsEvents(t *testing.T) {
@@ -482,4 +485,49 @@ func TestReadAgainReplacesFinding(t *testing.T) {
 	res, err := m.Poll(context.Background(), env)
 	require.NoError(t, err)
 	assert.Len(t, res.Blocks[0].Items, 1)
+}
+
+// A parcel that's come is said at once, with a to-do to fetch it, and its
+// calendar event moves to the day it came.
+func TestDeliveredParcel(t *testing.T) {
+	g := newFakeGemini(t)
+	mb := &fakeAccount{name: "Outlook"}
+	day := func(d, h int) time.Time { return time.Date(2026, 10, d, h, 0, 0, 0, london) }
+	mb.add("Dispatched: 'Monster Juiced Ripper 500...'", "Amazon.co.uk <shipment-tracking@amazon.co.uk>", day(25, 7), "arriving Tuesday")
+	mb.add("Delivered: 'Monster Juiced Ripper 500...'", "Amazon.co.uk <order-update@amazon.co.uk>", day(26, 13), "left with reception")
+	g.answers["Dispatched: 'Monster Juiced Ripper 500...'"] = extraction{Kind: "delivery", Refs: []string{"026-5383085-1196347"},
+		Events: []xEvent{{Key: "amazon-026-5383085-1196347", Title: "Amazon parcel: Monster Juiced Ripper", Date: "2026-10-27"}}}
+	g.answers["Delivered: 'Monster Juiced Ripper 500...'"] = extraction{Kind: "delivery", Summary: "Amazon parcel delivered", Refs: []string{"026-5383085-1196347"},
+		Events: []xEvent{{Key: "amazon-026-5383085-1196347", Title: "Amazon parcel", Date: "2026-10-26", Start: "13:05", Detail: "left with reception", Delivered: true}}}
+
+	m := newMonitor(t, g, mb)
+	acts := &actions{}
+	res, err := m.Poll(context.Background(), acts.env(monitortest.Env(day(26, 14))))
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		`calendar upsert {"key":"mail:amazon-026-5383085-1196347","title":"Amazon parcel: Monster Juiced Ripper","start":"2026-10-27T00:00:00Z","end":"2026-10-28T00:00:00Z","allDay":true,"source":"Email"}`,
+		`calendar upsert {"key":"mail:amazon-026-5383085-1196347","title":"Amazon parcel: Monster Juiced Ripper","start":"2026-10-26T13:05:00Z","detail":"Delivered · left with reception","source":"Email"}`,
+		`todo add Pick up the parcel: Amazon parcel: Monster Juiced Ripper`,
+	}, acts.sent)
+	var notified []monitor.Event
+	for _, e := range res.Events {
+		if !e.Quiet {
+			notified = append(notified, e)
+		}
+	}
+	require.Len(t, notified, 1)
+	assert.Equal(t, "Delivered: Amazon parcel: Monster Juiced Ripper", notified[0].Title)
+	assert.Equal(t, "left with reception", notified[0].Body)
+	assert.Equal(t, monitor.PriorityNormal, notified[0].Priority)
+
+	// One read days later, catching up, says nothing.
+	mb2 := &fakeAccount{name: "Outlook"}
+	mb2.add("Delivered: 'Survive Style 5+'", "Amazon.co.uk <order-update@amazon.co.uk>", day(23, 13), "left with reception")
+	g.answers["Delivered: 'Survive Style 5+'"] = extraction{Kind: "delivery", Summary: "Amazon parcel delivered",
+		Events: []xEvent{{Key: "amazon-026-1", Title: "Amazon parcel: Survive Style 5+", Date: "2026-10-23", Delivered: true}}}
+	acts = &actions{}
+	res, err = newMonitor(t, g, mb2).Poll(context.Background(), acts.env(monitortest.Env(day(26, 14))))
+	require.NoError(t, err)
+	assert.Empty(t, acts.sent)
+	assert.Empty(t, res.Events)
 }

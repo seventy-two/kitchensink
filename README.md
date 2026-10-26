@@ -184,6 +184,9 @@ Gemini says what in it is worth keeping, and the monitor passes that on:
 - **Calendar**: tickets, reservations, travel, appointments and booked
   delivery slots, as events from "Email"; a later email about the same
   booking (by its reference) moves or cancels it.
+- **Delivered parcels**: an email saying a parcel has come (within two
+  days) raises a notification, marks its calendar event "Delivered" (on
+  the day it came) and adds a to-do to pick it up.
 - **To do**: things the email asks you to do by a date, such as returning
   something or checking in.
 - **Chores**: the chores in `choresDone` ticked off on the day of an email

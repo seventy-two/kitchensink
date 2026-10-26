@@ -90,24 +90,25 @@ func linkRefs(links map[string]link, refs []string, own string, day string) (key
 }
 
 // mergeEvent is a linked event as a new email describes it, keeping what
-// the earlier one said that this one doesn't: on the same day, its times
-// and detail when this has none, and the longer title (the shop's, which
-// names what's coming, over the courier's "Royal Mail parcel").
+// the earlier one said that this one doesn't: the longer title (the
+// shop's, which names what's coming, over the courier's "Royal Mail
+// parcel") and the location, and on the same day its times and detail
+// when this has none.
 func mergeEvent(prev, e xEvent) xEvent {
+	if len(strings.TrimSpace(prev.Title)) > len(strings.TrimSpace(e.Title)) {
+		e.Title = prev.Title
+	}
+	if strings.TrimSpace(e.Location) == "" {
+		e.Location = prev.Location
+	}
 	if prev.Date != e.Date {
-		return e // moved: the new day's what counts
+		return e // moved: the old day's times don't carry over
 	}
 	if strings.TrimSpace(e.Start) == "" {
 		e.Start, e.End = prev.Start, prev.End
 	}
 	if strings.TrimSpace(e.Detail) == "" {
 		e.Detail = prev.Detail
-	}
-	if len(strings.TrimSpace(prev.Title)) > len(strings.TrimSpace(e.Title)) {
-		e.Title = prev.Title
-	}
-	if strings.TrimSpace(e.Location) == "" {
-		e.Location = prev.Location
 	}
 	return e
 }

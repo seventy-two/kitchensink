@@ -57,7 +57,7 @@ func newGemini(c Gemini) (*gemini, error) {
 
 const instruction = `You read one email for someone's personal dashboard and pull out only what belongs on their calendar, to-do list or chores. Most emails, including marketing that merely mentions orders or bookings, give nothing: then return kind "other" and empty lists.
 
-- events: things they'll attend or must be in for, with a date: gigs, matches, films, shows and other tickets; restaurant, hotel and travel bookings (each flight or train leg its own event); appointments (doctor, dentist, haircut, car service); grocery deliveries and other booked delivery or collection slots; parcel deliveries once an email gives the day it's due or out for delivery (with the window if given), titled with the carrier or shop and what's in it if known ("Royal Mail parcel", "eBay delivery: Final Fantasy VIII"), but not "dispatched" emails with no day, and nothing once it's been delivered. title is short and specific, as they'd write it ("Vildhjarta", "Dentist", "Waitrose delivery", "Flight to Lisbon"). date is YYYY-MM-DD; start and end are 24-hour HH:MM in UK time (convert if the email gives another zone), empty if unknown (end may be empty); endDate only for stays over several days (the last day). location is the venue and town, or empty. detail is one short line of what's useful on the day, separated by " · " (e.g. "2 tickets · doors 18:30 · ref K8X2P1"), or empty. key identifies the booking across emails, so a confirmation, a later change and a cancellation of the same thing share it: the merchant and its booking or order reference in lower case, plus what each event is if one booking has several, e.g. "easyjet-k8x2p1-outbound"; for a parcel, the shop or carrier and its order or tracking number, so its dispatch, due and out-for-delivery emails share one; without a reference, the merchant and date.
+- events: things they'll attend or must be in for, with a date: gigs, matches, films, shows and other tickets; restaurant, hotel and travel bookings (each flight or train leg its own event); appointments (doctor, dentist, haircut, car service); grocery deliveries and other booked delivery or collection slots; parcel deliveries once an email gives the day it's due or out for delivery (with the window if given), titled with the carrier or shop and what's in it if known ("Royal Mail parcel", "eBay delivery: Final Fantasy VIII"), but not "dispatched" emails with no day. Once an email says a parcel has been delivered (handed over, left with a neighbour, in a safe place or a locker), give it as the same event on the day it came, with delivered true and where it was left in detail ("left with reception"); delivered is false for everything else. title is short and specific, as they'd write it ("Vildhjarta", "Dentist", "Waitrose delivery", "Flight to Lisbon"). date is YYYY-MM-DD; start and end are 24-hour HH:MM in UK time (convert if the email gives another zone), empty if unknown (end may be empty); endDate only for stays over several days (the last day). location is the venue and town, or empty. detail is one short line of what's useful on the day, separated by " · " (e.g. "2 tickets · doors 18:30 · ref K8X2P1"), or empty. key identifies the booking across emails, so a confirmation, a later change and a cancellation of the same thing share it: the merchant and its booking or order reference in lower case, plus what each event is if one booking has several, e.g. "easyjet-k8x2p1-outbound"; for a parcel, the shop or carrier and its order or tracking number, so its dispatch, due and out-for-delivery emails share one; without a reference, the merchant and date.
 - cancelled: keys of events this email cancels, built the same way.
 - refs: every order, booking and tracking number in the email, as written (e.g. "11-15308-85027", "VU793801544GB"), so emails about the same thing from the shop and the courier can be matched. Not item, listing, customer or account numbers, phone numbers or prices. Empty if none.
 - todos: things they must do by a date that the email asks for and that won't happen otherwise: return an item, collect a parcel from a locker, check in online, pay a balance, send a form. One short line each, with the deadline as a date without the weekday ("Return the boots to Amazon by 30 Oct"). Not things they merely can do, such as amending an order, managing a booking or rebooking a cancelled appointment, unless the email says they must. Never reviews, surveys, upsells or marketing. Only what's still to do as of today.
@@ -86,6 +86,8 @@ type xEvent struct {
 	EndDate  string `json:"endDate"`
 	Location string `json:"location"`
 	Detail   string `json:"detail"`
+	// Delivered is set by the email saying a parcel has come.
+	Delivered bool `json:"delivered"`
 }
 
 type xItem struct {
@@ -119,8 +121,10 @@ var schema = map[string]any{
 				"endDate":  described("the last day, YYYY-MM-DD, only for stays over several days; else empty"),
 				"location": described("venue and town, e.g. \"O2 Academy, Bristol\"; empty for a delivery to home"),
 				"detail":   described("one short line of what's useful on the day, parts separated by \" · \", or empty"),
+				"delivered": map[string]any{"type": "boolean",
+					"description": "true only if this email says the parcel has already been delivered; date is then the day it came"},
 			},
-			"required": []string{"key", "title", "date", "start", "end", "endDate", "location", "detail"},
+			"required": []string{"key", "title", "date", "start", "end", "endDate", "location", "detail", "delivered"},
 		}),
 		"cancelled": list(str()),
 		"refs":      list(str()),
@@ -225,6 +229,10 @@ func (g *gemini) extract(ctx context.Context, client *http.Client, input string)
 // ones read while catching up have mostly been done or are past.
 const todoMaxAge = 14 * 24 * time.Hour
 
+// deliveredMaxAge is how old a delivery email can be to say a parcel's
+// come: older ones read while catching up were fetched long ago.
+const deliveredMaxAge = 48 * time.Hour
+
 // apply passes what Gemini found on to the other monitors, and says what
 // it did.
 func (m *Monitor) apply(ctx context.Context, env monitor.Env, h header, x extraction, now time.Time) finding {
@@ -292,8 +300,29 @@ func (m *Monitor) apply(ctx context.Context, env monitor.Env, h header, x extrac
 			if !ok || over(a, today) {
 				continue
 			}
+			if e.Delivered {
+				a.Detail = strings.Join(slices.DeleteFunc([]string{"Delivered", a.Detail}, func(s string) bool { return s == "" }), " · ")
+			}
 			data, _ := json.Marshal(a)
 			send(m.calendar, monitor.Action{Type: "upsert", Data: data}, "Calendar: "+a.Title+", "+describeWhen(a))
+		}
+	}
+	// A parcel that's come has to be fetched (from the block's post room,
+	// say): say so, and keep it on the to-do list until it has been.
+	if now.Sub(h.Date) < deliveredMaxAge {
+		for _, e := range x.Events {
+			if !e.Delivered || strings.TrimSpace(e.Title) == "" {
+				continue
+			}
+			title := strings.TrimSpace(e.Title)
+			f.notify = append(f.notify, monitor.Event{
+				Key: "delivered:" + slug(e.Key+"-"+title), Title: "Delivered: " + title,
+				Body: strings.TrimSpace(e.Detail), Priority: monitor.PriorityNormal,
+			})
+			if m.todo != "" {
+				t := "Pick up the parcel: " + title
+				send(m.todo, monitor.Action{Type: "add", Text: t}, "To do: "+t)
+			}
 		}
 	}
 	if m.todo != "" && now.Sub(h.Date) < todoMaxAge {

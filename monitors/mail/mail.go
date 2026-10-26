@@ -346,6 +346,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		}
 		delete(failed, h.ID)
 		f := m.apply(ctx, env, h, x, now)
+		events = append(events, f.notify...)
 		if len(f.Did) > 0 {
 			// An email read again replaces what it found before.
 			found = append([]finding{f}, slices.DeleteFunc(found, func(o finding) bool { return o.ID == f.ID })...)
@@ -409,6 +410,8 @@ type finding struct {
 	From    string    `json:"from"`
 	Summary string    `json:"summary"`
 	Did     []string  `json:"did"`
+	// notify is what to tell them now, such as a parcel having come.
+	notify []monitor.Event
 }
 
 func (m *Monitor) loadFound(env monitor.Env) ([]finding, error) {
