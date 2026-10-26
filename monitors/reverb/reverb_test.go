@@ -59,7 +59,11 @@ func item(id int64, title, price, postage string, published time.Time) map[strin
 		"_links":       map[string]any{"web": map[string]any{"href": "https://reverb.com/item/" + title}},
 	}
 	if postage != "" {
-		l["shipping"] = map[string]any{"user_region_rate": map[string]any{"rate": map[string]any{"display": postage}}}
+		amount := strings.ReplaceAll(strings.TrimLeft(postage, "+£"), ",", "")
+		if postage == "FREE" {
+			amount = "0.00"
+		}
+		l["shipping"] = map[string]any{"user_region_rate": map[string]any{"rate": map[string]any{"display": postage, "amount": amount}}}
 	}
 	return l
 }
@@ -108,6 +112,10 @@ func newFakeGemini(t *testing.T) *fakeGemini {
 }
 
 func newMonitor(t *testing.T, api, gem string) *Monitor {
+	return newMonitorWith(t, api, gem, nil)
+}
+
+func newMonitorWith(t *testing.T, api, gem string, extra map[string]any) *Monitor {
 	c := map[string]any{
 		"searches": []string{"ibanez xiphos", "schecter km-6"},
 		"token":    "tok",
@@ -116,6 +124,9 @@ func newMonitor(t *testing.T, api, gem string) *Monitor {
 	}
 	if gem != "" {
 		c["gemini"] = map[string]any{"apiKey": "k", "url": gem}
+	}
+	for k, v := range extra {
+		c[k] = v
 	}
 	raw, _ := json.Marshal(c)
 	m, err := New(raw)
@@ -274,4 +285,45 @@ func TestConfig(t *testing.T) {
 	m, err := New(json.RawMessage(`{"searches":["x"],"token":"t","shipsTo":"any"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "", m.cfg.ShipsTo)
+}
+
+func TestMaxPostage(t *testing.T) {
+	rv, gem := newFakeReverb(t), newFakeGemini(t)
+	far, near, free := "XPT700 from far away", "XPT700 nearby", "XPT707 free post"
+	rv.listings["ibanez xiphos"] = []map[string]any{
+		item(1, far, "£764", "£779.08", now),
+		item(2, near, "£875", "£249.99", now),
+		item(3, free, "£900", "FREE", now),
+	}
+	for _, title := range []string{far, near, free} {
+		gem.verdicts[title] = verdict{true, title, ""}
+	}
+	m := newMonitorWith(t, rv.URL, gem.URL, map[string]any{"maxPostage": 250})
+	res, err := m.Poll(context.Background(), monitortest.Env(now))
+	require.NoError(t, err)
+	rows := res.Blocks[0].Rows
+	require.Len(t, rows, 2)
+	assert.Equal(t, near, rows[0][0].Text)
+	assert.Equal(t, free, rows[1][0].Text)
+}
+
+func TestWantChanged(t *testing.T) {
+	rv, gem := newFakeReverb(t), newFakeGemini(t)
+	title := "Ibanez XPT420DX Rose Gold Chameleon"
+	rv.listings["ibanez xiphos"] = []map[string]any{item(1, title, "£899", "", now)}
+	gem.verdicts[title] = verdict{true, "Ibanez XPT420DX Xiphos", ""}
+	env := monitortest.Env(now)
+	res, err := newMonitor(t, rv.URL, gem.URL).Poll(context.Background(), env)
+	require.NoError(t, err)
+	require.Len(t, res.Blocks[0].Rows, 1)
+
+	// Checked again against the new want, and not checked a third time.
+	gem.verdicts[title] = verdict{false, "Ibanez XPT420DX Xiphos", "not an original"}
+	m := newMonitorWith(t, rv.URL, gem.URL, map[string]any{"want": "Only the original Xiphos."})
+	res, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Empty(t, res.Blocks[0].Rows)
+	_, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Len(t, gem.asked, 2)
 }

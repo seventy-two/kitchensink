@@ -39,6 +39,9 @@ type Config struct {
 	ShipsTo string `json:"shipsTo"`
 	// Currency prices are shown in (default GBP).
 	Currency string `json:"currency"`
+	// MaxPostage, in Currency, leaves out listings whose postage to
+	// ShipsTo costs more, e.g. 250 (0, the default, for no limit).
+	MaxPostage float64 `json:"maxPostage"`
 	// Limit is how many of each search's newest listings to read (default
 	// 50, at most 100).
 	Limit int `json:"limit"`
@@ -134,6 +137,8 @@ type listing struct {
 }
 
 type money struct {
+	// Amount is in the currency asked for, like Display.
+	Amount  string `json:"amount"`
 	Display string `json:"display"`
 }
 
@@ -156,6 +161,16 @@ func (l listing) postage() string {
 	default:
 		return "+ " + d + " postage"
 	}
+}
+
+// postageCost is what postage to ShipsTo costs, or 0 if it's free or not
+// known.
+func (l listing) postageCost() float64 {
+	if l.Shipping == nil || l.Shipping.UserRegionRate == nil {
+		return 0
+	}
+	v, _ := strconv.ParseFloat(l.Shipping.UserRegionRate.Rate.Amount, 64)
+	return v
 }
 
 func (l listing) image() string {
@@ -227,6 +242,7 @@ const (
 	seenKey     = "seen"      // listings already reported, by ID, with when
 	verdictsKey = "verdicts"  // what Gemini said of each listing, by ID
 	rejectedKey = "rejected"  // listings turned down by hand, by ID, with their names
+	wantKey     = "want"      // the want the verdicts were given against
 )
 
 // forget is how long a listing is remembered after it was last in the
@@ -246,6 +262,15 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	verdicts := map[string]verdict{}
 	if _, err := env.State.Get(verdictsKey, &verdicts); err != nil {
 		return monitor.Result{}, err
+	}
+	// A changed want needs every listing checked again. They stay seen,
+	// so ones that match now aren't reported as new.
+	var judgedWant string
+	if _, err := env.State.Get(wantKey, &judgedWant); err != nil {
+		return monitor.Result{}, err
+	}
+	if judgedWant != m.cfg.Want {
+		verdicts = map[string]verdict{}
 	}
 	rejected := map[string]string{}
 	if _, err := env.State.Get(rejectedKey, &rejected); err != nil {
@@ -277,6 +302,9 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	var wanted []listing
 	for _, l := range all {
 		if _, ok := rejected[l.id()]; ok {
+			continue
+		}
+		if m.cfg.MaxPostage > 0 && l.postageCost() > m.cfg.MaxPostage {
 			continue
 		}
 		if v, ok := verdicts[l.id()]; m.gemini == nil || ok && v.Match {
@@ -338,7 +366,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	for _, kv := range []struct {
 		key string
 		v   any
-	}{{seenKey, seen}, {verdictsKey, verdicts}, {rejectedKey, rejected}, {baselineKey, true}} {
+	}{{seenKey, seen}, {verdictsKey, verdicts}, {rejectedKey, rejected}, {wantKey, m.cfg.Want}, {baselineKey, true}} {
 		if err := env.State.Set(kv.key, kv.v); err != nil {
 			return monitor.Result{}, err
 		}

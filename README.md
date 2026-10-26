@@ -267,7 +267,10 @@ My Account, API & Integrations; read access is enough) as `token`. Each of
 once. With `gemini`, each new listing is checked once against `want`,
 which says in plain words what's wanted and what isn't (versions to leave
 out, model codes sellers use in place of a name); without it, every listing
-is shown. Prices are in `currency` (default `GBP`).
+is shown, and changing `want` has every listing checked again (without
+reporting them as new). Prices are in `currency` (default `GBP`);
+`maxPostage` (in that currency) leaves out listings whose postage costs
+more.
 
 ```json
 "config": {
