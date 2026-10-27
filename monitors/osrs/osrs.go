@@ -106,7 +106,8 @@ const baselineKey = "baseline"
 // Poll asks Wise Old Man to update the player, then compares their stats
 // with the last snapshot from before midnight. WOM only snapshots when
 // asked, so the poll just after midnight (see Next) is what marks the
-// day's start; without one, the last earlier snapshot does.
+// day's start; without one, the last earlier snapshot does. Where Dink
+// counted more before midnight, its counts mark the start instead.
 func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, error) {
 	now := env.Now().In(m.loc)
 	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, m.loc)
@@ -120,23 +121,6 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		m.wom, m.womAt = wom, env.Now()
 	}
 	current := m.wom
-	var base baseline
-	if _, err := env.State.Get(baselineKey, &base); err != nil {
-		return monitor.Result{}, err
-	}
-	if base.Day != day {
-		start, err := m.before(ctx, env.HTTP, midnight.Add(5*time.Minute))
-		if err != nil {
-			return monitor.Result{}, err
-		}
-		if start == nil {
-			start = current // nothing earlier: today starts now
-		}
-		base = baseline{Day: day, Stats: start}
-		if err := env.State.Set(baselineKey, base); err != nil {
-			return monitor.Result{}, err
-		}
-	}
 
 	// What Dink has sent is newer than WOM's, until WOM catches up.
 	var live, lastBig stats
@@ -150,6 +134,30 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	if _, err := env.State.Get(todayKey, &td); err != nil {
 		return monitor.Result{}, err
 	}
+	var base baseline
+	if _, err := env.State.Get(baselineKey, &base); err != nil {
+		return monitor.Result{}, err
+	}
+	if base.Day != day {
+		start, err := m.before(ctx, env.HTTP, midnight.Add(5*time.Minute))
+		if err != nil {
+			return monitor.Result{}, err
+		}
+		if start == nil {
+			start = current // nothing earlier: today starts now
+		}
+		// The hiscores only update at logout, so mid-session the snapshot
+		// lags. Until Dink speaks today, all it has counted is from before
+		// midnight (and once it has, today's Starts hold that instead).
+		if td.Day != day {
+			start = merged(start, live)
+		}
+		base = baseline{Day: day, Stats: start}
+		if err := env.State.Set(baselineKey, base); err != nil {
+			return monitor.Result{}, err
+		}
+	}
+
 	from := base.Stats
 	if td.Day == day && len(td.Starts) > 0 {
 		from = merged(base.Stats, td.Starts)

@@ -359,3 +359,39 @@ func TestDinkPet(t *testing.T) {
 		assert.NotEqual(t, "Vorkath", row[0].Text)
 	}
 }
+
+// A session past midnight: the hiscores (so WOM's snapshot before
+// midnight, Vorkath 100) only catch up at logout, so the day starts from
+// what Dink had counted by midnight, not from WOM's.
+func TestSessionPastMidnight(t *testing.T) {
+	evening := now.Add(3*time.Hour + 50*time.Minute) // 23:50
+	vorkath := func(res monitor.Result) string {
+		for _, row := range res.Blocks[0].Rows {
+			if row[0].Text == "Vorkath" {
+				return row[1].Text
+			}
+		}
+		return ""
+	}
+
+	t.Run("no kills after midnight yet", func(t *testing.T) {
+		m := newMonitor(t, newFakeWOM(t))
+		env := monitortest.Env(evening)
+		hook(t, m, env, "KILL_COUNT", `{"boss":"Vorkath","count":108}`)
+		env.Now = func() time.Time { return evening.Add(11 * time.Minute) }
+		res, err := m.Poll(context.Background(), env)
+		require.NoError(t, err)
+		assert.Equal(t, "+4", vorkath(res), "112 at logout, from Dink's 108 at midnight")
+	})
+
+	t.Run("kills after midnight before the poll", func(t *testing.T) {
+		m := newMonitor(t, newFakeWOM(t))
+		env := monitortest.Env(evening)
+		hook(t, m, env, "KILL_COUNT", `{"boss":"Vorkath","count":108}`)
+		env.Now = func() time.Time { return evening.Add(15 * time.Minute) }
+		hook(t, m, env, "KILL_COUNT", `{"boss":"Vorkath","count":109}`)
+		res, err := m.Poll(context.Background(), env)
+		require.NoError(t, err)
+		assert.Equal(t, "+4", vorkath(res), "not +12, the whole session")
+	})
+}

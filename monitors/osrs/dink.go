@@ -51,8 +51,11 @@ type drop struct {
 type today struct {
 	Day   string `json:"day"`
 	Drops []drop `json:"drops,omitempty"`
-	// Starts are kill counts that hiscores don't rank yet (so the day's
-	// baseline has 0): the count before the first kill Dink saw today.
+	// Starts are where the day began by Dink's counts: everything it had
+	// counted before its first message after midnight, which beats the
+	// hiscores' baseline when a session runs past midnight (they only
+	// update at logout). For kill counts the hiscores don't rank yet, also
+	// the count before the first kill Dink saw today.
 	Starts stats `json:"starts,omitempty"`
 }
 
@@ -150,7 +153,7 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 		return err
 	}
 	if td.Day != day {
-		td = today{Day: day}
+		td = today{Day: day, Starts: merged(live, nil)}
 	}
 	var base baseline
 	if _, err := env.State.Get(baselineKey, &base); err != nil {
