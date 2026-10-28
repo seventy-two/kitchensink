@@ -387,6 +387,43 @@ type Item struct {
 	URL      string `json:"url,omitempty"`
 	Image    string `json:"image,omitempty"`
 	Tone     Tone   `json:"tone,omitempty"`
+	// Slider, for checklists, is a 0-100 control on the item, e.g. a
+	// light's brightness. Clients that draw it leave out the up and down
+	// buttons on that item.
+	Slider *Slider `json:"slider,omitempty"`
+	// Colour, for checklists, is a swatch on the item that opens a colour
+	// picker, e.g. a light's colour.
+	Colour *Colour `json:"colour,omitempty"`
+}
+
+// Slider is an item's 0-100 control: let go at a new value, the client
+// sends the monitor an Action of type Action, the item's ID and Text the
+// value ("40").
+type Slider struct {
+	Value  int    `json:"value"`
+	Action string `json:"action"`
+	Hint   string `json:"hint,omitempty"` // what it does, e.g. for a tooltip
+}
+
+// Colour is an item's colour swatch: picking a colour, the client sends the
+// monitor an Action of type Action, the item's ID and Text the colour, as
+// "#rrggbb" from the wheel or a preset's Value.
+type Colour struct {
+	// Value is the colour now, as "#rrggbb"; empty if there's none (e.g.
+	// a light that's off).
+	Value  string `json:"value,omitempty"`
+	Action string `json:"action"`
+	// Wheel offers any colour, not only Presets.
+	Wheel   bool     `json:"wheel,omitempty"`
+	Presets []Swatch `json:"presets,omitempty"`
+}
+
+// Swatch is a preset colour: Value is what's sent when it's picked (e.g.
+// "2700K" for a warm white), Show the "#rrggbb" to draw it as.
+type Swatch struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
+	Show  string `json:"show"`
 }
 
 // Duration is a time.Duration written in JSON as a string such as "5m".

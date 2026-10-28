@@ -1,6 +1,7 @@
 // Package lights shows and switches smart lights through Home Assistant's
 // REST API: one checklist row per light, ticked while it's off, with
-// buttons to make it brighter or dimmer, and a row for all of them.
+// buttons to make it brighter or dimmer, a brightness slider and a colour
+// swatch, and a row for all of them.
 //
 // Light changes make no events (they'd only be noise). If Home Assistant
 // can't be reached for OfflineAfter, there's one quiet event, updated when
@@ -107,6 +108,25 @@ type light struct {
 	Available bool
 	Dimmable  bool
 	Pct       int // brightness while on, 1-100
+	// Colour is the colour while on, as "#rrggbb"; empty while off.
+	Colour string
+	// Hue is true for lights that take any colour; MinK and MaxK, if not
+	// 0, are the whites (colour temperatures) one takes.
+	Hue        bool
+	MinK, MaxK int
+}
+
+// whites are the white presets, in kelvin, offered within a light's range.
+var whites = []struct {
+	label string
+	k     int
+}{{"Candle", 2200}, {"Warm white", 2700}, {"Soft white", 3500}, {"Neutral white", 4500}, {"Daylight", 6500}}
+
+// hues are the colour presets offered on lights that take any colour.
+var hues = []struct{ label, rgb string }{
+	{"Red", "#ff0000"}, {"Orange", "#ff7300"}, {"Amber", "#ffb000"}, {"Yellow", "#ffe600"},
+	{"Green", "#00ff2a"}, {"Teal", "#00ffbf"}, {"Cyan", "#00d5ff"}, {"Blue", "#0033ff"},
+	{"Purple", "#8c00ff"}, {"Magenta", "#ff00d4"}, {"Pink", "#ff4d8c"},
 }
 
 // allID is the checklist row for every light at once.
@@ -178,6 +198,17 @@ func toLight(s state) light {
 		if mode != "onoff" && mode != "unknown" {
 			l.Dimmable = true
 		}
+		switch mode {
+		case "hs", "xy", "rgb", "rgbw", "rgbww":
+			l.Hue = true
+		case "color_temp":
+			if s.Attributes.MinKelvin != nil && s.Attributes.MaxKelvin != nil {
+				l.MinK, l.MaxK = int(*s.Attributes.MinKelvin), int(*s.Attributes.MaxKelvin)
+			}
+		}
+	}
+	if c := s.Attributes.RGBColor; l.On && len(c) == 3 {
+		l.Colour = fmt.Sprintf("#%02x%02x%02x", clampByte(c[0]), clampByte(c[1]), clampByte(c[2]))
 	}
 	if l.On && s.Attributes.Brightness != nil {
 		l.Dimmable = true
@@ -248,9 +279,77 @@ func build(lights []light) monitor.Result {
 			it.Title += " · " + level(l)
 			summary = append(summary, monitor.Stat{Label: l.Name, Value: level(l), Tone: monitor.ToneAccent})
 		}
+		if l.Available {
+			it.Slider, it.Colour = controls([]light{l})
+		}
 		b.Items = append(b.Items, it)
 	}
+	if len(lights) > 1 {
+		var available []light
+		for _, l := range lights {
+			if l.Available {
+				available = append(available, l)
+			}
+		}
+		b.Items[0].Slider, b.Items[0].Colour = controls(available)
+	}
 	return monitor.Result{Blocks: []monitor.Block{b}, Summary: summary, SummaryStyle: monitor.SummaryChips}
+}
+
+// controls are the brightness slider and colour swatch for some lights (one,
+// or all of them for the "all" row): the slider is at their average
+// brightness (0 while all are off), and the swatch shows their colour if
+// the ones that are on share it, with the presets any of them take.
+func controls(ls []light) (*monitor.Slider, *monitor.Colour) {
+	var slider *monitor.Slider
+	var colour *monitor.Colour
+	sum, on := 0, 0
+	colours := map[string]bool{}
+	minK, maxK, hue := 0, 0, false
+	for _, l := range ls {
+		if l.Dimmable {
+			if slider == nil {
+				slider = &monitor.Slider{Action: "brightness", Hint: "Brightness"}
+			}
+			if l.On {
+				sum += l.Pct
+				on++
+			}
+		}
+		if l.On && (l.Hue || l.MaxK > 0) {
+			colours[l.Colour] = true
+		}
+		hue = hue || l.Hue
+		if l.MaxK > 0 {
+			if minK == 0 || l.MinK < minK {
+				minK = l.MinK
+			}
+			maxK = max(maxK, l.MaxK)
+		}
+	}
+	if slider != nil && on > 0 {
+		slider.Value = int(math.Round(float64(sum) / float64(on)))
+	}
+	if !hue && maxK == 0 {
+		return slider, nil
+	}
+	colour = &monitor.Colour{Action: "colour", Wheel: hue}
+	if len(colours) == 1 {
+		for c := range colours {
+			colour.Value = c
+		}
+	}
+	for _, w := range whites {
+		if maxK > 0 && w.k >= minK && w.k <= maxK {
+			colour.Presets = append(colour.Presets, monitor.Swatch{Label: w.label, Value: strconv.Itoa(w.k) + "K", Show: kelvinRGB(w.k)})
+		}
+	}
+	if hue {
+		for _, h := range hues {
+			colour.Presets = append(colour.Presets, monitor.Swatch{Label: h.label, Value: h.rgb, Show: h.rgb})
+		}
+	}
+	return slider, colour
 }
 
 // level is how bright a light that's on is.
@@ -269,6 +368,9 @@ func level(l light) string {
 //     that's on, for "all") brighter or dimmer, to the next of Levels.
 //   - "brightness" with Text a percentage sets a light's brightness, 0
 //     turning it off.
+//   - "colour" with Text "#rrggbb" (any colour) or a temperature in
+//     kelvin ("2700K", a white) sets a light's colour, turning it on;
+//     for "all", every light that can take it.
 func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) error {
 	lights, err := m.lights(ctx, env)
 	if err != nil {
@@ -345,6 +447,46 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 			err = c.call(ctx, "turn_off", map[string]any{"entity_id": ids})
 		} else {
 			err = c.call(ctx, "turn_on", map[string]any{"entity_id": ids, "brightness_pct": p})
+		}
+	case "colour":
+		var ids []string
+		data := map[string]any{}
+		text := strings.TrimSpace(a.Text)
+		if k, ok := strings.CutSuffix(strings.ToUpper(text), "K"); ok {
+			kelvin, kerr := strconv.Atoi(k)
+			if kerr != nil || kelvin < 1000 || kelvin > 10000 {
+				return fmt.Errorf("%w: a white is a temperature like 2700K, not %q", monitor.ErrBadAction, a.Text)
+			}
+			for _, l := range targets {
+				if l.Available && l.MaxK > 0 {
+					ids = append(ids, l.ID)
+				}
+			}
+			data["color_temp_kelvin"] = kelvin
+		} else {
+			h, sat, ok := hexHS(text)
+			if !ok {
+				return fmt.Errorf("%w: a colour is #rrggbb or a temperature like 2700K, not %q", monitor.ErrBadAction, a.Text)
+			}
+			for _, l := range targets {
+				if l.Available && l.Hue {
+					ids = append(ids, l.ID)
+				}
+			}
+			data["hs_color"] = []float64{h, sat}
+		}
+		if len(ids) == 0 {
+			return nil
+		}
+		// One call each: HA clamps a temperature to each light's range,
+		// but a call naming several lights fails outright if one of them
+		// is unreachable.
+		for _, id := range ids {
+			d := maps.Clone(data)
+			d["entity_id"] = id
+			if err = c.call(ctx, "turn_on", d); err != nil {
+				break
+			}
 		}
 	default:
 		return fmt.Errorf("%w: unknown action %q", monitor.ErrBadAction, a.Type)
@@ -453,4 +595,63 @@ func span(d time.Duration) string {
 		return strconv.Itoa(m/60) + "h"
 	}
 	return fmt.Sprintf("%dh %dm", m/60, m%60)
+}
+
+func clampByte(v float64) int { return max(0, min(255, int(math.Round(v)))) }
+
+// hexHS reads "#rrggbb" as a hue (0-360) and saturation (0-100), which is
+// what colour bulbs take; how dark the colour is doesn't matter, as
+// brightness is set apart.
+func hexHS(s string) (h, sat float64, ok bool) {
+	s, found := strings.CutPrefix(s, "#")
+	if !found || len(s) != 6 {
+		return 0, 0, false
+	}
+	v, err := strconv.ParseUint(s, 16, 32)
+	if err != nil {
+		return 0, 0, false
+	}
+	r, g, b := float64(v>>16&0xff)/255, float64(v>>8&0xff)/255, float64(v&0xff)/255
+	hi, lo := max(r, g, b), min(r, g, b)
+	if hi == 0 {
+		return 0, 0, true
+	}
+	d := hi - lo
+	switch {
+	case d == 0:
+		h = 0
+	case hi == r:
+		h = math.Mod((g-b)/d, 6) * 60
+	case hi == g:
+		h = ((b-r)/d + 2) * 60
+	default:
+		h = ((r-g)/d + 4) * 60
+	}
+	if h < 0 {
+		h += 360
+	}
+	return math.Round(h*10) / 10, math.Round(d/hi*1000) / 10, true
+}
+
+// kelvinRGB is roughly what a white of k kelvin looks like, as "#rrggbb"
+// (Tanner Helland's fit to the blackbody colours), for drawing presets.
+func kelvinRGB(k int) string {
+	t := float64(k) / 100
+	var r, g, b float64
+	if t <= 66 {
+		r = 255
+		g = 99.4708025861*math.Log(t) - 161.1195681661
+	} else {
+		r = 329.698727446 * math.Pow(t-60, -0.1332047592)
+		g = 288.1221695283 * math.Pow(t-60, -0.0755148492)
+	}
+	switch {
+	case t >= 66:
+		b = 255
+	case t <= 19:
+		b = 0
+	default:
+		b = 138.5177312231*math.Log(t-10) - 305.0447927307
+	}
+	return fmt.Sprintf("#%02x%02x%02x", clampByte(r), clampByte(g), clampByte(b))
 }

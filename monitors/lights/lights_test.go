@@ -27,7 +27,7 @@ const statesJSON = `[
  {"entity_id": "light.desk", "state": "on", "attributes": {
    "min_color_temp_kelvin": 2127, "max_color_temp_kelvin": 6535,
    "supported_color_modes": ["color_temp", "hs"], "color_mode": "hs",
-   "brightness": 255.0, "hs_color": [38.0, 3.0], "friendly_name": "Desk lamp", "supported_features": 0},
+   "brightness": 255.0, "hs_color": [38.0, 3.0], "rgb_color": [255, 251, 247], "friendly_name": "Desk lamp", "supported_features": 0},
   "last_changed": "2026-10-26T13:47:21.121023+00:00", "context": {"id": "x", "parent_id": null, "user_id": null}},
  {"entity_id": "light.bedside", "state": "off", "attributes": {
    "supported_color_modes": ["color_temp", "hs"], "color_mode": null, "brightness": null,
@@ -238,7 +238,26 @@ func TestActions(t *testing.T) {
 		`turn_off {"entity_id":["light.desk"]}`,
 	}, ha.took())
 
+	// Colours: any colour as hue and saturation, whites as kelvin, one
+	// call per light; lights that can't take it are left alone.
+	require.NoError(t, act("colour", "light.desk", "#ff8000"))
+	require.NoError(t, act("colour", "light.bedside", "2700k"))
+	require.NoError(t, act("colour", "light.hall", "#00ff00"))
+	assert.Equal(t, []string{
+		`turn_on {"entity_id":"light.desk","hs_color":[30.1,100]}`,
+	}, ha.took())
+	require.NoError(t, act("colour", allID, "#0000ff"))
+	assert.Equal(t, []string{
+		`turn_on {"entity_id":"light.bedside","hs_color":[240,100]}`,
+		`turn_on {"entity_id":"light.desk","hs_color":[240,100]}`,
+	}, ha.took())
+	require.NoError(t, act("colour", allID, "2700K"))
+	assert.Equal(t, []string{`turn_on {"color_temp_kelvin":2700,"entity_id":"light.desk"}`}, ha.took())
+
 	for _, bad := range []monitor.Action{
+		{Type: "colour", ID: "light.desk", Text: "red"},
+		{Type: "colour", ID: "light.desk", Text: "#ff00"},
+		{Type: "colour", ID: "light.desk", Text: "99999K"},
 		{Type: "toggle", ID: "light.nope"},
 		{Type: "toggle", ID: "light.porch"}, // unavailable
 		{Type: "move", ID: "light.desk", Text: "sideways"},
@@ -366,4 +385,66 @@ func TestStep(t *testing.T) {
 	}
 	assert.Equal(t, "40m", span(40*time.Minute))
 	assert.Equal(t, "2h", span(2*time.Hour))
+}
+
+func TestControls(t *testing.T) {
+	ha := newFakeHA(t)
+	m := newMonitor(t, ha.URL, "")
+	res, err := m.Poll(context.Background(), monitortest.Env(now))
+	require.NoError(t, err)
+	items := res.Blocks[0].Items
+	require.Len(t, items, 5)
+	all, bedside, desk, hall, porch := items[0], items[1], items[2], items[3], items[4]
+
+	// The desk lamp: at full, its colour now, whites in its range and hues.
+	require.NotNil(t, desk.Slider)
+	assert.Equal(t, monitor.Slider{Value: 100, Action: "brightness", Hint: "Brightness"}, *desk.Slider)
+	require.NotNil(t, desk.Colour)
+	assert.Equal(t, "#fffbf7", desk.Colour.Value)
+	assert.True(t, desk.Colour.Wheel)
+	var labels []string
+	for _, p := range desk.Colour.Presets {
+		labels = append(labels, p.Label)
+	}
+	assert.Equal(t, []string{"Candle", "Warm white", "Soft white", "Neutral white", "Daylight"}, labels[:5])
+	assert.Equal(t, monitor.Swatch{Label: "Warm white", Value: "2700K", Show: "#ffa757"}, desk.Colour.Presets[1])
+	assert.Contains(t, desk.Colour.Presets, monitor.Swatch{Label: "Blue", Value: "#0033ff", Show: "#0033ff"})
+
+	// Off: the slider at 0 and no colour now, but still the hues (no
+	// whites, as HA leaves out the range here).
+	assert.Equal(t, 0, bedside.Slider.Value)
+	assert.Empty(t, bedside.Colour.Value)
+	assert.Equal(t, "Red", bedside.Colour.Presets[0].Label)
+
+	// On/off only: neither. Unavailable: neither.
+	assert.Nil(t, hall.Slider)
+	assert.Nil(t, hall.Colour)
+	assert.Nil(t, porch.Slider)
+	assert.Nil(t, porch.Colour)
+
+	// All: the average of those on that dim, the shared colour, every preset.
+	require.NotNil(t, all.Slider)
+	assert.Equal(t, 100, all.Slider.Value)
+	assert.Equal(t, "#fffbf7", all.Colour.Value)
+	assert.Len(t, all.Colour.Presets, len(whites)+len(hues))
+}
+
+func TestHexHS(t *testing.T) {
+	for in, want := range map[string][2]float64{
+		"#ff0000": {0, 100}, "#00ff00": {120, 100}, "#0000ff": {240, 100},
+		"#ffffff": {0, 0}, "#000000": {0, 0}, "#ff8000": {30.1, 100}, "#FF4D8C": {338.8, 69.8},
+	} {
+		h, s, ok := hexHS(in)
+		require.True(t, ok, in)
+		assert.Equal(t, want, [2]float64{h, s}, in)
+	}
+	for _, bad := range []string{"", "ff0000", "#ff00", "#gg0000"} {
+		_, _, ok := hexHS(bad)
+		assert.False(t, ok, bad)
+	}
+}
+
+func TestKelvinRGB(t *testing.T) {
+	assert.Equal(t, "#ff9227", kelvinRGB(2200))
+	assert.Equal(t, "#fffefa", kelvinRGB(6500))
 }

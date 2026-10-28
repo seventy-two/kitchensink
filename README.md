@@ -346,8 +346,17 @@ dimmer, stepping between `levels` (default 10, 25, 50, 75 and 100%). On
 the *All lights* row, ticking turns every light off if any is on, else
 all on, and the buttons step each light that's on. The actions are
 `toggle` and `move` (`up` or `down`) with the light's entity ID or `all`,
-and, for clients or scripts that want it, `brightness` with a percentage
-as text (`0` turns it off).
+and `brightness` with a percentage as text (`0` turns it off).
+
+Each row that can dim also has a brightness slider (sending `brightness`),
+and each that takes colour a colour swatch (sending `colour`, with text
+`#rrggbb` for any colour or a temperature like `2700K` for a white). Its
+presets are the whites within the light's range (candle to daylight) and,
+for colour bulbs, eleven hues; the wheel offers any colour (its hue and
+saturation: brightness stays the slider's). On *All lights*, the slider
+sits at the average of the lights that are on and moves them all, and the
+swatch sets every light that can take the colour. The Windows client
+draws both, in place of the up and down buttons; others keep the buttons.
 
 It polls (every 15 seconds suits it; Home Assistant answers from memory),
 and after an action it polls straight away and again 10 seconds later,
@@ -475,7 +484,7 @@ drawn from the same few block types, so clients need no per-monitor code:
 | `stats` | `stats`: `label`, `value`, `detail`, `tone`, `series` (a sparkline), `icon` (a weather picture by the value: `sun`, `moon`, `sun-cloud`, `moon-cloud`, `cloud`, `fog`, `drizzle`, `rain`, `showers`, `snow` or `storm`), `level` (0 to 1, drawn faintly behind the chip as a chart joined to its neighbours', e.g. the chance of rain; 0 draws along the bottom, absent draws nothing) |
 | `table` | `columns` (`title`, `align`, `fill` for the column that takes spare width) and `rows` of cells (`text`, `tone`, `url`, `detail` for a smaller line under the text, and `local`: `{"app", "arg"}`, a button for an app on the client's own machine, e.g. the watchlist's downloader, drawn only by clients that have it; and `action`: `{"type", "id", "label"}`, a button that sends the monitor that action, with `label` saying what it does, e.g. eBay's ignore) |
 | `list` | `items`: `title`, `subtitle`, `detail`, `url`, `image`, `tone` |
-| `checklist` | `items` (`id`, `title`, `done`, `tone`) with checkboxes that send `toggle` and `delete` actions; `addHint` adds a box for `add`, `deleteHint` names what delete does when it isn't deleting (the reorders' "Stop tracking") and `noDelete` leaves it out; `movable` adds up and down buttons that send `move` with text `up` or `down` (reordering the to-do list), named by `upHint` and `downHint` when they do something else (the chores' days) |
+| `checklist` | `items` (`id`, `title`, `done`, `tone`) with checkboxes that send `toggle` and `delete` actions; `addHint` adds a box for `add`, `deleteHint` names what delete does when it isn't deleting (the reorders' "Stop tracking") and `noDelete` leaves it out; `movable` adds up and down buttons that send `move` with text `up` or `down` (reordering the to-do list), named by `upHint` and `downHint` when they do something else (the chores' days); an item's `slider` (`value` 0-100, `action`, `hint`) is a control that sends its `action` with the new value as text when let go, and its `colour` (`value` `#rrggbb`, `action`, `wheel` for any colour, `presets` of `label`, `value` sent, `show` drawn) a swatch that opens a picker sending its `action` with the colour (the lights) |
 | `text` | `text` |
 
 Tones are `good`, `bad`, `warn`, `muted`, `accent`, or empty for plain text.

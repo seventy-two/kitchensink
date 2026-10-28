@@ -29,6 +29,12 @@ type state struct {
 		// it as a float (255.0).
 		Brightness          *float64 `json:"brightness"`
 		SupportedColorModes []string `json:"supported_color_modes"`
+		// RGBColor is the colour while on (at full brightness), in
+		// whatever mode the light is in; null while off.
+		RGBColor []float64 `json:"rgb_color"`
+		// The warmest and coolest whites it can do, in kelvin.
+		MinKelvin *float64 `json:"min_color_temp_kelvin"`
+		MaxKelvin *float64 `json:"max_color_temp_kelvin"`
 	} `json:"attributes"`
 }
 
