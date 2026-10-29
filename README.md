@@ -355,8 +355,8 @@ presets are the whites within the light's range (candle to daylight) and,
 for colour bulbs, eleven hues; the wheel offers any colour (its hue and
 saturation: brightness stays the slider's). On *All lights*, the slider
 sits at the average of the lights that are on and moves them all, and the
-swatch sets every light that can take the colour. The Windows client
-draws both, in place of the up and down buttons; others keep the buttons.
+swatch sets every light that can take the colour. The Windows and Android
+clients draw both, in place of the up and down buttons.
 
 It polls (every 15 seconds suits it; Home Assistant answers from memory),
 and after an action it polls straight away and again 10 seconds later,
