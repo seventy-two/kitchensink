@@ -118,7 +118,11 @@ func rows(t *testing.T, res monitor.Result) []string {
 		if it.Done {
 			mark = "[x] "
 		}
-		out = append(out, mark+it.Title)
+		title := it.Title
+		if it.Subtitle != "" {
+			title += " · " + strings.ToLower(it.Subtitle)
+		}
+		out = append(out, mark+title)
 	}
 	return out
 }

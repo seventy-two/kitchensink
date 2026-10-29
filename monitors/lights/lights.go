@@ -266,11 +266,11 @@ func build(lights []light) monitor.Result {
 		it := monitor.Item{ID: l.ID, Title: l.Name, Done: !l.On}
 		switch {
 		case !l.Available:
-			it.Title += " · unavailable"
+			it.Subtitle = "Unavailable"
 			it.Tone = monitor.ToneWarn
 			summary = append(summary, monitor.Stat{Label: l.Name, Value: "Unavailable", Tone: monitor.ToneWarn})
 		case l.On:
-			it.Title += " · " + level(l)
+			it.Subtitle = level(l)
 			summary = append(summary, monitor.Stat{Label: l.Name, Value: level(l), Tone: monitor.ToneAccent})
 		}
 		if l.Available {
