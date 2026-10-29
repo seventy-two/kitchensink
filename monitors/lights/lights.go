@@ -1,7 +1,7 @@
 // Package lights shows and switches smart lights through Home Assistant's
-// REST API: one checklist row per light, ticked while it's off, with
-// buttons to make it brighter or dimmer, a brightness slider and a colour
-// swatch, and a row for all of them.
+// REST API: one checklist row per light, drawn as a switch (ticked while
+// it's off, for clients without switches), with buttons to make it
+// brighter or dimmer, a brightness slider and a colour swatch.
 //
 // Light changes make no events (they'd only be noise). If Home Assistant
 // can't be reached for OfflineAfter, there's one quiet event, updated when
@@ -251,17 +251,11 @@ func build(lights []light) monitor.Result {
 	// offered on lights that are on (clients leave them off ticked rows).
 	b := monitor.Block{
 		Type:     monitor.BlockChecklist,
+		Switch:   true,
 		NoDelete: true,
 		Movable:  true,
 		UpHint:   "Brighter",
 		DownHint: "Dimmer",
-	}
-	if len(lights) > 1 {
-		title := "All lights"
-		if on > 0 {
-			title += fmt.Sprintf(" · %d of %d on", on, len(lights))
-		}
-		b.Items = append(b.Items, monitor.Item{ID: allID, Title: title, Done: on == 0})
 	}
 	summary := []monitor.Stat{{Label: "Lights", Value: "All off", Tone: monitor.ToneMuted, Lead: true}}
 	if on > 0 {
@@ -283,15 +277,6 @@ func build(lights []light) monitor.Result {
 			it.Slider, it.Colour = controls([]light{l})
 		}
 		b.Items = append(b.Items, it)
-	}
-	if len(lights) > 1 {
-		var available []light
-		for _, l := range lights {
-			if l.Available {
-				available = append(available, l)
-			}
-		}
-		b.Items[0].Slider, b.Items[0].Colour = controls(available)
 	}
 	return monitor.Result{Blocks: []monitor.Block{b}, Summary: summary, SummaryStyle: monitor.SummaryChips}
 }

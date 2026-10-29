@@ -132,19 +132,18 @@ func TestPanel(t *testing.T) {
 	require.NoError(t, err)
 	// Every light by name, case aside; ticked means off.
 	assert.Equal(t, []string{
-		"[ ] All lights · 2 of 4 on",
 		"[x] Bedside",
 		"[ ] Desk lamp · 100%",
 		"[ ] hall · on",
 		"[x] Porch · unavailable",
 	}, rows(t, res))
 	b := res.Blocks[0]
+	assert.True(t, b.Switch)
 	assert.True(t, b.NoDelete)
 	assert.True(t, b.Movable)
 	assert.Equal(t, "Brighter", b.UpHint)
 	assert.Equal(t, "Dimmer", b.DownHint)
-	assert.Equal(t, "light.desk", b.Items[2].ID)
-	assert.Equal(t, allID, b.Items[0].ID)
+	assert.Equal(t, "light.desk", b.Items[1].ID)
 
 	assert.Equal(t, monitor.SummaryChips, res.SummaryStyle)
 	assert.Equal(t, []monitor.Stat{
@@ -166,7 +165,6 @@ func TestIncludeAndAreas(t *testing.T) {
 	res, err := m.Poll(context.Background(), monitortest.Env(now))
 	require.NoError(t, err)
 	assert.Equal(t, []string{
-		"[ ] All lights · 2 of 3 on",
 		"[ ] hall · on",
 		"[x] light.gone · unavailable",
 		"[ ] Desk lamp · 100%",
@@ -176,9 +174,9 @@ func TestIncludeAndAreas(t *testing.T) {
 	m = newMonitor(t, ha.URL, `, "lights": ["light.desk"], "areas": ["Bedroom"]`)
 	res, err = m.Poll(context.Background(), monitortest.Env(now))
 	require.NoError(t, err)
-	assert.Equal(t, []string{"[ ] All lights · 1 of 2 on", "[ ] Desk lamp · 100%", "[x] Bedside"}, rows(t, res))
+	assert.Equal(t, []string{"[ ] Desk lamp · 100%", "[x] Bedside"}, rows(t, res))
 
-	// One light has no all row; none at all is a note.
+	// None at all is a note.
 	m = newMonitor(t, ha.URL, `, "areas": ["Nowhere", "Bedroom"]`)
 	ha.areas = map[string][]string{"Bedroom": {"light.bedside"}}
 	res, err = m.Poll(context.Background(), monitortest.Env(now))
@@ -393,8 +391,8 @@ func TestControls(t *testing.T) {
 	res, err := m.Poll(context.Background(), monitortest.Env(now))
 	require.NoError(t, err)
 	items := res.Blocks[0].Items
-	require.Len(t, items, 5)
-	all, bedside, desk, hall, porch := items[0], items[1], items[2], items[3], items[4]
+	require.Len(t, items, 4)
+	bedside, desk, hall, porch := items[0], items[1], items[2], items[3]
 
 	// The desk lamp: at full, its colour now, whites in its range and hues.
 	require.NotNil(t, desk.Slider)
@@ -421,12 +419,6 @@ func TestControls(t *testing.T) {
 	assert.Nil(t, hall.Colour)
 	assert.Nil(t, porch.Slider)
 	assert.Nil(t, porch.Colour)
-
-	// All: the average of those on that dim, the shared colour, every preset.
-	require.NotNil(t, all.Slider)
-	assert.Equal(t, 100, all.Slider.Value)
-	assert.Equal(t, "#fffbf7", all.Colour.Value)
-	assert.Len(t, all.Colour.Presets, len(whites)+len(hues))
 }
 
 func TestHexHS(t *testing.T) {

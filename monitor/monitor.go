@@ -297,6 +297,10 @@ type Block struct {
 	Movable  bool   `json:"movable,omitempty"`
 	UpHint   string `json:"upHint,omitempty"`
 	DownHint string `json:"downHint,omitempty"`
+	// Switch draws a checklist's items as on/off switches rather than
+	// checkboxes: on while the item isn't done (a light that's on).
+	// Clients that don't know it show checkboxes, ticked while off.
+	Switch bool `json:"switch,omitempty"`
 	// Private marks personal figures, e.g. money, which clients can hide
 	// on request.
 	Private bool `json:"private,omitempty"`
