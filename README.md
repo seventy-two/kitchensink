@@ -339,7 +339,8 @@ ID is noticed.
 
 The panel is a checklist with a row per light, drawn as on/off switches
 (`switch`), its brightness ("40%", "on") or "Unavailable" as the row's
-subtitle. For clients without switches, a ticked row is a light that's
+subtitle. Short, the panel is every light as a small button (`buttons`, in
+its summary block), each opening that light's controls. For clients without switches, a ticked row is a light that's
 **off**, so ticking a row turns it off and unticking it turns it on (the
 clients' checklists offer their up and down buttons only on unticked
 rows, which here are the lights that are on). Those buttons make a light

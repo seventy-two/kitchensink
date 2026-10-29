@@ -278,7 +278,10 @@ func build(lights []light) monitor.Result {
 		}
 		b.Items = append(b.Items, it)
 	}
-	return monitor.Result{Blocks: []monitor.Block{b}, Summary: summary, SummaryStyle: monitor.SummaryChips}
+	// Short, every light as a small button opening its controls.
+	short := b
+	short.Buttons = true
+	return monitor.Result{Blocks: []monitor.Block{b}, Summary: summary, SummaryStyle: monitor.SummaryChips, SummaryBlock: &short}
 }
 
 // controls are the brightness slider and colour swatch for some lights (one,

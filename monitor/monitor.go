@@ -301,6 +301,10 @@ type Block struct {
 	// checkboxes: on while the item isn't done (a light that's on).
 	// Clients that don't know it show checkboxes, ticked while off.
 	Switch bool `json:"switch,omitempty"`
+	// Buttons draws a checklist's items as small buttons in a row (with
+	// Switch, lit while on), each opening its controls in a popup: for a
+	// SummaryBlock. Clients that don't know it draw the checklist.
+	Buttons bool `json:"buttons,omitempty"`
 	// Private marks personal figures, e.g. money, which clients can hide
 	// on request.
 	Private bool `json:"private,omitempty"`

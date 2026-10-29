@@ -143,6 +143,10 @@ func TestPanel(t *testing.T) {
 	}, rows(t, res))
 	b := res.Blocks[0]
 	assert.True(t, b.Switch)
+	// Short, the same lights as buttons.
+	require.NotNil(t, res.SummaryBlock)
+	assert.True(t, res.SummaryBlock.Buttons)
+	assert.Equal(t, b.Items, res.SummaryBlock.Items)
 	assert.True(t, b.NoDelete)
 	assert.True(t, b.Movable)
 	assert.Equal(t, "Brighter", b.UpHint)
