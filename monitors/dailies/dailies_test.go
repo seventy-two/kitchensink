@@ -212,3 +212,18 @@ func TestHaikudle(t *testing.T) {
 	// An older tracker without haikus shows no haikudle.
 	assert.Len(t, poll(t, fakeTracker(t), "M").Summary, 3)
 }
+
+func TestCoopWin(t *testing.T) {
+	m, err := New(json.RawMessage(`{"url": "http://tracker.test", "player": "M", "versus": "J"}`))
+	require.NoError(t, err)
+	var d day
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"results": [
+			{"game": "semantle", "player": "M", "coopBy": "J"}, {"game": "semantle", "player": "J", "coopBy": "J"}
+		],
+		"winners": {}
+	}`), &d))
+	got, _ := m.outcomes(d)
+	assert.Equal(t, map[string]outcome{"semantle": coopWin}, got)
+	assert.Equal(t, monitor.Cell{Text: "Co-op win", Tone: monitor.ToneGood}, m.status(coopWin))
+}
