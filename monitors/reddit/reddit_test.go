@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/seventy-two/kitchensink/monitor"
 	"github.com/seventy-two/kitchensink/monitor/monitortest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -129,6 +130,38 @@ func TestPollBusyKeepsLastRead(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, res.Blocks[0].Rows, 3)
 	assert.Equal(t, retryBusy, res.Next, "tries again once the limit's reset")
+}
+
+func TestParseFeedDoubleEscaped(t *testing.T) {
+	posts, err := parseFeed([]byte(`<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>t3_x</id><title>Fish &amp;amp; chips</title><link href="https://www.reddit.com/r/a/comments/x/" /></entry></feed>`))
+	require.NoError(t, err)
+	require.Len(t, posts, 1)
+	assert.Equal(t, "Fish & chips", posts[0].Title)
+}
+
+func TestMatches(t *testing.T) {
+	assert.True(t, matches([]string{"AutoModerator"}, "automoderator"))
+	assert.True(t, matches([]string{"Jagex*"}, "JagexGoblin"))
+	assert.True(t, matches([]string{"u/JagexGoblin"}, "JagexGoblin"))
+	assert.False(t, matches([]string{"Jagex*"}, "NotJagex"))
+	assert.False(t, matches([]string{"*"}, "anyone"), "a bare * matches no one")
+	assert.False(t, matches(nil, "anyone"))
+}
+
+func TestHighlight(t *testing.T) {
+	m, err := New([]byte(`{"subs":["2007scape"],"rows":1,"highlight":["Jagex*"]}`))
+	require.NoError(t, err)
+	posts := []post{{Author: "AutoModerator"}, {Author: "a"}, {Author: "b"}, {Author: "c"}, {Author: "JagexGoblin"}}
+	shown := m.visible(posts)
+	require.Len(t, shown, 2, "one row, and the J-Mod's past it")
+	assert.Equal(t, "JagexGoblin", shown[1].Author)
+	tb := m.table("2007scape", shown, now)
+	assert.Equal(t, monitor.ToneAccent, tb.Rows[1][0].Tone)
+	assert.Equal(t, monitor.ToneNone, tb.Rows[0][0].Tone)
+
+	short := m.short(posts)
+	require.Len(t, short, 4, "the first three, then the J-Mod")
+	assert.Equal(t, "JagexGoblin", short[3].Author)
 }
 
 func TestStripEmoji(t *testing.T) {

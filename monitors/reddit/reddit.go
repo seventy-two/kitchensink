@@ -42,8 +42,28 @@ type Config struct {
 	// posts there rather than in the browser.
 	Open string `json:"open"`
 	// Hide leaves out posts by these authors, e.g. "AutoModerator" for
-	// the stickied daily threads.
-	Hide []string `json:"hide"`
+	// the stickied daily threads. Highlight marks posts by these authors,
+	// e.g. "Jagex*" for Old School RuneScape's staff: they're shown even
+	// past Rows, and in the short view. Names ignore case; a trailing *
+	// matches any name starting with what's before it.
+	Hide      []string `json:"hide"`
+	Highlight []string `json:"highlight"`
+}
+
+// matches reports whether author matches any of the patterns.
+func matches(patterns []string, author string) bool {
+	a := strings.ToLower(author)
+	for _, p := range patterns {
+		p = strings.ToLower(strings.TrimPrefix(p, "u/"))
+		if prefix, ok := strings.CutSuffix(p, "*"); ok {
+			if prefix != "" && strings.HasPrefix(a, prefix) {
+				return true
+			}
+		} else if p == a {
+			return true
+		}
+	}
+	return false
 }
 
 // Monitor is the reddit monitor.
@@ -132,7 +152,7 @@ func parseFeed(body []byte) ([]post, error) {
 		}
 		p := post{
 			ID:     e.ID,
-			Title:  stripEmoji(e.Title),
+			Title:  stripEmoji(html.UnescapeString(e.Title)),
 			Author: strings.TrimPrefix(e.Author, "/u/"),
 			URL:    e.Links[0].Href,
 			Image:  e.Thumbnail.URL,
@@ -251,7 +271,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		read++
 		shown := m.visible(got.Posts)
 		res.Blocks = append(res.Blocks, m.table(n, shown, env.Now()))
-		top := m.table(n, shown[:min(summaryRows, len(shown))], env.Now())
+		top := m.table(n, m.short(shown), env.Now())
 		for _, row := range top.Rows {
 			row[0].Detail = "r/" + n + " · " + row[0].Detail
 			short.Rows = append(short.Rows, row)
@@ -276,20 +296,30 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 const summaryRows = 3
 
 // visible is the posts shown: not by hidden authors, at most Rows.
+// Highlighted posts are kept past Rows.
 func (m *Monitor) visible(posts []post) []post {
 	var out []post
+	n := 0
 	for _, p := range posts {
-		hidden := false
-		for _, h := range m.cfg.Hide {
-			if strings.EqualFold(h, p.Author) {
-				hidden = true
-			}
-		}
-		if !hidden {
+		switch {
+		case matches(m.cfg.Hide, p.Author):
+		case n < m.cfg.Rows:
+			out = append(out, p)
+			n++
+		case matches(m.cfg.Highlight, p.Author):
 			out = append(out, p)
 		}
-		if len(out) == m.cfg.Rows {
-			break
+	}
+	return out
+}
+
+// short is the posts for the short view: the first few, and any
+// highlighted after them.
+func (m *Monitor) short(posts []post) []post {
+	var out []post
+	for i, p := range posts {
+		if i < summaryRows || matches(m.cfg.Highlight, p.Author) {
+			out = append(out, p)
 		}
 	}
 	return out
@@ -305,8 +335,12 @@ func (m *Monitor) table(name string, posts []post, now time.Time) monitor.Block 
 		Rows:    [][]monitor.Cell{},
 	}
 	for _, p := range posts {
+		title := monitor.Cell{Text: p.Title, URL: p.URL, Open: m.cfg.Open, Detail: "u/" + p.Author}
+		if matches(m.cfg.Highlight, p.Author) {
+			title.Tone = monitor.ToneAccent
+		}
 		b.Rows = append(b.Rows, []monitor.Cell{
-			{Text: p.Title, URL: p.URL, Open: m.cfg.Open, Detail: "u/" + p.Author},
+			title,
 			{Text: ago(now.Sub(p.Time)), Tone: monitor.ToneMuted},
 		})
 	}
