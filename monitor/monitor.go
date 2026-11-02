@@ -360,6 +360,10 @@ type Cell struct {
 	URL  string `json:"url,omitempty"`
 	// Detail is a smaller, muted line under the text.
 	Detail string `json:"detail,omitempty"`
+	// Open, if set, names an app on the client's own machine to open URL
+	// with (run with the URL), e.g. a Reddit reader. Clients that don't
+	// have the app open URL as usual.
+	Open string `json:"open,omitempty"`
 	// Local, if set, is a button for an app on the client's own machine,
 	// e.g. a downloader. Clients that don't have the app draw nothing.
 	Local *Local `json:"local,omitempty"`
@@ -393,8 +397,11 @@ type Item struct {
 	Subtitle string `json:"subtitle,omitempty"`
 	Detail   string `json:"detail,omitempty"`
 	URL      string `json:"url,omitempty"`
-	Image    string `json:"image,omitempty"`
-	Tone     Tone   `json:"tone,omitempty"`
+	// Open, as for a Cell, names an app to open URL with where it's
+	// installed.
+	Open  string `json:"open,omitempty"`
+	Image string `json:"image,omitempty"`
+	Tone  Tone   `json:"tone,omitempty"`
 	// Slider, for checklists, is a 0-100 control on the item, e.g. a
 	// light's brightness. Clients that draw it leave out the up and down
 	// buttons on that item.

@@ -76,6 +76,12 @@
       "config": { "user": "someone", "local": "watchgrab" }
     },
     {
+      "type": "reddit",
+      "title": "Reddit",
+      "interval": "3m",
+      "config": { "subs": ["2007scape", "bristol"], "open": "lurk" }
+    },
+    {
       "type": "lights",
       "title": "Lights",
       "interval": "15s",
