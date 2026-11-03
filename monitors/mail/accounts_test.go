@@ -17,6 +17,7 @@ import (
 	"github.com/emersion/go-imap/client"
 	"github.com/emersion/go-imap/server"
 	"github.com/seventy-two/kitchensink/monitor/monitortest"
+	"github.com/seventy-two/kitchensink/monitors/groceries"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -169,6 +170,12 @@ func newFakeMicrosoft(t *testing.T) *fakeMicrosoft {
 		assert.Equal(t, `outlook.body-content-type="text"`, r.Header.Get("Prefer"))
 		reply(w, 200, map[string]any{"body": map[string]any{"contentType": "text", "content": "Order  1\r\n\r\n\r\n\r\nThanks"}})
 	})
+	mux.HandleFunc("GET /v1.0/me/messages/AAM1/attachments", func(w http.ResponseWriter, r *http.Request) {
+		reply(w, 200, map[string]any{"value": []any{
+			map[string]any{"@odata.type": "#microsoft.graph.fileAttachment", "name": "Receipt.pdf", "contentType": "application/pdf", "contentBytes": "JVBERi0x"},
+			map[string]any{"@odata.type": "#microsoft.graph.itemAttachment", "name": "Forwarded"},
+		}})
+	})
 	f.Server = httptest.NewServer(mux)
 	t.Cleanup(f.Close)
 	return f
@@ -209,6 +216,9 @@ func TestOutlook(t *testing.T) {
 	text, err := s.Body("AAM1")
 	require.NoError(t, err)
 	assert.Equal(t, "Order 1\n\nThanks", text)
+	files, err := s.Files("AAM1")
+	require.NoError(t, err)
+	assert.Equal(t, []groceries.File{{Name: "Receipt.pdf", Type: "application/pdf", Data: []byte("%PDF-1")}}, files, "file attachments only")
 
 	// An hour on, the access token's refreshed, keeping the refresh token.
 	later := at(env, now.Add(time.Hour))
@@ -225,6 +235,19 @@ func TestOutlook(t *testing.T) {
 	ms.revoked = true
 	_, err = a.Open(ctx, at(env, now.Add(3*time.Hour)))
 	require.True(t, errors.As(err, &si), err)
+}
+
+func TestMessageFiles(t *testing.T) {
+	raw := "Subject: Order receipt\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n" +
+		"--b\r\nContent-Type: text/plain\r\n\r\nYour receipt is attached.\r\n" +
+		"--b\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=\"Receipt-1.pdf\"\r\nContent-Transfer-Encoding: base64\r\n\r\nJVBERi0x\r\n" +
+		"--b--\r\n"
+	files, err := messageFiles(strings.NewReader(raw))
+	require.NoError(t, err)
+	assert.Equal(t, []groceries.File{{Name: "Receipt-1.pdf", Type: "application/pdf", Data: []byte("%PDF-1")}}, files, "a PDF sent as octet-stream is known by its name")
+	text, err := messageText(strings.NewReader(raw))
+	require.NoError(t, err)
+	assert.Equal(t, "Your receipt is attached.", text)
 }
 
 func TestText(t *testing.T) {

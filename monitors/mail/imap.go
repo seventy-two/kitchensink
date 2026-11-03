@@ -3,6 +3,7 @@ package mail
 import (
 	"context"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
 	"github.com/seventy-two/kitchensink/monitor"
+	"github.com/seventy-two/kitchensink/monitors/groceries"
 )
 
 // imapAccount reads a folder over IMAP, e.g. Gmail's inbox with an app
@@ -147,9 +149,28 @@ func address(as []*imap.Address) string {
 }
 
 func (s *imapSession) Body(ref string) (string, error) {
+	var text string
+	err := s.raw(ref, func(r io.Reader) (err error) {
+		text, err = messageText(r)
+		return err
+	})
+	return text, err
+}
+
+func (s *imapSession) Files(ref string) ([]groceries.File, error) {
+	var files []groceries.File
+	err := s.raw(ref, func(r io.Reader) (err error) {
+		files, err = messageFiles(r)
+		return err
+	})
+	return files, err
+}
+
+// raw fetches a message, by UID, and passes it to read.
+func (s *imapSession) raw(ref string, read func(io.Reader) error) error {
 	uid, err := strconv.ParseUint(ref, 10, 32)
 	if err != nil {
-		return "", err
+		return err
 	}
 	set := new(imap.SeqSet)
 	set.AddNum(uint32(uid))
@@ -157,22 +178,21 @@ func (s *imapSession) Body(ref string) (string, error) {
 	ch := make(chan *imap.Message, 1)
 	done := make(chan error, 1)
 	go func() { done <- s.c.UidFetch(set, []imap.FetchItem{section.FetchItem()}, ch) }()
-	var text string
 	var readErr error
 	got := false
 	for msg := range ch {
 		if r := msg.GetBody(section); r != nil {
 			got = true
-			text, readErr = messageText(r)
+			readErr = read(r)
 		}
 	}
 	if err := <-done; err != nil {
-		return "", err
+		return err
 	}
 	if !got {
-		return "", fmt.Errorf("message %s is gone", ref)
+		return fmt.Errorf("message %s is gone", ref)
 	}
-	return text, readErr
+	return readErr
 }
 
 func (s *imapSession) Close() error {

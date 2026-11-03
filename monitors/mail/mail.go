@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/seventy-two/kitchensink/monitor"
+	"github.com/seventy-two/kitchensink/monitors/groceries"
 )
 
 func init() {
@@ -51,9 +52,22 @@ type Config struct {
 	// Reorders turns things bought again and again into chores to reorder
 	// them. It defaults to true.
 	Reorders *bool `json:"reorders"`
+	// Groceries is the ID of the monitor that tracks food from grocery
+	// deliveries; it defaults to "groceries". GroceryReceipts says which
+	// emails are a delivery's receipt (listing what came), to pass on to
+	// it with their attachments; none are unless it's set.
+	Groceries       *string   `json:"groceries"`
+	GroceryReceipts []Receipt `json:"groceryReceipts"`
 	// IgnoreFrom skips mail from senders whose address contains any of
 	// these, e.g. a newsletter whose subjects look like orders.
 	IgnoreFrom []string `json:"ignoreFrom"`
+}
+
+// Receipt picks out emails by sender and subject: each matches if empty,
+// or if the sender's address (or subject) contains it, ignoring case.
+type Receipt struct {
+	From    string `json:"from"`
+	Subject string `json:"subject"`
 }
 
 // Account is a mailbox to read.
@@ -92,6 +106,8 @@ type Monitor struct {
 	choresDone map[string]string
 	reorders   bool
 	ignoreFrom []string
+	groceries  string
+	receipts   []Receipt
 	perPoll    int // emails read each poll
 }
 
@@ -121,6 +137,7 @@ func New(raw json.RawMessage) (*Monitor, error) {
 	m := &Monitor{
 		gemini: g, loc: loc, lookback: c.LookbackDays,
 		calendar: pick(c.Calendar, "calendar"), todo: pick(c.Todo, "todo"), chores: pick(c.Chores, "chores"),
+		groceries: pick(c.Groceries, "groceries"), receipts: c.GroceryReceipts,
 		choresDone: c.ChoresDone, reorders: c.Reorders == nil || *c.Reorders, ignoreFrom: c.IgnoreFrom, perPoll: readPerPoll,
 	}
 	if len(c.Accounts) == 0 {
@@ -167,6 +184,8 @@ type session interface {
 	List(cursor string, since time.Time) ([]header, string, error)
 	// Body is a message's text, by its Ref.
 	Body(ref string) (string, error)
+	// Files are a message's attachments, by its Ref.
+	Files(ref string) ([]groceries.File, error)
 	Close() error
 }
 
@@ -323,6 +342,12 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 			continue
 		}
 		read++
+		// A grocery receipt goes to the groceries monitor, whatever
+		// Gemini makes of it here; that reads each order once.
+		passed := ""
+		if m.isReceipt(h) && now.Sub(h.Date) < receiptMaxAge {
+			passed = m.passReceipt(ctx, env, s, h, text)
+		}
 		x, err := m.gemini.extract(ctx, env.HTTP, m.prompt(h, text, now))
 		if err != nil {
 			env.Log.Warn("extracting from mail", "subject", h.Subject, "err", err)
@@ -346,6 +371,9 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		}
 		delete(failed, h.ID)
 		f := m.apply(ctx, env, h, x, now)
+		if passed != "" {
+			f.Did = append(f.Did, passed)
+		}
 		events = append(events, f.notify...)
 		if len(f.Did) > 0 {
 			// An email read again replaces what it found before.
@@ -400,6 +428,42 @@ func (m *Monitor) worthReading(h header) bool {
 		}
 	}
 	return looksUseful(h.Subject)
+}
+
+// receiptMaxAge is how old a grocery receipt can be to pass on: older
+// ones read while catching up are eaten by now.
+const receiptMaxAge = 7 * 24 * time.Hour
+
+// isReceipt reports whether a message is a grocery delivery's receipt.
+func (m *Monitor) isReceipt(h header) bool {
+	if m.groceries == "" {
+		return false
+	}
+	from, subject := strings.ToLower(h.From), strings.ToLower(h.Subject)
+	for _, r := range m.receipts {
+		if (r.From != "" || r.Subject != "") &&
+			strings.Contains(from, strings.ToLower(r.From)) && strings.Contains(subject, strings.ToLower(r.Subject)) {
+			return true
+		}
+	}
+	return false
+}
+
+// passReceipt sends a receipt, with its PDFs, to the groceries monitor,
+// and says so.
+func (m *Monitor) passReceipt(ctx context.Context, env monitor.Env, s session, h header, text string) string {
+	files, err := s.Files(h.Ref)
+	if err != nil {
+		env.Log.Warn("reading a receipt's attachments", "subject", h.Subject, "err", err)
+	}
+	files = slices.DeleteFunc(files, func(f groceries.File) bool { return f.Type != "application/pdf" })
+	data, _ := json.Marshal(groceries.Order{Email: h.ID, From: h.From, Subject: h.Subject, Received: h.Date, Text: text, Files: files})
+	a := monitor.Action{Type: groceries.OrderAction, Data: data}
+	if err := act(ctx, env, m.groceries, a); err != nil {
+		logAct(env.Log, m.groceries, monitor.Action{Type: a.Type, ID: h.Subject}, err)
+		return ""
+	}
+	return "Groceries: order passed on"
 }
 
 // finding is what one email added.

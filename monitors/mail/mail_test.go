@@ -16,6 +16,7 @@ import (
 	"github.com/seventy-two/kitchensink/monitor"
 	"github.com/seventy-two/kitchensink/monitor/monitortest"
 	"github.com/seventy-two/kitchensink/monitors/calendar"
+	"github.com/seventy-two/kitchensink/monitors/groceries"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -30,6 +31,7 @@ type fakeAccount struct {
 	name   string
 	msgs   []header // in order received
 	bodies map[string]string
+	files  map[string][]groceries.File
 	err    error
 	opened int
 }
@@ -63,6 +65,8 @@ func (a *fakeAccount) Body(ref string) (string, error) {
 	}
 	return b, nil
 }
+
+func (a *fakeAccount) Files(ref string) ([]groceries.File, error) { return a.files[ref], nil }
 
 func (a *fakeAccount) Close() error { return nil }
 
@@ -530,4 +534,47 @@ func TestDeliveredParcel(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, acts.sent)
 	assert.Empty(t, res.Events)
+}
+
+// A grocery receipt goes to the groceries monitor with its PDF, as well as
+// being read as usual; other emails, and old receipts, don't.
+func TestPassesOnGroceryReceipts(t *testing.T) {
+	g := newFakeGemini(t)
+	mb := &fakeAccount{name: "Outlook"}
+	mb.add("Order receipt: Tuesday 3 November", "Waitrose & Partners <no_reply@waitrose.co.uk>", now.AddDate(0, 0, -30), "old")
+	mb.add("Delivery confirmed: Tuesday 13 October", "Waitrose & Partners <no_reply@waitrose.co.uk>", now.Add(-3*time.Hour), "confirmed")
+	mb.add("Order receipt: Tuesday 13 October", "Waitrose & Partners <no_reply@waitrose.co.uk>", now.Add(-2*time.Hour), "Order No. 1071209906")
+	mb.add("Order receipt", "Amazon <auto-confirm@amazon.co.uk>", now.Add(-time.Hour), "not groceries")
+	mb.files = map[string][]groceries.File{"2": {
+		{Name: "Receipt.pdf", Type: "application/pdf", Data: []byte("%PDF")},
+		{Name: "logo.png", Type: "image/png", Data: []byte("png")},
+	}}
+	g.answers["Order receipt: Tuesday 13 October"] = extraction{Kind: "order", Summary: "Waitrose receipt"}
+	m, err := New(json.RawMessage(`{
+		"accounts": [{"type": "imap", "name": "x", "user": "u", "password": "p"}],
+		"gemini": {"apiKey": "k", "url": "` + g.URL + `"},
+		"groceryReceipts": [{"from": "waitrose.co.uk", "subject": "order receipt"}]
+	}`))
+	require.NoError(t, err)
+	m.accounts = []account{mb}
+	acts := &actions{}
+	res, err := m.Poll(context.Background(), acts.env(monitortest.Env(now)))
+	require.NoError(t, err)
+	require.Len(t, g.asked, 4, "all still read as usual")
+
+	var sent []string
+	for _, s := range acts.sent {
+		if strings.HasPrefix(s, "groceries ") {
+			sent = append(sent, s)
+		}
+	}
+	require.Len(t, sent, 1)
+	var o groceries.Order
+	require.NoError(t, json.Unmarshal([]byte(strings.TrimPrefix(sent[0], "groceries order ")), &o))
+	assert.True(t, o.Received.Equal(now.Add(-2*time.Hour)))
+	o.Received = time.Time{}
+	assert.Equal(t, groceries.Order{Email: "<2@Outlook>", From: "Waitrose & Partners <no_reply@waitrose.co.uk>",
+		Subject: "Order receipt: Tuesday 13 October", Text: "Order No. 1071209906",
+		Files: []groceries.File{{Name: "Receipt.pdf", Type: "application/pdf", Data: []byte("%PDF")}}}, o, "the PDF only")
+	assert.Equal(t, "Groceries: order passed on", res.Blocks[0].Items[0].Subtitle)
 }

@@ -31,6 +31,7 @@ notification for each event.
 | `fantasy` | Sleeper and ESPN fantasy leagues, and ESPN's play-by-play | notable plays by players on any of your teams: touchdowns, big gains, turnovers, long or missed kicks, and your defences' takeaways, sacks and scores |
 | `calendar` | iCalendar (ICS) feeds, e.g. Google or Outlook | each timed event, `remindMinutes` (default 10) before it starts |
 | `football` | `nfl` and `fantasy` together as one panel (see below) | what each of them notifies |
+| `groceries` | food from grocery deliveries (receipts passed on by `mail`), read by Gemini once an order for how long each thing keeps: what goes off within three weeks, soonest first, each with a button for when it's used up or thrown away (action `used` with its ID), and recipes for what's going off soon (below) | nothing |
 | `mail` | IMAP (e.g. Gmail) and Outlook mailboxes, read by Gemini for bookings, orders and things to do, which it adds to the calendar, to-do list and chores (below) | nothing itself (each finding is a quiet event); a sign-in code when an Outlook account needs one |
 | `dailies` | a dailies tracker (a separate app)'s games and today's results: every game, linked and marked once `player` has logged it; the summary is a chip for each (`names` gives them shorter names by game ID), green once played. With `versus` set to the other player, a played game is instead green when won, red when lost and blue when drawn or still waiting on them (the tracker says who won). On the tracker's co-op days, played games are green when they hit the day's target and red when they miss it. A game logged as a co-op win (solved together) is green, "Co-op win". When the tracker has haikudle's haiku of the day, it comes last, green once `player` has written theirs (never won or lost). Its paste button logs a game's share text from the clipboard | what happened to each paste, logged or not and why, as a temporary event |
 | `ebay` | an eBay search, newest listings first, through eBay's Browse API (below): what each listing is (named by Gemini from its keyword-stuffed title, with `gemini`; else the title; uncommon and rare ones say so, with a button that ignores the game from then on: action `ignore` with the listing's ID, after which its listings count as common), its price (an auction's current bid, with the bids) and when it went up; short, the newest three rows | each new listing, with its picture; none for those up at the first check or those Gemini rates below `notify`, which are only in the panel |
@@ -232,6 +233,40 @@ what each email added.
 `calendar`, `todo` and `chores` name the monitors to add to (by default
 those IDs; empty leaves one out), `reorders: false` turns reorders off,
 and `ignoreFrom` skips senders whose address contains any of its strings.
+
+`groceryReceipts` picks out a grocery delivery's receipt, by sender and
+subject (each matches if it's contained, ignoring case), e.g.
+`[{"from": "waitrose.co.uk", "subject": "order receipt"}]`; each one up
+to a week old is passed to the `groceries` monitor (or the one
+`groceries` names), with its PDF attachments, as action `order`.
+
+### Groceries
+
+The `groceries` monitor keeps track of the food from grocery deliveries.
+It reads each order once: Gemini is given the receipt (the email and any
+PDF of it, which is where Waitrose lists everything delivered) and lists
+the food and drink that came, after substitutions, with where it's kept
+and how many days it keeps; a second email about an order already read
+(found by its order number) isn't read again. Non-food is left out.
+
+The panel lists what goes off within `showDays` (default 21), soonest
+first, red on its last day, amber within `soonDays` (default 3); things
+that last longer are only counted. Each row has a button for when it's
+been eaten or thrown away. Something gone off stays listed for `goneDays`
+(default 1); everything from an order is forgotten `forgetDays` (default
+28) after it came. Below are `recipes` (default 3) suggestions that use
+up what's going off within `soonDays` and otherwise what you have, asked
+for only when what's going off changes: something new comes into that
+window, a day passes, or something's marked used (after two minutes, so
+several can be marked at once). Its short view is what's going off soon.
+
+```json
+"config": {
+  "gemini": { "apiKey": "${GEMINI_API_KEY}", "context": "Cooks for two." }
+}
+```
+
+`gemini.model` defaults to `gemini-3.8-flash`.
 
 ### eBay
 

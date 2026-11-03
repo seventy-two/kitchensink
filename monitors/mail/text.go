@@ -9,6 +9,7 @@ import (
 
 	_ "github.com/emersion/go-message/charset" // decodes other charsets
 	gomail "github.com/emersion/go-message/mail"
+	"github.com/seventy-two/kitchensink/monitors/groceries"
 )
 
 // useful matches subjects of orders, bookings, tickets, appointments,
@@ -26,6 +27,52 @@ var useful = regexp.MustCompile(`(?i)\b(` + strings.Join([]string{
 
 // looksUseful reports whether a subject is worth reading.
 func looksUseful(subject string) bool { return useful.MatchString(subject) }
+
+// messageFiles is a raw message's attachments.
+func messageFiles(r io.Reader) ([]groceries.File, error) {
+	mr, err := gomail.CreateReader(r)
+	if err != nil {
+		return nil, err
+	}
+	var out []groceries.File
+	for {
+		p, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			if len(out) > 0 {
+				break
+			}
+			return nil, err
+		}
+		h, ok := p.Header.(*gomail.AttachmentHeader)
+		if !ok {
+			continue
+		}
+		name, _ := h.Filename()
+		t, _, _ := mime.ParseMediaType(h.Get("Content-Type"))
+		b, err := io.ReadAll(io.LimitReader(p.Body, 16<<20))
+		if err != nil || len(b) == 0 {
+			continue
+		}
+		out = append(out, groceries.File{Name: name, Type: fileType(t, name), Data: b})
+	}
+	return out, nil
+}
+
+// fileType is an attachment's media type, from its name when it's given
+// only as application/octet-stream, as some senders do with PDFs.
+func fileType(t, name string) string {
+	t = strings.ToLower(strings.TrimSpace(t))
+	if i := strings.Index(t, ";"); i >= 0 {
+		t = strings.TrimSpace(t[:i])
+	}
+	if (t == "" || t == "application/octet-stream") && strings.HasSuffix(strings.ToLower(name), ".pdf") {
+		return "application/pdf"
+	}
+	return t
+}
 
 // maxText bounds how much of a message Gemini reads, in characters.
 const maxText = 15000

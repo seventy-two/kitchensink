@@ -32,6 +32,7 @@ import (
 	_ "github.com/seventy-two/kitchensink/monitors/fantasy"
 	_ "github.com/seventy-two/kitchensink/monitors/farming"
 	_ "github.com/seventy-two/kitchensink/monitors/football"
+	_ "github.com/seventy-two/kitchensink/monitors/groceries"
 	_ "github.com/seventy-two/kitchensink/monitors/letterboxd"
 	_ "github.com/seventy-two/kitchensink/monitors/lights"
 	_ "github.com/seventy-two/kitchensink/monitors/mail"

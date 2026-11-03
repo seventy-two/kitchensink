@@ -113,7 +113,16 @@
           { "type": "outlook", "name": "Outlook", "clientId": "${OUTLOOK_CLIENT_ID}" }
         ],
         "gemini": { "apiKey": "${GEMINI_API_KEY}", "context": "Lives in London with their partner." },
-        "choresDone": { "weekly-shop": "a supermarket groceries order being placed" }
+        "choresDone": { "weekly-shop": "a supermarket groceries order being placed" },
+        "groceryReceipts": [{ "from": "waitrose.co.uk", "subject": "order receipt" }]
+      }
+    },
+    {
+      "type": "groceries",
+      "title": "Food",
+      "interval": "1h",
+      "config": {
+        "gemini": { "apiKey": "${GEMINI_API_KEY}", "context": "Cooks for two." }
       }
     },
     {

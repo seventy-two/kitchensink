@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/seventy-two/kitchensink/monitor"
+	"github.com/seventy-two/kitchensink/monitors/groceries"
 )
 
 // outlookAccount reads a Microsoft account's inbox through Microsoft
@@ -289,6 +290,27 @@ func (s *graphSession) Body(ref string) (string, error) {
 		text = htmlText(text)
 	}
 	return clip(tidy(text), maxText), nil
+}
+
+func (s *graphSession) Files(ref string) ([]groceries.File, error) {
+	var in struct {
+		Value []struct {
+			Type        string `json:"@odata.type"`
+			Name        string `json:"name"`
+			ContentType string `json:"contentType"`
+			Bytes       []byte `json:"contentBytes"`
+		} `json:"value"`
+	}
+	if err := s.get(s.base+"/me/messages/"+url.PathEscape(ref)+"/attachments", &in); err != nil {
+		return nil, err
+	}
+	var out []groceries.File
+	for _, a := range in.Value {
+		if a.Type == "#microsoft.graph.fileAttachment" && len(a.Bytes) > 0 {
+			out = append(out, groceries.File{Name: a.Name, Type: fileType(a.ContentType, a.Name), Data: a.Bytes})
+		}
+	}
+	return out, nil
 }
 
 func (s *graphSession) get(u string, out any) error {
