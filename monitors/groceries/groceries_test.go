@@ -141,9 +141,9 @@ func TestOrderReadOnceThenRecipes(t *testing.T) {
 	assert.Equal(t, "And 1 longer-lasting thing from the shopping.", res.Blocks[1].Text)
 	assert.Equal(t, monitor.Item{Title: "Mushroom linguine (20 min)", Subtitle: "Uses mushrooms, fresh basil", Detail: "Fry the mushrooms."}, res.Blocks[2].Items[0])
 	assert.Equal(t, "Uses fresh basil · buy pine nuts", res.Blocks[2].Items[1].Subtitle)
-	assert.Equal(t, []monitor.Stat{{Label: "Use by Today", Value: "Vegetable sushi", Detail: "+1 more by Friday", Tone: monitor.ToneBad}}, res.Summary)
-	require.NotNil(t, res.SummaryBlock)
-	assert.Len(t, res.SummaryBlock.Rows, 2, "the short view is what's going off soon")
+	assert.Equal(t, monitor.SummaryChips, res.SummaryStyle)
+	assert.Equal(t, []monitor.Stat{{Label: "Vegetable sushi", Value: "Today", Tone: monitor.ToneBad}, {Label: "Mushrooms", Value: "Friday", Tone: monitor.ToneWarn}},
+		res.Summary, "the short view is a chip for each thing going off soon")
 	assert.Equal(t, 15*time.Hour+time.Minute, res.Next, "just after midnight")
 
 	// Polled again: nothing asked.
@@ -189,7 +189,6 @@ func TestOrderReadOnceThenRecipes(t *testing.T) {
 	res, err = m.Poll(ctx, at(env, now.AddDate(0, 0, 30)))
 	require.NoError(t, err)
 	assert.Equal(t, "Nothing from the shopping that goes off soon.", res.Blocks[0].Text)
-	assert.Nil(t, res.SummaryBlock)
 	assert.Equal(t, "Nothing going off", res.Summary[0].Value)
 }
 

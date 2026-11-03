@@ -24,8 +24,6 @@ func (m *Monitor) result(items []Item, rs recipes, problem string, pending int, 
 		Columns: []monitor.Column{{Title: "Food", Fill: true}, {Title: "Use by", Align: monitor.AlignRight}, {Title: ""}},
 		Rows:    [][]monitor.Cell{},
 	}
-	short := table
-	short.Rows = [][]monitor.Cell{}
 	lasting := map[string]bool{}
 	soonLimit := today.AddDate(0, 0, m.soon)
 	for _, it := range items {
@@ -51,9 +49,6 @@ func (m *Monitor) result(items []Item, rs recipes, problem string, pending int, 
 			{Action: &monitor.CellAction{Type: UsedAction, ID: it.ID, Label: "Used up or thrown away"}},
 		}
 		table.Rows = append(table.Rows, row)
-		if !useBy.After(soonLimit) {
-			short.Rows = append(short.Rows, row)
-		}
 	}
 	switch {
 	case len(table.Rows) > 0:
@@ -82,29 +77,27 @@ func (m *Monitor) result(items []Item, rs recipes, problem string, pending int, 
 		blocks = append(blocks, recipe)
 	}
 
-	res := monitor.Result{Blocks: blocks, Summary: m.summary(items, today)}
-	if len(short.Rows) > 0 {
-		res.SummaryBlock = &short
-	}
-	return res
+	// The short view is a chip for each thing going off soon.
+	return monitor.Result{Blocks: blocks, Summary: m.summary(items, today), SummaryStyle: monitor.SummaryChips}
 }
 
-// summary is the next thing going off, and how many more go soon.
+// summary is a chip for each thing going off soon, soonest first: its
+// name and day, red on its last day.
 func (m *Monitor) summary(items []Item, today time.Time) []monitor.Stat {
 	soon := m.goingOff(items, today)
 	if len(soon) == 0 {
 		return []monitor.Stat{{Label: "Food", Value: "Nothing going off", Tone: monitor.ToneMuted}}
 	}
-	first := soon[0]
-	useBy := first.useBy(m.loc)
-	st := monitor.Stat{Label: "Use by " + m.when(useBy, today), Value: first.Name, Tone: monitor.ToneWarn}
-	if useBy.Before(today.AddDate(0, 0, 1)) {
-		st.Tone = monitor.ToneBad
+	var out []monitor.Stat
+	for _, it := range soon {
+		useBy := it.useBy(m.loc)
+		st := monitor.Stat{Label: it.Name, Value: m.when(useBy, today), Tone: monitor.ToneWarn}
+		if useBy.Before(today.AddDate(0, 0, 1)) {
+			st.Tone = monitor.ToneBad
+		}
+		out = append(out, st)
 	}
-	if n := len(soon) - 1; n > 0 {
-		st.Detail = fmt.Sprintf("+%d more by %s", n, m.when(soon[n].useBy(m.loc), today))
-	}
-	return []monitor.Stat{st}
+	return out
 }
 
 // when names a use-by day: gone off, today, tomorrow, a weekday this

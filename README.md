@@ -268,7 +268,8 @@ up what's going off within `soonDays` and otherwise what you have, asked
 for only when what's going off changes (they assume only salt, pepper and
 oil beyond what you've bought): something new comes into that
 window, a day passes, or something's marked used (after two minutes, so
-several can be marked at once). Its short view is what's going off soon.
+several can be marked at once). Its short view is a chip for each thing
+going off soon, with its day.
 
 ```json
 "config": {
