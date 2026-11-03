@@ -292,6 +292,8 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		orders[ref] = orderRead{Email: o.Email, Delivered: delivered, Read: now, Items: len(x.Items)}
 	}
 
+	markEgg(items)
+
 	// Forget what's long gone, or eaten by now.
 	items = slices.DeleteFunc(items, func(it Item) bool {
 		d, err := time.ParseInLocation(time.DateOnly, it.Delivered, m.loc)
@@ -343,11 +345,42 @@ func (m *Monitor) goingOff(items []Item, today time.Time) []Item {
 	var out []Item
 	limit := today.AddDate(0, 0, m.soon)
 	for _, it := range items {
-		if !it.useBy(m.loc).After(limit) {
+		if !it.staple() && !it.useBy(m.loc).After(limit) {
 			out = append(out, it)
 		}
 	}
 	return out
+}
+
+// markEgg marks as having egg everything named like something Gemini
+// said had egg in another order ("Frozen vegetarian mozzarella burgers"
+// after "Vegetarian mozzarella burgers"), as it doesn't always say the
+// same of one product.
+func markEgg(items []Item) {
+	var egg []string
+	for _, it := range items {
+		if it.Egg {
+			egg = append(egg, plainName(it.Name))
+		}
+	}
+	for i, it := range items {
+		n := plainName(it.Name)
+		items[i].Egg = it.Egg || slices.ContainsFunc(egg, func(e string) bool { return strings.Contains(n, e) })
+	}
+}
+
+// plainName is a name to compare: lower case, without words that only
+// say how it's sold.
+func plainName(s string) string {
+	var out []string
+	for _, w := range strings.Fields(strings.ToLower(s)) {
+		switch w {
+		case "frozen", "fresh", "chilled":
+		default:
+			out = append(out, w)
+		}
+	}
+	return " " + strings.Join(out, " ") + " "
 }
 
 // soonKey says what recipes were asked for: the things going off, each

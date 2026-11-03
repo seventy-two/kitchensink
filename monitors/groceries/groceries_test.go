@@ -245,6 +245,8 @@ func TestPastOrdersAndEgg(t *testing.T) {
 		{Name: "Basmati rice", Qty: 1, Storage: "cupboard", KeepsDays: 900},
 		{Name: "Egg tagliatelle", Qty: 1, Storage: "cupboard", KeepsDays: 300, Egg: true},
 		{Name: "Cheddar", Qty: 1, Storage: "fridge", KeepsDays: 30},
+		{Name: "Vegetarian burgers", Qty: 1, Storage: "freezer", KeepsDays: 200, Egg: true},
+		{Name: "Noodles", Qty: 1, Storage: "cupboard", KeepsDays: 155},
 	}}
 	require.NoError(t, m.Act(ctx, env, past("<p1@x>", "111111", time.Date(2026, 6, 1, 8, 0, 0, 0, london))))
 	_, err := m.Poll(ctx, env)
@@ -253,6 +255,8 @@ func TestPastOrdersAndEgg(t *testing.T) {
 		{Name: "Plain flour", Qty: 1, Storage: "cupboard", KeepsDays: 300},
 		{Name: "Croissants", Qty: 1, Storage: "cupboard", KeepsDays: 2, Egg: true},
 		{Name: "Mushrooms", Qty: 1, Storage: "fridge", KeepsDays: 3},
+		{Name: "Frozen vegetarian burgers", Qty: 1, Storage: "freezer", KeepsDays: 200},
+		{Name: "Cheddar", Qty: 1, Storage: "fridge", KeepsDays: 30},
 	}}
 	require.NoError(t, m.Act(ctx, env, receipt("<r1@x>")))
 	res, err := m.Poll(ctx, env)
@@ -266,14 +270,17 @@ func TestPastOrdersAndEgg(t *testing.T) {
 	for _, it := range items {
 		names = append(names, it.Name)
 	}
-	assert.ElementsMatch(t, []string{"Croissants", "Mushrooms", "Plain flour", "Plain flour", "Egg tagliatelle", "Basmati rice"}, names,
+	assert.ElementsMatch(t, []string{"Croissants", "Mushrooms", "Plain flour", "Plain flour", "Egg tagliatelle", "Basmati rice",
+		"Vegetarian burgers", "Frozen vegetarian burgers", "Noodles", "Cheddar"}, names,
 		"June's cheddar is long gone; rice is kept a year at most, from June")
 
 	require.Len(t, g.asked, 1)
-	assert.Equal(t, "Today is Tuesday 3 November.\n\nGoing off soon:\n- Mushrooms (fridge): Friday\n\nAlso in:\n\n"+
-		"Long-lasting things bought in recent months:\n- Basmati rice (cupboard)\n- Plain flour (cupboard)\n\nSuggest 3 recipes.", g.asked[0])
+	assert.Equal(t, "Today is Tuesday 3 November.\n\nGoing off soon:\n- Mushrooms (fridge): Friday\n\nAlso in:\n- Cheddar (fridge)\n\n"+
+		"Long-lasting things bought in recent months:\n- Basmati rice (cupboard)\n- Noodles (cupboard)\n- Plain flour (cupboard)\n\nSuggest 3 recipes.",
+		g.asked[0], "the burgers have egg, even where Gemini didn't say so; June's noodles, at their date, aren't going off but assumed")
 	assert.Equal(t, monitor.Cell{Text: "Croissants", Detail: "Cupboard · has egg"}, res.Blocks[0].Rows[0][0])
-	assert.Equal(t, "And 3 longer-lasting things from the shopping.", res.Blocks[1].Text)
+	assert.Len(t, res.Blocks[0].Rows, 2, "croissants and mushrooms; staples aren't listed")
+	assert.Equal(t, "And 7 longer-lasting things from the shopping.", res.Blocks[1].Text)
 }
 
 func TestOldReceiptIgnored(t *testing.T) {

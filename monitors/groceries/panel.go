@@ -30,7 +30,7 @@ func (m *Monitor) result(items []Item, rs recipes, problem string, pending int, 
 	soonLimit := today.AddDate(0, 0, m.soon)
 	for _, it := range items {
 		useBy := it.useBy(m.loc)
-		if useBy.After(today.AddDate(0, 0, m.show)) {
+		if it.staple() || useBy.After(today.AddDate(0, 0, m.show)) {
 			lasting[strings.ToLower(it.Name)] = true
 			continue
 		}
