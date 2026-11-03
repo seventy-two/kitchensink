@@ -247,7 +247,16 @@ It reads each order once: Gemini is given the receipt (the email and any
 PDF of it, which is where Waitrose lists everything delivered) and lists
 the food and drink that came, after substitutions, with where it's kept
 and how many days it keeps; a second email about an order already read
-(found by its order number) isn't read again. Non-food is left out.
+(found by its order number) isn't read again. Non-food is left out, and
+food with egg in it is marked (it shows "has egg" and recipes leave it
+out).
+
+Things that keep for two months or more (flour, rice, tins, frozen food)
+are staples: they're taken to be in until their use-by (a year at most),
+however long ago they came, and recipes may use them. To learn what's
+usually in, older receipts can be sent with `"past": true` in the
+action's data; they're read however old they are (others over two weeks
+old are ignored), and what's perishable in them is already gone.
 
 The panel lists what goes off within `showDays` (default 21), soonest
 first, red on its last day, amber within `soonDays` (default 3); things
@@ -256,7 +265,8 @@ been eaten or thrown away. Something gone off stays listed for `goneDays`
 (default 1); everything from an order is forgotten `forgetDays` (default
 28) after it came. Below are `recipes` (default 3) suggestions that use
 up what's going off within `soonDays` and otherwise what you have, asked
-for only when what's going off changes: something new comes into that
+for only when what's going off changes (they assume only salt, pepper and
+oil beyond what you've bought): something new comes into that
 window, a day passes, or something's marked used (after two minutes, so
 several can be marked at once). Its short view is what's going off soon.
 

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 )
@@ -56,6 +57,7 @@ The receipt is the email and any attached PDF; the PDF, where there is one, list
   - name: short and plain, as they'd say it, keeping what tells it apart from similar things but no brand, size or marketing words: "Mushroom & garlic tortelloni", "Paneer", "Fresh basil", "Semi oat milk", "Vegan tiramisu", "Ploughman's sandwich", "Red onions".
   - qty: how many packs or pieces came; 1 for loose produce sold by weight.
   - storage: where it's kept: "fridge" (anything chilled), "freezer" (anything frozen), "cupboard" or "fruit bowl" (produce kept out of the fridge).
+  - egg: true if it has egg in it as sold, going by what such a product usually contains: fresh egg pasta and most filled pasta, mayonnaise, most cakes, croissants and pastries, brioche, meringue, many quiches and ready meals, many meat substitutes (Quorn), eggs themselves. False when there's none, as with dried durum wheat pasta, most bread, and anything sold as vegan or plant-based.
   - keepsDays: how many days after delivery it's still good if kept that way and not opened. Use the use-by or best-before a UK supermarket delivery typically has left on it (they deliver with a few days' life on chilled food), and for fresh produce how long it really lasts at home: e.g. sushi or a sandwich 1, fresh herbs 4, ripe avocado 2, mushrooms 4, soured cream 7, fresh pasta 5, tofu 14, bread 4, hard cheese 30, a whole cucumber 6, lemons 21, onions 30, garlic 60, dried pasta 365, crisps 60, frozen food 90, chocolate 180.`
 
 var orderSchema = map[string]any{
@@ -70,8 +72,9 @@ var orderSchema = map[string]any{
 				"qty":       map[string]any{"type": "integer"},
 				"storage":   map[string]any{"type": "string", "enum": []string{"fridge", "freezer", "cupboard", "fruit bowl"}},
 				"keepsDays": map[string]any{"type": "integer", "description": "days after delivery it's good for, unopened"},
+				"egg":       map[string]any{"type": "boolean", "description": "has egg in it"},
 			},
-			"required": []string{"name", "qty", "storage", "keepsDays"},
+			"required": []string{"name", "qty", "storage", "keepsDays", "egg"},
 		}},
 	},
 	"required": []string{"orderRef", "delivery", "items"},
@@ -86,6 +89,7 @@ type orderReply struct {
 		Qty       int    `json:"qty"`
 		Storage   string `json:"storage"`
 		KeepsDays int    `json:"keepsDays"`
+		Egg       bool   `json:"egg"`
 	} `json:"items"`
 }
 
@@ -109,7 +113,7 @@ func (g *gemini) order(ctx context.Context, client *http.Client, input []any) (o
 
 const recipesInstruction = `You suggest recipes for someone's kitchen dashboard that use up food before it goes off.
 
-You're given what's going off soon, with the day each must be eaten by, and what else is in their kitchen from recent deliveries (with its day too, if it's perishable). Suggest the number of recipes asked for: real, everyday dishes, each a different kind of meal (not three takes on one idea), each using something from the going-off list, and together using up as much of it as possible, then whatever goes off next. Build them from what they have. Assume only basic store-cupboard things beyond that (oil, butter, salt, pepper, common dried herbs and spices, stock cubes, flour, sugar, rice); anything else a recipe needs goes in buy, and the fewer of those the better. Don't count something that's already a meal or snack on its own (a sandwich, sushi, a ready meal, a dessert, crisps) as needing a recipe. Keep to what their shopping suggests they eat: if they buy no meat or fish, use none.
+You're given what's going off soon, with the day each must be eaten by, what else is in their kitchen from recent deliveries (with its day too, if it's perishable), and the long-lasting things they've bought in recent months, which you can take to be in the cupboard or freezer. Suggest the number of recipes asked for: real, everyday dishes, each a different kind of meal (not three takes on one idea), each using something from the going-off list, and together using up as much of it as possible, then whatever goes off next. Build them from what they have. Beyond that, assume only salt, pepper, cooking oil and tap water; anything else a recipe needs goes in buy, and the fewer of those the better. Don't count something that's already a meal or snack on its own (a sandwich, sushi, a ready meal, a dessert, crisps) as needing a recipe. Keep to what their shopping suggests they eat: if they buy no meat or fish, use none.
 
 For each:
 - title: the dish, as a cookbook would name it, briefly.
@@ -142,24 +146,39 @@ type Recipe struct {
 	Method  string   `json:"method"`
 }
 
-// recipesInput lists what's going off and what else there is.
+// recipesInput lists what's going off, what else is in, and the staples
+// bought in recent months, leaving out anything with egg in it.
 func (m *Monitor) recipesInput(soon, all []Item, today time.Time) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Today is %s.\n\nGoing off soon:\n", today.Format("Monday 2 January"))
 	in := map[string]bool{}
 	for _, it := range soon {
 		in[it.ID] = true
-		fmt.Fprintf(&b, "- %s (%s): %s\n", it.Name, it.Storage, m.when(it.useBy(m.loc), today))
+		if !it.Egg {
+			fmt.Fprintf(&b, "- %s (%s): %s\n", it.Name, it.Storage, m.when(it.useBy(m.loc), today))
+		}
 	}
 	b.WriteString("\nAlso in:\n")
+	var staples []string
+	listed := map[string]bool{}
 	for _, it := range all {
+		key := strings.ToLower(it.Name)
 		switch {
-		case in[it.ID]:
+		case in[it.ID] || it.Egg:
+		case it.staple():
+			if !listed[key] {
+				listed[key] = true
+				staples = append(staples, fmt.Sprintf("- %s (%s)\n", it.Name, it.Storage))
+			}
 		case it.useBy(m.loc).After(today.AddDate(0, 0, m.show)):
 			fmt.Fprintf(&b, "- %s (%s)\n", it.Name, it.Storage)
 		default:
 			fmt.Fprintf(&b, "- %s (%s): %s\n", it.Name, it.Storage, m.when(it.useBy(m.loc), today))
 		}
+	}
+	if len(staples) > 0 {
+		slices.Sort(staples)
+		b.WriteString("\nLong-lasting things bought in recent months:\n" + strings.Join(staples, ""))
 	}
 	return b.String()
 }

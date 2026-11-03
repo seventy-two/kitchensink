@@ -26,12 +26,12 @@ func (m *Monitor) result(items []Item, rs recipes, problem string, pending int, 
 	}
 	short := table
 	short.Rows = [][]monitor.Cell{}
-	lasting := 0
+	lasting := map[string]bool{}
 	soonLimit := today.AddDate(0, 0, m.soon)
 	for _, it := range items {
 		useBy := it.useBy(m.loc)
 		if useBy.After(today.AddDate(0, 0, m.show)) {
-			lasting++
+			lasting[strings.ToLower(it.Name)] = true
 			continue
 		}
 		tone := monitor.ToneNone
@@ -46,7 +46,7 @@ func (m *Monitor) result(items []Item, rs recipes, problem string, pending int, 
 			name = fmt.Sprintf("%s ×%d", name, it.Qty)
 		}
 		row := []monitor.Cell{
-			{Text: name, Detail: storage(it.Storage)},
+			{Text: name, Detail: detail(it)},
 			{Text: m.when(useBy, today), Tone: tone},
 			{Action: &monitor.CellAction{Type: UsedAction, ID: it.ID, Label: "Used up or thrown away"}},
 		}
@@ -61,9 +61,9 @@ func (m *Monitor) result(items []Item, rs recipes, problem string, pending int, 
 	case pending == 0:
 		blocks = append(blocks, monitor.Block{Type: monitor.BlockText, Text: "Nothing from the shopping that goes off soon."})
 	}
-	if lasting > 0 {
+	if n := len(lasting); n > 0 {
 		blocks = append(blocks, monitor.Block{Type: monitor.BlockText,
-			Text: fmt.Sprintf("And %d longer-lasting %s from the shopping.", lasting, plural(lasting, "thing", "things"))})
+			Text: fmt.Sprintf("And %d longer-lasting %s from the shopping.", n, plural(n, "thing", "things"))})
 	}
 	var recipe monitor.Block
 	if len(rs.List) > 0 {
@@ -124,11 +124,16 @@ func (m *Monitor) when(d, today time.Time) string {
 	return d.Format("2 Jan")
 }
 
-func storage(s string) string {
-	if s == "" {
-		return ""
+// detail is where it's kept, and whether it has egg in it.
+func detail(it Item) string {
+	var parts []string
+	if it.Storage != "" {
+		parts = append(parts, capitalise(it.Storage))
 	}
-	return capitalise(s)
+	if it.Egg {
+		parts = append(parts, "has egg")
+	}
+	return strings.Join(parts, " · ")
 }
 
 func plural(n int, one, many string) string {

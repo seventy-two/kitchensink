@@ -92,6 +92,7 @@ type item = struct {
 	Qty       int    `json:"qty"`
 	Storage   string `json:"storage"`
 	KeepsDays int    `json:"keepsDays"`
+	Egg       bool   `json:"egg"`
 }
 
 func TestOrderReadOnceThenRecipes(t *testing.T) {
@@ -124,7 +125,7 @@ func TestOrderReadOnceThenRecipes(t *testing.T) {
 	require.Len(t, g.asked, 1)
 	assert.Contains(t, g.asked[0], "Today is Tuesday 3 November")
 	assert.Contains(t, g.asked[0], "Going off soon:\n- Vegetable sushi (fridge): Today\n- Mushrooms (fridge): Friday\n")
-	assert.Contains(t, g.asked[0], "Also in:\n- Fresh basil (fridge): Saturday\n- Soured cream (fridge): 10 Nov\n- Linguine (cupboard)\n")
+	assert.Contains(t, g.asked[0], "Also in:\n- Fresh basil (fridge): Saturday\n- Soured cream (fridge): 10 Nov\n\nLong-lasting things bought in recent months:\n- Linguine (cupboard)\n")
 	assert.Contains(t, g.asked[0], "Suggest 3 recipes.")
 
 	// The panel lists what goes off within three weeks, soonest first.
@@ -225,6 +226,54 @@ func TestGeminiFailing(t *testing.T) {
 	_, err = env.State.Get(pendingKey, &pending)
 	require.NoError(t, err)
 	assert.Empty(t, pending)
+}
+
+// Past orders are read however old, for what's usually in: staples stay
+// until their use-by, perishables are forgotten, and egg is left out of
+// recipes.
+func TestPastOrdersAndEgg(t *testing.T) {
+	g := newFakeGemini(t)
+	m := newMonitor(t, g)
+	ctx := context.Background()
+	env := monitortest.Env(now)
+	past := func(email, ref string, received time.Time) monitor.Action {
+		data, _ := json.Marshal(Order{Email: email, Received: received, Text: "Order No. " + ref, Past: true})
+		return monitor.Action{Type: OrderAction, Data: data}
+	}
+	g.order = orderReply{OrderRef: "111111", Delivery: "2026-06-01", Items: []item{
+		{Name: "Plain flour", Qty: 1, Storage: "cupboard", KeepsDays: 300},
+		{Name: "Basmati rice", Qty: 1, Storage: "cupboard", KeepsDays: 900},
+		{Name: "Egg tagliatelle", Qty: 1, Storage: "cupboard", KeepsDays: 300, Egg: true},
+		{Name: "Cheddar", Qty: 1, Storage: "fridge", KeepsDays: 30},
+	}}
+	require.NoError(t, m.Act(ctx, env, past("<p1@x>", "111111", time.Date(2026, 6, 1, 8, 0, 0, 0, london))))
+	_, err := m.Poll(ctx, env)
+	require.NoError(t, err)
+	g.order = orderReply{OrderRef: "222222", Delivery: "2026-11-03", Items: []item{
+		{Name: "Plain flour", Qty: 1, Storage: "cupboard", KeepsDays: 300},
+		{Name: "Croissants", Qty: 1, Storage: "cupboard", KeepsDays: 2, Egg: true},
+		{Name: "Mushrooms", Qty: 1, Storage: "fridge", KeepsDays: 3},
+	}}
+	require.NoError(t, m.Act(ctx, env, receipt("<r1@x>")))
+	res, err := m.Poll(ctx, env)
+	require.NoError(t, err)
+	require.Len(t, g.orders, 2)
+
+	var items []Item
+	_, err = env.State.Get(itemsKey, &items)
+	require.NoError(t, err)
+	var names []string
+	for _, it := range items {
+		names = append(names, it.Name)
+	}
+	assert.ElementsMatch(t, []string{"Croissants", "Mushrooms", "Plain flour", "Plain flour", "Egg tagliatelle", "Basmati rice"}, names,
+		"June's cheddar is long gone; rice is kept a year at most, from June")
+
+	require.Len(t, g.asked, 1)
+	assert.Equal(t, "Today is Tuesday 3 November.\n\nGoing off soon:\n- Mushrooms (fridge): Friday\n\nAlso in:\n\n"+
+		"Long-lasting things bought in recent months:\n- Basmati rice (cupboard)\n- Plain flour (cupboard)\n\nSuggest 3 recipes.", g.asked[0])
+	assert.Equal(t, monitor.Cell{Text: "Croissants", Detail: "Cupboard · has egg"}, res.Blocks[0].Rows[0][0])
+	assert.Equal(t, "And 3 longer-lasting things from the shopping.", res.Blocks[1].Text)
 }
 
 func TestOldReceiptIgnored(t *testing.T) {

@@ -60,6 +60,9 @@ type Order struct {
 	Received time.Time `json:"received"`
 	Text     string    `json:"text"`
 	Files    []File    `json:"files,omitempty"`
+	// Past marks an old receipt read to learn what's usually kept in
+	// (flour, rice, spices): it's read however old it is.
+	Past bool `json:"past,omitempty"`
 }
 
 // File is an email's attachment, such as the full receipt as a PDF.
@@ -127,7 +130,14 @@ type Item struct {
 	// it's good for.
 	Delivered string `json:"delivered"`
 	Keeps     int    `json:"keeps"`
+	// Egg is set for food with egg in it, which recipes leave out.
+	Egg bool `json:"egg,omitempty"`
 }
+
+// staple is something that keeps for months (flour, rice, tins, frozen
+// food): it's taken to be in until its use-by, however long ago it came,
+// rather than eaten after forgetDays.
+func (it Item) staple() bool { return it.Keeps >= stapleDays }
 
 // useBy is the last day it's good.
 func (it Item) useBy(loc *time.Location) time.Time {
@@ -160,6 +170,9 @@ const (
 	settle      = 2 * time.Minute // after marking things used, before asking for new recipes
 	maxFiles    = 10 << 20        // bytes of attachments kept for one receipt
 	oldReceipt  = 14 * 24 * time.Hour
+	readBudget  = 50 * time.Second // no new order is started after this, so a poll fits in two minutes
+	stapleDays  = 60
+	maxKeeps    = 365
 )
 
 // Act takes a receipt from the mail monitor, or marks an item used.
@@ -234,10 +247,11 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	}
 
 	// Read each new order once.
-	for len(pending) > 0 && ctx.Err() == nil {
+	started := time.Now()
+	for len(pending) > 0 && ctx.Err() == nil && time.Since(started) < readBudget {
 		o := pending[0]
 		ref := orderRef(o.Subject + "\n" + o.Text)
-		if _, done := orders[ref]; ref != "" && done || now.Sub(o.Received) > oldReceipt {
+		if _, done := orders[ref]; ref != "" && done || !o.Past && now.Sub(o.Received) > oldReceipt {
 			pending = pending[1:] // a copy of one read already, or too old to matter
 			continue
 		}
@@ -273,7 +287,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 				id += fmt.Sprint("-", seen[id])
 			}
 			items = append(items, Item{ID: id, Name: capitalise(name), Qty: max(xi.Qty, 1), Storage: xi.Storage,
-				Order: ref, Delivered: delivered, Keeps: max(xi.KeepsDays, 0)})
+				Order: ref, Delivered: delivered, Keeps: min(max(xi.KeepsDays, 0), maxKeeps), Egg: xi.Egg})
 		}
 		orders[ref] = orderRead{Email: o.Email, Delivered: delivered, Read: now, Items: len(x.Items)}
 	}
@@ -281,7 +295,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	// Forget what's long gone, or eaten by now.
 	items = slices.DeleteFunc(items, func(it Item) bool {
 		d, err := time.ParseInLocation(time.DateOnly, it.Delivered, m.loc)
-		return err != nil || today.Sub(d) > time.Duration(m.forget)*24*time.Hour ||
+		return err != nil || !it.staple() && today.Sub(d) > time.Duration(m.forget)*24*time.Hour ||
 			today.Sub(it.useBy(m.loc)) > time.Duration(m.gone)*24*time.Hour
 	})
 	maps.DeleteFunc(orders, func(_ string, o orderRead) bool { return now.Sub(o.Read) > 400*24*time.Hour })
