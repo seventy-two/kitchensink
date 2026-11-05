@@ -336,6 +336,10 @@ type Stat struct {
 	Lead bool `json:"lead,omitempty"`
 	// URL, if set, is opened when the stat is clicked.
 	URL string `json:"url,omitempty"`
+	// Brief, if set, replaces Value where space is tightest (a client's
+	// one-line summaries); an empty one leaves only the label. Nil keeps
+	// Value.
+	Brief *string `json:"brief,omitempty"`
 }
 
 // Align is a table column's alignment.

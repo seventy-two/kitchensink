@@ -142,8 +142,8 @@ func TestOrderReadOnceThenRecipes(t *testing.T) {
 	assert.Equal(t, monitor.Item{Title: "Mushroom linguine (20 min)", Subtitle: "Uses mushrooms, fresh basil", Detail: "Fry the mushrooms."}, res.Blocks[2].Items[0])
 	assert.Equal(t, "Uses fresh basil · buy pine nuts", res.Blocks[2].Items[1].Subtitle)
 	assert.Equal(t, monitor.SummaryChips, res.SummaryStyle)
-	assert.Equal(t, []monitor.Stat{{Label: "Vegetable sushi", Value: "Today", Tone: monitor.ToneBad}, {Label: "Mushrooms", Value: "Friday", Tone: monitor.ToneWarn}},
-		res.Summary, "the short view is a chip for each thing going off soon")
+	assert.Equal(t, []monitor.Stat{{Label: "Vegetable sushi", Value: "Today", Tone: monitor.ToneBad}, {Label: "Mushrooms", Value: "Friday", Tone: monitor.ToneWarn, Brief: new(string)}},
+		res.Summary, "the short view is a chip for each thing going off soon; past tomorrow, a brief one has no day")
 	assert.Equal(t, 15*time.Hour+time.Minute, res.Next, "just after midnight")
 
 	// Polled again: nothing asked.

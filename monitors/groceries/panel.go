@@ -82,7 +82,8 @@ func (m *Monitor) result(items []Item, rs recipes, problem string, pending int, 
 }
 
 // summary is a chip for each thing going off soon, soonest first: its
-// name and day, red on its last day.
+// name and day, red on its last day. Brief leaves the day out after
+// tomorrow.
 func (m *Monitor) summary(items []Item, today time.Time) []monitor.Stat {
 	soon := m.goingOff(items, today)
 	if len(soon) == 0 {
@@ -94,6 +95,11 @@ func (m *Monitor) summary(items []Item, today time.Time) []monitor.Stat {
 		st := monitor.Stat{Label: it.Name, Value: m.when(useBy, today), Tone: monitor.ToneWarn}
 		if useBy.Before(today.AddDate(0, 0, 1)) {
 			st.Tone = monitor.ToneBad
+		}
+		// One-line summaries name the day only when it's close (the
+		// user's ask): later days are just the name.
+		if !useBy.Before(today.AddDate(0, 0, 2)) {
+			st.Brief = new(string)
 		}
 		out = append(out, st)
 	}

@@ -539,6 +539,9 @@ short (the OSRS table's top rows). A stat or block marked `private` holds person
 figures, e.g. money, which clients can hide; a stat marked `lead` is set
 apart from the ones after it (the portfolio's day before the watchlist's
 moves), and one with a `url` opens it when clicked (the dailies' chips).
+A stat's `brief`, if sent, replaces its value where space is tightest (the
+Windows client's ultra compact lines); an empty one leaves only the label
+(Food names the day only up to tomorrow).
 Every monitor is
 drawn from the same few block types, so clients need no per-monitor code:
 
