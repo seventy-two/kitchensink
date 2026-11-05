@@ -55,12 +55,14 @@ type Config struct {
 	// the player's counts and the drop history, for a public page (such as
 	// petsheet's progress charts) to read. See publish.go.
 	Publish string `json:"publish"`
-	// DelveFile is RuneLite's profile file holding the Delve Calculator
-	// plugin's counts of Doom of Mokhaiotl delve levels (e.g.
-	// "%USERPROFILE%\.runelite\profiles2\main-1.properties"). The Windows
-	// client uploads its line, and the counts are published with the rest,
-	// as Dom's chance depends on the level. See delves.go.
-	DelveFile string `json:"delveFile"`
+	// ProfileFile is RuneLite's profile file (e.g.
+	// "%USERPROFILE%\.runelite\profiles2\main-1.properties"), where
+	// plugins keep counts the hiscores don't: the Delve Calculator's Doom
+	// of Mokhaiotl delve levels (Dom's chance depends on the level) and the
+	// goat hunting plugin's goats caught (Mr McGroot). The Windows client
+	// uploads their lines once a day, and the counts are published with
+	// the rest. See plugins.go.
+	ProfileFile string `json:"profileFile"`
 }
 
 // womEvery is how often Wise Old Man is asked to update the player, at
@@ -207,9 +209,9 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		relevant.Until = seen.Add(playing)
 	}
 	var upload *monitor.Upload
-	if m.cfg.DelveFile != "" {
-		// Once a day is enough for a pet this rare (the user's call).
-		upload = &monitor.Upload{Path: m.cfg.DelveFile, Prefixes: []string{delvePrefix}, Every: 24 * 60 * 60}
+	if m.cfg.ProfileFile != "" {
+		// Once a day is enough for pets this rare (the user's call).
+		upload = &monitor.Upload{Path: m.cfg.ProfileFile, Prefixes: []string{delvePrefix, goatPrefix}, Every: 24 * 60 * 60}
 	}
 	return monitor.Result{
 		Upload:       upload,

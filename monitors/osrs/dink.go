@@ -149,7 +149,7 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 		return m.importDrops(env, a.Data)
 	}
 	if a.Type == monitor.UploadAction {
-		return m.uploadDelves(env, a.Text)
+		return m.uploadProfile(env, a.Text)
 	}
 	if a.Type != monitor.HookAction {
 		return fmt.Errorf("%w: %s", monitor.ErrBadAction, a.Type)

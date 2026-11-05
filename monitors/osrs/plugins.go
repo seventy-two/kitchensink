@@ -10,6 +10,9 @@ import (
 	"github.com/seventy-two/kitchensink/monitor"
 )
 
+// Counts kept by RuneLite plugins in the profile file, for pets whose
+// chance the hiscores can't give.
+//
 // The Doom of Mokhaiotl is fought in delves, levels 1 to 8 and then on
 // past 8, and Dom can drop on finishing any level from 6, at a better rate
 // the deeper (1/1,000 at 6 to 1/250 past 8). The hiscores only count
@@ -21,6 +24,16 @@ const delvePrefix = "delvecalculator.killCountData="
 
 // delvesKey holds the last upload's counts.
 const delvesKey = "delves"
+
+// Mr McGroot comes from hunting goats on Wyrmscraig, a roll per goat
+// caught; the goat hunting plugin counts them.
+const (
+	goatPrefix = "goatindicators.totalCaught="
+	// goatsKey holds the last upload's goats caught.
+	goatsKey = "goats"
+	// goatsStat is the published name for goats caught.
+	goatsStat = "goats_caught"
+)
 
 // delves are the levels completed, by level (9 is every level past 8).
 type delves struct {
@@ -50,19 +63,41 @@ func (d delves) stats() stats {
 	return out
 }
 
-// uploadDelves takes the Delve Calculator's line from the profile file.
-// Its STANDARD profile is normal worlds (SEASONAL is leagues; the MANUAL
-// ones are counts typed in by hand, left out).
-func (m *Monitor) uploadDelves(env monitor.Env, text string) error {
-	var line string
+// uploadProfile takes the plugins' lines from the profile file: either
+// can be missing (a plugin not installed), but not both.
+func (m *Monitor) uploadProfile(env monitor.Env, text string) error {
+	var delveLine, goatLine string
 	for _, l := range strings.Split(text, "\n") {
-		if v, ok := strings.CutPrefix(strings.TrimSpace(l), delvePrefix); ok {
-			line = v
+		l = strings.TrimSpace(l)
+		if v, ok := strings.CutPrefix(l, delvePrefix); ok {
+			delveLine = v
+		}
+		if v, ok := strings.CutPrefix(l, goatPrefix); ok {
+			goatLine = v
 		}
 	}
-	if line == "" {
-		return fmt.Errorf("%w: no Delve Calculator data", monitor.ErrBadAction)
+	if delveLine == "" && goatLine == "" {
+		return fmt.Errorf("%w: no plugin counts", monitor.ErrBadAction)
 	}
+	if goatLine != "" {
+		goats, err := strconv.ParseInt(strings.TrimSpace(goatLine), 10, 64)
+		if err != nil {
+			return fmt.Errorf("%w: goats caught: %v", monitor.ErrBadAction, err)
+		}
+		if err := env.State.Set(goatsKey, goats); err != nil {
+			return err
+		}
+	}
+	if delveLine == "" {
+		return nil
+	}
+	return m.uploadDelves(env, delveLine)
+}
+
+// uploadDelves takes the Delve Calculator's value from the profile file.
+// Its STANDARD profile is normal worlds (SEASONAL is leagues; the MANUAL
+// ones are counts typed in by hand, left out).
+func (m *Monitor) uploadDelves(env monitor.Env, line string) error {
 	var raw struct {
 		Profiles map[string]struct {
 			LevelKills map[string]int64 `json:"levelKills"`

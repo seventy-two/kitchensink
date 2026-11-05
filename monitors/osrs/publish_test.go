@@ -75,7 +75,7 @@ func TestDelves(t *testing.T) {
 	f := newFakeWOM(t)
 	file := filepath.Join(t.TempDir(), "live.json")
 	raw, _ := json.Marshal(map[string]any{"player": "GTX 480", "womURL": f.URL, "hookSecret": "s3cret", "publish": file,
-		"delveFile": `%USERPROFILE%\.runelite\profiles2\main.properties`})
+		"profileFile": `%USERPROFILE%\.runelite\profiles2\main.properties`})
 	m, err := New(raw)
 	require.NoError(t, err)
 	env := monitortest.Env(now)
@@ -83,7 +83,8 @@ func TestDelves(t *testing.T) {
 	res, err := m.Poll(context.Background(), env)
 	require.NoError(t, err)
 	require.NotNil(t, res.Upload)
-	assert.Equal(t, []string{"delvecalculator.killCountData="}, res.Upload.Prefixes)
+	assert.Equal(t, []string{"delvecalculator.killCountData=", "goatindicators.totalCaught="}, res.Upload.Prefixes)
+	assert.Equal(t, int64(86400), res.Upload.Every)
 
 	upload := func(text string) error {
 		return m.Act(context.Background(), env, monitor.Action{Type: monitor.UploadAction, Text: text})
@@ -91,7 +92,7 @@ func TestDelves(t *testing.T) {
 	assert.ErrorIs(t, upload("delvecalculator.other=1"), monitor.ErrBadAction)
 	require.NoError(t, upload(`delvecalculator.killCountData={"profiles"\:{"STANDARD\:MANUAL"\:{"levelKills"\:{"6"\:34}},`+
 		`"STANDARD"\:{"name"\:"STANDARD","levelKills"\:{"1"\:174,"5"\:96,"6"\:68,"7"\:33,"8"\:4},"wavesPast8"\:2},`+
-		`"SEASONAL"\:{"levelKills"\:{"6"\:11},"wavesPast8"\:14}}}`))
+		`"SEASONAL"\:{"levelKills"\:{"6"\:11},"wavesPast8"\:14}}}`+"\ngoatindicators.totalCaught=3443\n"))
 
 	hook(t, m, env, "LOOT", `{"source":"Doom of Mokhaiotl","category":"EVENT","items":[{"id":31088,"name":"Avernic treads","quantity":1,"priceEach":30000000}]}`)
 	_, err = m.Poll(context.Background(), env)
@@ -105,11 +106,19 @@ func TestDelves(t *testing.T) {
 	assert.Equal(t, int64(33), got.Stats["doom_delve_7"])
 	assert.Equal(t, int64(4), got.Stats["doom_delve_8"])
 	assert.Equal(t, int64(2), got.Stats["doom_delve_9"], "levels past 8")
+	assert.Equal(t, int64(3443), got.Stats["goats_caught"])
 	_, shallow := got.Stats["doom_delve_5"]
 	assert.False(t, shallow, "only levels that can give Dom")
 	require.Len(t, got.Drops, 1)
 	assert.Equal(t, int64(107), got.Drops[0].Delves)
 	assert.Equal(t, "doom_of_mokhaiotl", got.Drops[0].Metric)
+}
+
+func TestGoatsAlone(t *testing.T) {
+	m := newMonitor(t, newFakeWOM(t))
+	env := monitortest.Env(now)
+	require.NoError(t, m.Act(context.Background(), env, monitor.Action{Type: monitor.UploadAction, Text: "goatindicators.totalCaught=12"}))
+	assert.ErrorIs(t, m.Act(context.Background(), env, monitor.Action{Type: monitor.UploadAction, Text: "goatindicators.totalCaught=x"}), monitor.ErrBadAction)
 }
 
 func TestUnescapeProperty(t *testing.T) {
