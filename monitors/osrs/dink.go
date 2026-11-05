@@ -55,6 +55,10 @@ type drop struct {
 	Rarity   float64 `json:"rarity,omitempty"`
 	Metric   string  `json:"metric,omitempty"`
 	ApproxKC bool    `json:"approxKC,omitempty"`
+	// Delves is, for a Doom of Mokhaiotl drop, how many delve levels of 6
+	// or deeper (those that can give Dom) the player had done, from the
+	// last Delve Calculator upload.
+	Delves int64 `json:"delves,omitempty"`
 }
 
 // today is what Dink has told the monitor today, beyond counts.
@@ -144,6 +148,9 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 	if a.Type == "importDrops" {
 		return m.importDrops(env, a.Data)
 	}
+	if a.Type == monitor.UploadAction {
+		return m.uploadDelves(env, a.Text)
+	}
 	if a.Type != monitor.HookAction {
 		return fmt.Errorf("%w: %s", monitor.ErrBadAction, a.Type)
 	}
@@ -232,6 +239,13 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 			if dr.KC == 0 {
 				dr.KC = live[id]
 			}
+		}
+		if id == "doom_of_mokhaiotl" {
+			var dv delves
+			if _, err := env.State.Get(delvesKey, &dv); err != nil {
+				return err
+			}
+			dr.Delves = dv.domLevels()
 		}
 		if dr.Value >= m.cfg.BigLoot {
 			td.Drops = append(td.Drops, dr)

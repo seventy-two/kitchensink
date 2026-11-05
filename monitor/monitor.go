@@ -210,6 +210,9 @@ type Upload struct {
 	// %LIKE_THIS% (a Windows path, as only the Windows client uploads).
 	Path     string   `json:"path"`
 	Prefixes []string `json:"prefixes,omitempty"`
+	// Every, if set, is the fewest seconds between a client's looks at the
+	// file (otherwise every few seconds); it still looks once on starting.
+	Every int64 `json:"every,omitempty"`
 }
 
 // UploadAction is the Action type an Upload arrives as.

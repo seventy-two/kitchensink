@@ -347,6 +347,13 @@ line, so it can still post to Discord). Then turn on:
 - For skill XP at each login, put the same URL in **Advanced → Custom
   Metadata Handler**.
 
+With `delveFile` set to the RuneLite profile file the Delve
+Calculator plugin
+saves to, the Windows client uploads its counts once a day, and the
+published file has the Doom of Mokhaiotl delve levels completed from 6 on
+(`doom_delve_6` to `doom_delve_9`, 9 being past 8), which is what Dom's
+chance depends on; the hiscores only count level 8s.
+
 Past drops can be added to the history with the action `importDrops`,
 whose `data` is a list of `{time, source, item, id, value, kc, rarity,
 approxKC}` (e.g. from RuneLite's Loot Logger files): sources are matched
@@ -518,8 +525,9 @@ with the clipboard's text, e.g. the dailies' share text), `upload` (if
 set, `path`, with `%VARS%`, and `prefixes`: a file on the client's machine
 the monitor wants, whose lines starting with one of the prefixes clients
 that can read it send as an `upload` action, `{"type":"upload","text":
-"..."}`, when they start and whenever those lines change; the farming
-monitor's RuneLite data), `blocks` and `summary`: a few
+"..."}`, when they start and whenever those lines change, looking every
+few seconds or every `every` seconds; the farming monitor's RuneLite data,
+and the osrs monitor's Delve Calculator counts once a day), `blocks` and `summary`: a few
 stats (as in a `stats` block) worth seeing at a glance, which clients show
 instead of the blocks when space is short, and `summaryStyle`: empty for
 label/value/detail tiles, or `chips` for small blocks of the same, filled

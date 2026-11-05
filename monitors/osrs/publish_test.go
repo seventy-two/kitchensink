@@ -70,3 +70,48 @@ func TestNoPublish(t *testing.T) {
 	_, err := m.Poll(context.Background(), monitortest.Env(now.Add(time.Hour)))
 	require.NoError(t, err)
 }
+
+func TestDelves(t *testing.T) {
+	f := newFakeWOM(t)
+	file := filepath.Join(t.TempDir(), "live.json")
+	raw, _ := json.Marshal(map[string]any{"player": "GTX 480", "womURL": f.URL, "hookSecret": "s3cret", "publish": file,
+		"delveFile": `%USERPROFILE%\.runelite\profiles2\main.properties`})
+	m, err := New(raw)
+	require.NoError(t, err)
+	env := monitortest.Env(now)
+
+	res, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	require.NotNil(t, res.Upload)
+	assert.Equal(t, []string{"delvecalculator.killCountData="}, res.Upload.Prefixes)
+
+	upload := func(text string) error {
+		return m.Act(context.Background(), env, monitor.Action{Type: monitor.UploadAction, Text: text})
+	}
+	assert.ErrorIs(t, upload("delvecalculator.other=1"), monitor.ErrBadAction)
+	require.NoError(t, upload(`delvecalculator.killCountData={"profiles"\:{"STANDARD\:MANUAL"\:{"levelKills"\:{"6"\:34}},`+
+		`"STANDARD"\:{"name"\:"STANDARD","levelKills"\:{"1"\:174,"5"\:96,"6"\:68,"7"\:33,"8"\:4},"wavesPast8"\:2},`+
+		`"SEASONAL"\:{"levelKills"\:{"6"\:11},"wavesPast8"\:14}}}`))
+
+	hook(t, m, env, "LOOT", `{"source":"Doom of Mokhaiotl","category":"EVENT","items":[{"id":31088,"name":"Avernic treads","quantity":1,"priceEach":30000000}]}`)
+	_, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(file)
+	require.NoError(t, err)
+	var got published
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.Equal(t, int64(68), got.Stats["doom_delve_6"])
+	assert.Equal(t, int64(33), got.Stats["doom_delve_7"])
+	assert.Equal(t, int64(4), got.Stats["doom_delve_8"])
+	assert.Equal(t, int64(2), got.Stats["doom_delve_9"], "levels past 8")
+	_, shallow := got.Stats["doom_delve_5"]
+	assert.False(t, shallow, "only levels that can give Dom")
+	require.Len(t, got.Drops, 1)
+	assert.Equal(t, int64(107), got.Drops[0].Delves)
+	assert.Equal(t, "doom_of_mokhaiotl", got.Drops[0].Metric)
+}
+
+func TestUnescapeProperty(t *testing.T) {
+	assert.Equal(t, `{"a":1} x\y é`, unescapeProperty(`{"a"\:1}\ x\\y é`))
+}

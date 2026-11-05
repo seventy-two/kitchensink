@@ -55,6 +55,12 @@ type Config struct {
 	// the player's counts and the drop history, for a public page (such as
 	// petsheet's progress charts) to read. See publish.go.
 	Publish string `json:"publish"`
+	// DelveFile is RuneLite's profile file holding the Delve Calculator
+	// plugin's counts of Doom of Mokhaiotl delve levels (e.g.
+	// "%USERPROFILE%\.runelite\profiles2\main-1.properties"). The Windows
+	// client uploads its line, and the counts are published with the rest,
+	// as Dom's chance depends on the level. See delves.go.
+	DelveFile string `json:"delveFile"`
 }
 
 // womEvery is how often Wise Old Man is asked to update the player, at
@@ -200,7 +206,13 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	if !seen.IsZero() {
 		relevant.Until = seen.Add(playing)
 	}
+	var upload *monitor.Upload
+	if m.cfg.DelveFile != "" {
+		// Once a day is enough for a pet this rare (the user's call).
+		upload = &monitor.Upload{Path: m.cfg.DelveFile, Prefixes: []string{delvePrefix}, Every: 24 * 60 * 60}
+	}
 	return monitor.Result{
+		Upload:       upload,
 		Relevant:     relevant,
 		Blocks:       blocks,
 		Summary:      append(dropChips(drops), summary(rows, len(drops) > 0)...),
