@@ -48,6 +48,13 @@ type Config struct {
 	Owned []string `json:"owned"`
 	// WOMURL replaces Wise Old Man's API, for tests.
 	WOMURL string `json:"womURL"`
+	// HistoryLoot is the least a drop must be worth to be kept for good in
+	// the drop history (with pets), beyond today. It defaults to 10m.
+	HistoryLoot int64 `json:"historyLoot"`
+	// Publish, if set, is a file the monitor writes after each poll with
+	// the player's counts and the drop history, for a public page (such as
+	// petsheet's progress charts) to read. See publish.go.
+	Publish string `json:"publish"`
 }
 
 // womEvery is how often Wise Old Man is asked to update the player, at
@@ -83,6 +90,9 @@ func New(raw json.RawMessage) (*Monitor, error) {
 	}
 	if c.WOMURL == "" {
 		c.WOMURL = defaultWOM
+	}
+	if c.HistoryLoot == 0 {
+		c.HistoryLoot = 10_000_000
 	}
 	loc, err := time.LoadLocation(c.Timezone)
 	if err != nil {
@@ -167,6 +177,9 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		return monitor.Result{}, err
 	}
 	rows := gains(from, merged(current, live), owned)
+	if err := m.publish(env, merged(current, live)); err != nil {
+		return monitor.Result{}, err
+	}
 	drops, events := dropsToday(td, day)
 
 	blocks := []monitor.Block{table(rows, lastBig, m.cfg.BigLoot)}

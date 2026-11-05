@@ -1,7 +1,6 @@
 package osrs
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -30,9 +29,13 @@ type dink struct {
 }
 
 type dinkItem struct {
+	ID        int    `json:"id"`
 	Name      string `json:"name"`
 	Quantity  int64  `json:"quantity"`
 	PriceEach int64  `json:"priceEach"`
+	// Rarity is the item's drop chance (0.001 for 1/1,000), from the wiki,
+	// for NPC drops only; zero when Dink doesn't know it.
+	Rarity float64 `json:"rarity"`
 }
 
 // drop is a big loot drop or a pet, kept for the day.
@@ -45,6 +48,13 @@ type drop struct {
 	KC    int64  `json:"kc,omitempty"`
 	Pet   bool   `json:"pet,omitempty"`
 	Dupe  bool   `json:"dupe,omitempty"`
+	// These are kept for the history: the most valuable item's ID and drop
+	// chance, the tracked metric the drop came from, and whether KC is an
+	// estimate (Loot Logger doesn't count raids, so imports number them).
+	ItemID   int     `json:"id,omitempty"`
+	Rarity   float64 `json:"rarity,omitempty"`
+	Metric   string  `json:"metric,omitempty"`
+	ApproxKC bool    `json:"approxKC,omitempty"`
 }
 
 // today is what Dink has told the monitor today, beyond counts.
@@ -74,6 +84,9 @@ const (
 	seenKey = "seen"
 	// ownedKey lists the pets Dink has reported, beyond the config's.
 	ownedKey = "owned"
+	// historyKey is every drop worth historyLoot and every pet, oldest
+	// first, kept for good: from Dink, or imported with "importDrops".
+	historyKey = "history"
 )
 
 // owned is every pet the player has, by petKey: the config's and Dink's.
@@ -128,6 +141,9 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 		}
 		return env.State.Set(lastBigKey, set)
 	}
+	if a.Type == "importDrops" {
+		return m.importDrops(env, a.Data)
+	}
 	if a.Type != monitor.HookAction {
 		return fmt.Errorf("%w: %s", monitor.ErrBadAction, a.Type)
 	}
@@ -161,6 +177,10 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 	}
 	var last lastKill
 	if _, err := env.State.Get(lastKillKey, &last); err != nil {
+		return err
+	}
+	var history []drop
+	if _, err := env.State.Get(historyKey, &history); err != nil {
 		return err
 	}
 	killed := func(id string) { last = lastKill{ID: id, Time: now} }
@@ -205,12 +225,22 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 		if ok {
 			killed(id)
 		}
-		if dr, big := m.big(x.Items); big {
-			dr.Time, dr.Source, dr.KC = now, x.Source, x.KillCount
-			td.Drops = append(td.Drops, dr)
-			if kc := cmp.Or(x.KillCount, live[id]); ok && kc > 0 {
-				lastBig[id] = max(lastBig[id], kc)
+		dr := m.top(x.Items)
+		dr.Time, dr.Source, dr.KC = now, x.Source, x.KillCount
+		if ok {
+			dr.Metric = id
+			if dr.KC == 0 {
+				dr.KC = live[id]
 			}
+		}
+		if dr.Value >= m.cfg.BigLoot {
+			td.Drops = append(td.Drops, dr)
+			if ok && dr.KC > 0 {
+				lastBig[id] = max(lastBig[id], dr.KC)
+			}
+		}
+		if dr.Value >= m.cfg.HistoryLoot {
+			history = append(history, dr)
 		}
 	case "CLUE":
 		var x struct {
@@ -222,12 +252,20 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 		if strings.EqualFold(x.ClueType, "master") {
 			count("clue_scrolls_master", x.NumberCompleted)
 		}
-		if dr, ok := m.big(x.Items); ok {
-			dr.Time, dr.Source = now, x.ClueType+" clue"
+		dr := m.top(x.Items)
+		dr.Time, dr.Source = now, x.ClueType+" clue"
+		master := strings.EqualFold(x.ClueType, "master")
+		if master {
+			dr.Metric, dr.KC = "clue_scrolls_master", x.NumberCompleted
+		}
+		if dr.Value >= m.cfg.BigLoot {
 			td.Drops = append(td.Drops, dr)
-			if strings.EqualFold(x.ClueType, "master") {
+			if master {
 				lastBig["clue_scrolls_master"] = max(lastBig["clue_scrolls_master"], x.NumberCompleted)
 			}
+		}
+		if dr.Value >= m.cfg.HistoryLoot {
+			history = append(history, dr)
 		}
 	case "PET":
 		var x struct {
@@ -239,10 +277,11 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 		// Put down to the kill just before, if that boss gives this pet.
 		if mt, ok := tracked[last.ID]; ok && now.Sub(last.Time) < 10*time.Minute &&
 			(x.PetName == "" || strings.EqualFold(x.PetName, mt.Pet)) {
-			dr.Source, dr.KC = mt.Name, live[last.ID]
+			dr.Source, dr.KC, dr.Metric = mt.Name, live[last.ID], last.ID
 			lastBig[last.ID] = max(lastBig[last.ID], live[last.ID])
 		}
 		td.Drops = append(td.Drops, dr)
+		history = append(history, dr)
 		if x.PetName != "" && !x.Duplicate {
 			var got []string
 			if _, err := env.State.Get(ownedKey, &got); err != nil {
@@ -282,26 +321,30 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 	if err := env.State.Set(lastKillKey, last); err != nil {
 		return err
 	}
+	if err := env.State.Set(historyKey, history); err != nil {
+		return err
+	}
 	return env.State.Set(todayKey, td)
 }
 
-// big is a loot drop worth at least the config's bigLoot, named by its most
-// valuable item.
-func (m *Monitor) big(items []dinkItem) (drop, bool) {
-	var total, best int64
+// top is a loot drop's total value, named by its most valuable item.
+func (m *Monitor) top(items []dinkItem) drop {
+	var best int64
 	var dr drop
 	for _, it := range items {
 		v := it.PriceEach * it.Quantity
-		total += v
+		dr.Value += v
 		if v > best {
-			best, dr.Item = v, it.Name
+			best, dr.Item, dr.ItemID, dr.Rarity = v, it.Name, it.ID, it.Rarity
 			if it.Quantity > 1 {
 				dr.Item += fmt.Sprintf(" ×%d", it.Quantity)
 			}
 		}
 	}
-	dr.Value = total
-	return dr, total >= m.cfg.BigLoot && dr.Item != ""
+	if dr.Item == "" {
+		dr.Value = 0 // nothing worth anything
+	}
+	return dr
 }
 
 // drops are today's big drops and pets, newest first, and the events they
