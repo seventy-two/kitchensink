@@ -17,7 +17,7 @@ import (
 // 10:20 in the UK on 14 October.
 var now = time.Date(2026, 10, 14, 9, 20, 0, 0, time.UTC)
 
-// fakeTracker serves three games; J has played two of them and M one,
+// fakeTracker serves three games (and a trial game, left off the panel); J has played two of them and M one,
 // and ends lists who's ended the day early.
 func fakeTracker(t *testing.T, ends ...string) *httptest.Server {
 	js := func(w http.ResponseWriter, v any) { json.NewEncoder(w).Encode(v) }
@@ -27,6 +27,7 @@ func fakeTracker(t *testing.T, ends ...string) *httptest.Server {
 			map[string]any{"id": "wordle", "name": "Wordle", "url": "https://wordle.test/"},
 			map[string]any{"id": "connections", "name": "Connections", "url": "https://connections.test/"},
 			map[string]any{"id": "wikidle", "name": "Wikidle", "url": "https://wikidle.test/"},
+			map[string]any{"id": "puddle", "name": "Puddle", "url": "https://puddle.test/", "trial": true},
 		}})
 	})
 	mux.HandleFunc("GET /api/day", func(w http.ResponseWriter, r *http.Request) {

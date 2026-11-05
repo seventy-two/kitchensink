@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -70,6 +71,9 @@ type game struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	URL  string `json:"url"`
+	// Trial games are ones the tracker is trying out: they count for
+	// nothing there, so they're left off the panel.
+	Trial bool `json:"trial"`
 }
 
 type config struct {
@@ -206,6 +210,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		return monitor.Result{}, err
 	}
 	got, ended := m.outcomes(d)
+	c.Games = slices.DeleteFunc(c.Games, func(g game) bool { return g.Trial })
 	if d.Haikus != nil {
 		c.Games = append(c.Games, haikudle)
 	}
