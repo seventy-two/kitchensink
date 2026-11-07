@@ -448,3 +448,56 @@ func TestKelvinRGB(t *testing.T) {
 	assert.Equal(t, "#ff9227", kelvinRGB(2200))
 	assert.Equal(t, "#fffefa", kelvinRGB(6500))
 }
+
+// roomsJSON has two numbered lights in a room (one on at 40%, one off),
+// a lone numbered light and one that isn't numbered.
+const roomsJSON = `[
+ {"entity_id": "light.lr1", "state": "on", "attributes": {"supported_color_modes": ["hs"], "brightness": 102.0, "rgb_color": [255, 0, 0], "friendly_name": "Living room 1"}},
+ {"entity_id": "light.lr2", "state": "off", "attributes": {"supported_color_modes": ["brightness"], "friendly_name": "Living room 2"}},
+ {"entity_id": "light.study", "state": "off", "attributes": {"supported_color_modes": ["brightness"], "friendly_name": "Study 1"}},
+ {"entity_id": "light.bed", "state": "unavailable", "attributes": {"supported_color_modes": ["brightness"], "friendly_name": "Bedroom"}}
+]`
+
+func TestRooms(t *testing.T) {
+	ha := newFakeHA(t)
+	ha.states = roomsJSON
+	m := newMonitor(t, ha.URL, `, "lights": ["light.lr1", "light.lr2", "light.study", "light.bed"]`)
+	env := monitortest.Env(now)
+	ctx := context.Background()
+
+	res, err := m.Poll(ctx, env)
+	require.NoError(t, err)
+	// A room of two or more gets a row of its own before its lights.
+	assert.Equal(t, []string{
+		"[ ] Living room · 1 of 2 on",
+		"[ ] Living room 1 · 40%",
+		"[x] Living room 2",
+		"[x] Study 1",
+		"[x] Bedroom · unavailable",
+	}, rows(t, res))
+	room := res.Blocks[0].Items[0]
+	assert.Equal(t, "room:Living room", room.ID)
+	require.NotNil(t, room.Slider)
+	assert.Equal(t, 40, room.Slider.Value)
+	require.NotNil(t, room.Colour)
+	assert.Equal(t, "#ff0000", room.Colour.Value)
+	// The summary counts lights, not rooms.
+	assert.Equal(t, "1 of 4 on", res.Summary[0].Value)
+
+	// Any on: all off; none on: all on. Other actions reach every light.
+	require.NoError(t, m.Act(ctx, env, monitor.Action{Type: "toggle", ID: "room:Living room"}))
+	assert.Equal(t, []string{`turn_off {"entity_id":["light.lr1"]}`}, ha.took())
+	require.NoError(t, m.Act(ctx, env, monitor.Action{Type: "brightness", ID: "room:Living room", Text: "60"}))
+	assert.Equal(t, []string{`turn_on {"brightness_pct":60,"entity_id":["light.lr1","light.lr2"]}`}, ha.took())
+	ha.states = strings.Replace(roomsJSON, `"state": "on"`, `"state": "off"`, 1)
+	require.NoError(t, m.Act(ctx, env, monitor.Action{Type: "toggle", ID: "room:Living room"}))
+	assert.Equal(t, []string{`turn_on {"entity_id":["light.lr1","light.lr2"]}`}, ha.took())
+	res, err = m.Poll(ctx, env)
+	require.NoError(t, err)
+	assert.Equal(t, "[x] Living room", rows(t, res)[0])
+
+	assert.ErrorIs(t, m.Act(ctx, env, monitor.Action{Type: "toggle", ID: "room:Kitchen"}), monitor.ErrBadAction)
+	assert.Equal(t, []string{"Hallway", "Hallway", "", "", "", "Room 2"}, []string{
+		roomOf("Hallway 1"), roomOf("Hallway 12"), roomOf("Hallway"), roomOf("1"), roomOf("Hallway1"), roomOf("Room 2 3"),
+	})
+}

@@ -412,6 +412,15 @@ light's entity ID, and `brightness` with a percentage as text (`0` turns
 it off). For scripts, the ID `all` acts on every light: toggling turns
 them all off if any is on, else all on.
 
+Lights named alike but for a number at the end (Hallway 1, Hallway 2),
+listed next to each other, are a room: a row for the room as a whole,
+titled "Hallway" with ID `room:Hallway`, comes before them, on while any
+of them is on, its subtitle "Both on" or "1 of 2 on", its slider at their
+average brightness. Every action takes it, acting on all the room's
+lights as `all` does on every light. The rooms' rows aren't in the
+summary, which counts lights. Clients join a room's lights into one
+button with its row at the head (Hallway | 1 | 2).
+
 Each row that can dim also has a brightness slider (sending `brightness`),
 and each that takes colour a colour swatch (sending `colour`, with text
 `#rrggbb` for any colour or a temperature like `2700K` for a white). Its

@@ -132,6 +132,42 @@ var hues = []struct{ label, rgb string }{
 // allID is the checklist row for every light at once.
 const allID = "all"
 
+// roomPrefix starts the ID of a room's row, which switches every light in
+// it at once: lights named alike but for a number at the end (Hallway 1,
+// Hallway 2) are a room, "room:Hallway".
+const roomPrefix = "room:"
+
+// roomOf is what a light's name is a numbered one of: "Hallway" for
+// "Hallway 2"; empty when it doesn't end in a number after a space. Clients
+// join such lights into one button the same way, so keep them alike.
+func roomOf(name string) string {
+	i := len(name)
+	for i > 0 && name[i-1] >= '0' && name[i-1] <= '9' {
+		i--
+	}
+	if i == len(name) || i < 2 || name[i-1] != ' ' {
+		return ""
+	}
+	return name[:i-1]
+}
+
+// rooms splits lights, in order, into runs: a room's lights next to each
+// other (two or more) are one run, every other light a run of its own.
+func rooms(lights []light) [][]light {
+	var out [][]light
+	for i := 0; i < len(lights); {
+		j := i + 1
+		if r := roomOf(lights[i].Name); r != "" {
+			for j < len(lights) && roomOf(lights[j].Name) == r {
+				j++
+			}
+		}
+		out = append(out, lights[i:j])
+		i = j
+	}
+	return out
+}
+
 func (m *Monitor) client(env monitor.Env) *client {
 	return &client{http: env.HTTP, base: m.cfg.URL, token: m.cfg.Token}
 }
@@ -262,21 +298,21 @@ func build(lights []light) monitor.Result {
 		summary[0].Value = fmt.Sprintf("%d of %d on", on, len(lights))
 		summary[0].Tone = monitor.ToneAccent
 	}
+	for _, run := range rooms(lights) {
+		if len(run) > 1 {
+			b.Items = append(b.Items, roomItem(run))
+		}
+		for _, l := range run {
+			b.Items = append(b.Items, lightItem(l))
+		}
+	}
 	for _, l := range lights {
-		it := monitor.Item{ID: l.ID, Title: l.Name, Done: !l.On}
 		switch {
 		case !l.Available:
-			it.Subtitle = "Unavailable"
-			it.Tone = monitor.ToneWarn
 			summary = append(summary, monitor.Stat{Label: l.Name, Value: "Unavailable", Tone: monitor.ToneWarn})
 		case l.On:
-			it.Subtitle = level(l)
 			summary = append(summary, monitor.Stat{Label: l.Name, Value: level(l), Tone: monitor.ToneAccent})
 		}
-		if l.Available {
-			it.Slider, it.Colour = controls([]light{l})
-		}
-		b.Items = append(b.Items, it)
 	}
 	// Short, every light as a small button opening its controls.
 	short := b
@@ -284,8 +320,58 @@ func build(lights []light) monitor.Result {
 	return monitor.Result{Blocks: []monitor.Block{b}, Summary: summary, SummaryStyle: monitor.SummaryChips, SummaryBlock: &short}
 }
 
+// lightItem is one light's row.
+func lightItem(l light) monitor.Item {
+	it := monitor.Item{ID: l.ID, Title: l.Name, Done: !l.On}
+	switch {
+	case !l.Available:
+		it.Subtitle = "Unavailable"
+		it.Tone = monitor.ToneWarn
+	case l.On:
+		it.Subtitle = level(l)
+	}
+	if l.Available {
+		it.Slider, it.Colour = controls([]light{l})
+	}
+	return it
+}
+
+// roomItem is the row switching a room's lights together, put before
+// them: on while any is on, its slider at their average brightness.
+func roomItem(run []light) monitor.Item {
+	name := roomOf(run[0].Name)
+	it := monitor.Item{ID: roomPrefix + name, Title: name, Done: true}
+	var available []light
+	on := 0
+	for _, l := range run {
+		if l.Available {
+			available = append(available, l)
+		}
+		if l.On {
+			on++
+		}
+	}
+	switch {
+	case len(available) == 0:
+		it.Subtitle = "Unavailable"
+		it.Tone = monitor.ToneWarn
+		return it
+	case on == len(run):
+		it.Done = false
+		it.Subtitle = "All on"
+		if len(run) == 2 {
+			it.Subtitle = "Both on"
+		}
+	case on > 0:
+		it.Done = false
+		it.Subtitle = fmt.Sprintf("%d of %d on", on, len(run))
+	}
+	it.Slider, it.Colour = controls(available)
+	return it
+}
+
 // controls are the brightness slider and colour swatch for some lights (one,
-// or all of them for the "all" row): the slider is at their average
+// a room's, or all of them for the "all" row): the slider is at their average
 // brightness (0 while all are off), and the swatch shows their colour if
 // the ones that are on share it, with the presets any of them take.
 func controls(ls []light) (*monitor.Slider, *monitor.Colour) {
@@ -350,8 +436,9 @@ func level(l light) string {
 
 // Act takes a client's change:
 //   - "toggle" switches a light (ID its entity ID) off if it's on and on
-//     if it's off; for "all", every light off if any is on, else every
-//     light on.
+//     if it's off; for a room ("room:Hallway") or "all", every light in
+//     it off if any is on, else every one on. The other actions take a
+//     room's or "all"'s ID too, for every light in it.
 //   - "move" with Text "up" or "down" makes a light (or every light
 //     that's on, for "all") brighter or dimmer, to the next of Levels.
 //   - "brightness" with Text a percentage sets a light's brightness, 0
@@ -365,7 +452,17 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 		return err
 	}
 	targets := lights
-	if a.ID != allID {
+	if room, ok := strings.CutPrefix(a.ID, roomPrefix); ok {
+		targets = nil
+		for _, l := range lights {
+			if roomOf(l.Name) == room && l.Available {
+				targets = append(targets, l)
+			}
+		}
+		if len(targets) == 0 {
+			return fmt.Errorf("%w: no lights in %q are available", monitor.ErrBadAction, room)
+		}
+	} else if a.ID != allID {
 		i := slices.IndexFunc(lights, func(l light) bool { return l.ID == a.ID })
 		if i < 0 {
 			return fmt.Errorf("%w: no light %q", monitor.ErrBadAction, a.ID)
