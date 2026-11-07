@@ -326,6 +326,30 @@ func TestReorderInterval(t *testing.T) {
 	assert.Equal(t, `chores track reorder-coffee-beans {"name":"Coffee beans","every":40,"last":"2026-09-01"}`, acts.sent[4], "the median of 40, 46 and 37 days")
 }
 
+func TestReorderSkipsLongLasting(t *testing.T) {
+	g := newFakeGemini(t)
+	acc := &fakeAccount{name: "Outlook"}
+	acc.add("Your order: ATH-TWX9", "Audio-Technica <shop@audio-technica.co.uk>", now.Add(-time.Hour), "earbuds")
+	g.answers["Your order: ATH-TWX9"] = extraction{Kind: "order", Summary: "Audio-Technica order", Routine: []xItem{
+		{Item: "headphones", LastsDays: 365},
+		{Item: "wireless earbuds", LastsDays: 181},
+		{Item: "ear tips", LastsDays: 90},
+	}}
+	m := newMonitor(t, g, acc)
+	acts := &actions{}
+	env := acts.env(monitortest.Env(now))
+	_, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	var reorders []string
+	for _, a := range acts.sent {
+		if strings.Contains(a, " track ") {
+			reorders = append(reorders, a)
+		}
+	}
+	require.Len(t, reorders, 1, "only the item that runs out: %v", acts.sent)
+	assert.Contains(t, reorders[0], "reorder-ear-tips")
+}
+
 func TestPastAndCancelled(t *testing.T) {
 	g := newFakeGemini(t)
 	acc := &fakeAccount{name: "Outlook"}

@@ -62,7 +62,7 @@ const instruction = `You read one email for someone's personal dashboard and pul
 - refs: every order, booking and tracking number in the email, as written (e.g. "11-15308-85027", "VU793801544GB"), so emails about the same thing from the shop and the courier can be matched. Not item, listing, customer or account numbers, phone numbers or prices. Empty if none.
 - todos: things they must do by a date that the email asks for and that won't happen otherwise: return an item, collect a parcel from a locker, check in online, pay a balance, send a form. One short line each, with the deadline as a date without the weekday ("Return the boots to Amazon by 30 Oct"). Not things they merely can do, such as amending an order, managing a booking or rebooking a cancelled appointment, unless the email says they must. Never reviews, surveys, upsells or marketing. Only what's still to do as of today.
 - chores: IDs from the chore list this email shows were done, e.g. an order confirmation for the chore of placing that order. An email only about an order already placed (dispatch, delivery, a reminder) doesn't count.
-- routine: for an order of everyday consumables bought again and again from somewhere other than a supermarket's weekly shop (cleaning products, toiletries, pet food, coffee, filters, batteries, vitamins, contact lenses...), each item as a short generic name in lower case without brand or size ("dishwasher tablets", "cat litter"), with roughly how many days the quantity bought lasts them. Only from the confirmation of an order they placed themselves: not from dispatch, delivery or reminder emails about it, and never from a subscription or recurring order that arrives on its own (they needn't remember to reorder that). Leave out one-off purchases (gadgets, clothes, books, games, films, collectibles, gifts).
+- routine: for an order of everyday consumables bought again and again from somewhere other than a supermarket's weekly shop (cleaning products, toiletries, pet food, coffee, filters, batteries, vitamins, contact lenses...), each item as a short generic name in lower case without brand or size ("dishwasher tablets", "cat litter"), with roughly how many days the quantity bought lasts them. Only from the confirmation of an order they placed themselves: not from dispatch, delivery or reminder emails about it, and never from a subscription or recurring order that arrives on its own (they needn't remember to reorder that). Leave out one-off and long-lasting purchases (gadgets and electronics such as headphones, earbuds, chargers and cables; clothes, books, games, films, collectibles, gifts), and anything that lasts more than about six months.
 - summary: at most six words saying what the email is, e.g. "Vildhjarta tickets", "Amazon order: dishwasher tablets".`
 
 // extraction is what Gemini finds in an email.
@@ -429,6 +429,10 @@ const (
 	sameOrder = 3
 	minEvery  = 7
 	maxEvery  = 365
+	// maxLasts is the longest Gemini may think an item lasts for it to be
+	// tracked at all: anything longer isn't an everyday consumable but
+	// something durable it took for one, like headphones.
+	maxLasts = 180
 )
 
 // reorder records a routine item bought on a day and returns the action
@@ -437,7 +441,7 @@ const (
 func (m *Monitor) reorder(env monitor.Env, it xItem, on time.Time) (monitor.Action, string, bool) {
 	name := strings.TrimSpace(it.Item)
 	id := slug(name)
-	if id == "" {
+	if id == "" || it.LastsDays > maxLasts {
 		return monitor.Action{}, "", false
 	}
 	bought := map[string][]string{}
