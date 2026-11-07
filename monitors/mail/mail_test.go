@@ -350,6 +350,26 @@ func TestReorderSkipsLongLasting(t *testing.T) {
 	assert.Contains(t, reorders[0], "reorder-ear-tips")
 }
 
+func TestReorderJoinsPlurals(t *testing.T) {
+	g := newFakeGemini(t)
+	acc := &fakeAccount{name: "Gmail"}
+	acc.add("Order 1", "Shop <x@shop.com>", time.Date(2026, 9, 1, 9, 0, 0, 0, london), "")
+	acc.add("Order 2", "Shop <x@shop.com>", time.Date(2026, 10, 1, 9, 0, 0, 0, london), "")
+	g.answers["Order 1"] = extraction{Kind: "order", Summary: "Shop order", Routine: []xItem{{Item: "toilet roll", LastsDays: 30}}}
+	g.answers["Order 2"] = extraction{Kind: "order", Summary: "Shop order", Routine: []xItem{{Item: "toilet rolls", LastsDays: 30}}}
+	m := newMonitor(t, g, acc)
+	acts := &actions{}
+	env := acts.env(monitortest.Env(now))
+	for range 2 {
+		_, err := m.Poll(context.Background(), env)
+		require.NoError(t, err)
+	}
+	require.Len(t, acts.sent, 2)
+	assert.Contains(t, acts.sent[0], "track reorder-toilet-roll ")
+	assert.Contains(t, acts.sent[1], "track reorder-toilet-roll ", "the plural joins the singular")
+	assert.Contains(t, acts.sent[1], `"every":30,"last":"2026-10-01"`)
+}
+
 func TestPastAndCancelled(t *testing.T) {
 	g := newFakeGemini(t)
 	acc := &fakeAccount{name: "Outlook"}

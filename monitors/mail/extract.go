@@ -449,6 +449,16 @@ func (m *Monitor) reorder(env monitor.Env, it xItem, on time.Time) (monitor.Acti
 		env.Log.Warn("reading purchases", "err", err)
 		return monitor.Action{}, "", false
 	}
+	// "Toilet roll" and "toilet rolls" are one thing: a new spelling joins
+	// whichever is already known.
+	if _, ok := bought[id]; !ok {
+		for _, alt := range []string{id + "s", strings.TrimSuffix(id, "s")} {
+			if _, ok := bought[alt]; ok && alt != "" {
+				id = alt
+				break
+			}
+		}
+	}
 	day := on.Format(time.DateOnly)
 	days := bought[id]
 	if !slices.Contains(days, day) {
