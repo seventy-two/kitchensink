@@ -23,10 +23,13 @@ func init() {
 
 // Config is the monitor's config.
 type Config struct {
-	// URL is the tracker's address. Requests from the same machine that
-	// don't come through its proxy need no login, e.g.
-	// "http://127.0.0.1:6040".
+	// URL is the tracker's address, reached on the same machine rather than
+	// through its proxy, e.g. "http://127.0.0.1:6040". Such requests need no
+	// login, only Key if the tracker has one.
 	URL string `json:"url"`
+	// Key, if set, is sent as X-Dailies-Key: the tracker's DAILIES_LOCAL_KEY,
+	// which it wants before trusting a request that skips its proxy.
+	Key string `json:"key"`
 	// Player is whose games to show, as the tracker names them.
 	Player string `json:"player"`
 	// Versus, if set, is who Player is up against: played games are then
@@ -280,6 +283,7 @@ func (m *Monitor) share(ctx context.Context, client *http.Client, text string) (
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	m.setKey(req)
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
@@ -344,11 +348,19 @@ func (m *Monitor) chips(games []game, got map[string]outcome, ended bool) []moni
 	return out
 }
 
+// setKey adds the tracker's local key, when configured.
+func (m *Monitor) setKey(req *http.Request) {
+	if m.cfg.Key != "" {
+		req.Header.Set("X-Dailies-Key", m.cfg.Key)
+	}
+}
+
 func (m *Monitor) get(ctx context.Context, client *http.Client, path string, v any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.cfg.URL+path, nil)
 	if err != nil {
 		return err
 	}
+	m.setKey(req)
 	resp, err := client.Do(req)
 	if err != nil {
 		return err

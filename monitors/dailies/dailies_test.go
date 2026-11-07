@@ -228,3 +228,23 @@ func TestCoopWin(t *testing.T) {
 	assert.Equal(t, map[string]outcome{"semantle": coopWin}, got)
 	assert.Equal(t, monitor.Cell{Text: "Co-op win", Tone: monitor.ToneGood}, m.status(coopWin))
 }
+
+func TestKeySent(t *testing.T) {
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.Method+" "+r.Header.Get("X-Dailies-Key"))
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(srv.Close)
+	raw, _ := json.Marshal(map[string]any{"url": srv.URL, "player": "M", "key": "k3y"})
+	m, err := New(raw)
+	require.NoError(t, err)
+	env := monitortest.Env(now)
+	m.Poll(context.Background(), env)
+	m.Act(context.Background(), env, monitor.Action{Type: "paste", Text: "Wordle 1,578 4/6"})
+	require.NotEmpty(t, got)
+	for _, g := range got {
+		assert.Contains(t, []string{"GET k3y", "POST k3y"}, g)
+	}
+	assert.Contains(t, got, "POST k3y", "paste sends the key")
+}
