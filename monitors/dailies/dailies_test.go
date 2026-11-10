@@ -189,6 +189,19 @@ func TestCoopDay(t *testing.T) {
 	assert.Equal(t, monitor.ToneBad, m.status(missed).Tone)
 }
 
+func TestDrawnCoopDay(t *testing.T) {
+	m, err := New(json.RawMessage(`{"url": "http://tracker.test", "player": "M", "versus": "J"}`))
+	require.NoError(t, err)
+	var d day
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"results": [{"game": "wordle", "player": "M"}, {"game": "puddle", "player": "M"}],
+		"winners": {},
+		"coop": {"games": ["puddle", "flagle"], "targets": {"puddle": {"M": true}}}
+	}`), &d))
+	got, _ := m.outcomes(d)
+	assert.Equal(t, map[string]outcome{"wordle": done, "puddle": hit}, got, "wordle wasn't drawn")
+}
+
 func TestHaikudle(t *testing.T) {
 	js := func(w http.ResponseWriter, v any) { json.NewEncoder(w).Encode(v) }
 	mux := http.NewServeMux()

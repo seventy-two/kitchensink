@@ -102,6 +102,10 @@ type day struct {
 	// game played, whether each player hit its target.
 	Coop *struct {
 		Targets map[string]map[string]bool `json:"targets"`
+		// Games, from 11 Nov 2026, are the games drawn for the day (trial
+		// games too); the rest count for nothing. Empty on earlier days,
+		// played on every non-trial game.
+		Games []string `json:"games"`
 	} `json:"coop"`
 	// Haikus say who has written haikudle's haiku today. It has no score,
 	// so it's never won or lost, only done.
@@ -184,6 +188,8 @@ func (m *Monitor) outcomes(d day) (got map[string]outcome, ended bool) {
 		switch {
 		case together[g]:
 			got[g] = coopWin
+		case d.Coop != nil && len(d.Coop.Games) > 0 && !slices.Contains(d.Coop.Games, g):
+			got[g] = done // not drawn today: no target
 		case d.Coop != nil && d.Coop.Targets[g][m.cfg.Player]:
 			got[g] = hit
 		case d.Coop != nil:
@@ -213,7 +219,10 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		return monitor.Result{}, err
 	}
 	got, ended := m.outcomes(d)
-	c.Games = slices.DeleteFunc(c.Games, func(g game) bool { return g.Trial })
+	// Trial games are left off, unless drawn for a co-op day.
+	c.Games = slices.DeleteFunc(c.Games, func(g game) bool {
+		return g.Trial && (d.Coop == nil || !slices.Contains(d.Coop.Games, g.ID))
+	})
 	if d.Haikus != nil {
 		c.Games = append(c.Games, haikudle)
 	}
