@@ -25,6 +25,7 @@ import (
 	// Each monitor kind registers itself; import a package to make its
 	// kind available to the config file.
 	_ "github.com/seventy-two/kitchensink/monitors/autotrader"
+	_ "github.com/seventy-two/kitchensink/monitors/battery"
 	_ "github.com/seventy-two/kitchensink/monitors/calendar"
 	_ "github.com/seventy-two/kitchensink/monitors/chores"
 	_ "github.com/seventy-two/kitchensink/monitors/dailies"
