@@ -23,7 +23,7 @@ func TestUniques(t *testing.T) {
 	}))
 	t.Cleanup(temple.Close)
 	file := filepath.Join(t.TempDir(), "uniques.json")
-	raw, _ := json.Marshal(map[string]any{"player": "GTX 480", "womURL": f.URL, "hookSecret": "s3cret", "publishUniques": file, "logItemsURL": temple.URL})
+	raw, _ := json.Marshal(map[string]any{"player": "GTX 480", "womURL": f.URL, "hookSecret": "s3cret", "publishUniques": file, "logItemsURL": temple.URL, "commons": map[string][]int{"vorkath": {22124}}})
 	m, err := New(raw)
 	require.NoError(t, err)
 	env := monitortest.Env(now)
@@ -32,12 +32,16 @@ func TestUniques(t *testing.T) {
 	_, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
 
-	// A necklace under any loot threshold is kept; the bones aren't in the
-	// log, and the visage worth 1k (say) is too cheap.
+	// A necklace under any loot threshold is kept, and the superior bones
+	// (a common); dragon bones aren't in the log. A second kill's bones
+	// go into the day's record.
 	hook(t, m, env, "LOOT", `{"source":"Vorkath","category":"NPC","killCount":117,"items":[
 		{"id":22111,"name":"Dragonbone necklace","quantity":1,"priceEach":100000},
-		{"id":11286,"name":"Draconic visage","quantity":1,"priceEach":1000},
+		{"id":22124,"name":"Superior dragon bones","quantity":2,"priceEach":10000},
+		{"id":22112,"name":"Dragonbone necklace","quantity":1,"priceEach":100000},
 		{"id":536,"name":"Dragon bones","quantity":2,"priceEach":3000}]}`)
+	hook(t, m, env, "LOOT", `{"source":"Vorkath","category":"NPC","killCount":118,"items":[
+		{"id":22124,"name":"Superior dragon bones","quantity":2,"priceEach":12000}]}`)
 
 	// Loot Logger's copy of the same drop (a minute off) is skipped; an
 	// older one, and a 3rd age axe from a master clue, are added; a drop
@@ -59,10 +63,14 @@ func TestUniques(t *testing.T) {
 		Uniques []unique `json:"uniques"`
 	}
 	require.NoError(t, json.Unmarshal(data, &got))
-	require.Len(t, got.Uniques, 3)
+	require.Len(t, got.Uniques, 4)
 	assert.Equal(t, "Draconic visage", got.Uniques[0].Item, "oldest first")
 	assert.Equal(t, "clue_scrolls_master", got.Uniques[1].Metric)
+	bones := got.Uniques[3]
+	assert.Equal(t, int64(4), bones.Qty)
+	assert.Equal(t, int64(11000), bones.Price, "averaged")
+	assert.Equal(t, int64(118), bones.KC)
 	assert.True(t, now.Equal(got.Uniques[2].Time))
 	got.Uniques[2].Time = now
-	assert.Equal(t, unique{Time: now, Metric: "vorkath", Source: "Vorkath", ItemID: 22111, Item: "Dragonbone necklace", Qty: 1, Price: 100000, KC: 117}, got.Uniques[2])
+	assert.Equal(t, unique{Time: now, Metric: "vorkath", Source: "Vorkath", ItemID: 22111, Item: "Dragonbone necklace", Qty: 2, Price: 100000, KC: 117}, got.Uniques[2], "a noted one (22112) counts as the necklace")
 }

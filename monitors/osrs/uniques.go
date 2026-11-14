@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"time"
 
@@ -15,7 +16,8 @@ import (
 )
 
 // Uniques are the collection log items the player gets from the tracked
-// bosses, whatever they're worth: every one Dink reports, plus past ones
+// bosses (and the config's commons, like Vorkath's bones), whatever
+// they're worth: every one Dink reports, plus past ones
 // imported with "importUniques" (e.g. from RuneLite's Loot Logger). With
 // publishUniques set they're written there for petsheet's est. profit.
 // Which items are in the collection log comes from TempleOSRS's list,
@@ -31,11 +33,6 @@ const (
 	// category.
 	defaultLogItems = "https://templeosrs.com/api/collection-log/categories.php"
 	logItemsEvery   = 24 * time.Hour
-	// uniqueMin is the least a unique drop with a price must be worth to
-	// be kept, which leaves out the cheap stacks every kill gives
-	// (Zulrah's scales, venom sacs). Ones with no price are kept: some
-	// are worth a lot once etched or made into something.
-	uniqueMin = 50_000
 )
 
 // unique is one collection log item from a drop.
@@ -112,26 +109,63 @@ func fetchLogItems(ctx context.Context, client *http.Client, address string) (ma
 }
 
 // recordUniques keeps the collection log items in a drop from a tracked
-// metric, but not cheap stacks (uniqueMin).
-func recordUniques(env monitor.Env, at time.Time, metric, source string, kc int64, items []dinkItem) error {
+// metric, and the config's commons for it. Priced ones are added to the
+// day's record of the same item (see merge).
+func (m *Monitor) recordUniques(env monitor.Env, at time.Time, metric, source string, kc int64, items []dinkItem) error {
 	var known logItems
 	if _, err := env.State.Get(logItemsKey, &known); err != nil {
 		return err
-	}
-	var add []unique
-	for _, it := range items {
-		if known.IDs[it.ID] && it.Quantity > 0 && (it.PriceEach <= 0 || it.PriceEach*it.Quantity >= uniqueMin) {
-			add = append(add, unique{Time: at, Metric: metric, Source: source, ItemID: it.ID, Item: it.Name, Qty: it.Quantity, Price: it.PriceEach, KC: kc})
-		}
-	}
-	if len(add) == 0 {
-		return nil
 	}
 	var all []unique
 	if _, err := env.State.Get(uniquesKey, &all); err != nil {
 		return err
 	}
-	return env.State.Set(uniquesKey, append(all, add...))
+	changed := false
+	for _, it := range items {
+		// A noted item's ID is the item's plus one (Mole claw 7417 is
+		// 7416 noted); the log lists the unnoted one.
+		if !known.IDs[it.ID] && known.IDs[it.ID-1] {
+			it.ID--
+		}
+		if it.Quantity <= 0 || !(known.IDs[it.ID] || slices.Contains(m.cfg.Commons[metric], it.ID)) {
+			continue
+		}
+		all = merge(all, unique{Time: at, Metric: metric, Source: source, ItemID: it.ID, Item: it.Name, Qty: it.Quantity, Price: it.PriceEach, KC: kc})
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	return env.State.Set(uniquesKey, all)
+}
+
+// priced reports whether a unique has a usable price: not 0 (untradeable,
+// or unpriced yet), nor Loot Logger's int32 cap.
+func priced(u unique) bool { return u.Price > 0 && u.Price < 1<<31-1 }
+
+// sameDay reports whether two uniques are the same item from the same
+// metric on the same (UTC) day.
+func sameDay(a, b unique) bool {
+	return a.Metric == b.Metric && a.ItemID == b.ItemID && a.Time.UTC().Format(time.DateOnly) == b.Time.UTC().Format(time.DateOnly)
+}
+
+// merge adds u to all. A priced item goes into that day's record of it
+// (quantities added, the price averaged by quantity), which keeps the
+// stacks every kill gives (Zulrah's scales, mole skins) to one record a
+// day; one without a price stays a drop of its own, since petsheet
+// prices it by its day and matches it to big drops by time.
+func merge(all []unique, u unique) []unique {
+	if priced(u) {
+		for i := len(all) - 1; i >= 0; i-- {
+			if o := &all[i]; priced(*o) && sameDay(*o, u) {
+				o.Price = (o.Price*o.Qty + u.Price*u.Qty) / (o.Qty + u.Qty)
+				o.Qty += u.Qty
+				o.KC = max(o.KC, u.KC)
+				return all
+			}
+		}
+	}
+	return append(all, u)
 }
 
 // sameDrop is how close in time an import and a drop Dink reported must
@@ -140,10 +174,11 @@ func recordUniques(env monitor.Env, at time.Time, metric, source string, kc int6
 const sameDrop = 3 * time.Minute
 
 // importUniques adds past uniques, as data [{time, metric or source, id,
-// item, qty, price, kc}]. A source is matched to its tracked metric;
-// others are dropped, as are ones already kept (the same item and
-// quantity from the same metric within sameDrop), so a Loot Logger
-// export can be imported again to fill gaps.
+// item, qty, price, kc}], priced ones one record a day per item (as
+// merge keeps them). A source is matched to its tracked metric; others
+// are dropped, as are ones already kept (for priced ones, any of the
+// item that day; else the same quantity within sameDrop), so a Loot
+// Logger export can be imported again to fill gaps.
 func (m *Monitor) importUniques(env monitor.Env, data json.RawMessage) error {
 	var in []unique
 	if err := json.Unmarshal(data, &in); err != nil {
@@ -155,6 +190,9 @@ func (m *Monitor) importUniques(env monitor.Env, data json.RawMessage) error {
 	}
 	have := func(u unique) bool {
 		for _, o := range all {
+			if priced(u) && priced(o) && sameDay(o, u) {
+				return true
+			}
 			if o.Metric == u.Metric && o.ItemID == u.ItemID && o.Qty == u.Qty && o.Time.Sub(u.Time).Abs() <= sameDrop {
 				return true
 			}

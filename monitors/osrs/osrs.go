@@ -67,6 +67,10 @@ type Config struct {
 	// with every collection log item from the tracked bosses (see
 	// uniques.go), for petsheet's est. profit.
 	PublishUniques string `json:"publishUniques"`
+	// Commons are items, by metric, kept with the uniques though they
+	// aren't in the collection log, where they're most of a boss's money
+	// (Superior dragon bones at Vorkath: {"vorkath": [22124]}).
+	Commons map[string][]int `json:"commons"`
 	// LogItemsURL replaces TempleOSRS's list of collection log items, for
 	// tests.
 	LogItemsURL string `json:"logItemsURL"`

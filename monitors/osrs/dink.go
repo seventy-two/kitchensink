@@ -242,7 +242,7 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 			if dr.KC == 0 {
 				dr.KC = live[id]
 			}
-			if err := recordUniques(env, now, id, x.Source, dr.KC, x.Items); err != nil {
+			if err := m.recordUniques(env, now, id, x.Source, dr.KC, x.Items); err != nil {
 				return err
 			}
 		}
@@ -277,7 +277,7 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 		master := strings.EqualFold(x.ClueType, "master")
 		if master {
 			dr.Metric, dr.KC = "clue_scrolls_master", x.NumberCompleted
-			if err := recordUniques(env, now, dr.Metric, dr.Source, dr.KC, x.Items); err != nil {
+			if err := m.recordUniques(env, now, dr.Metric, dr.Source, dr.KC, x.Items); err != nil {
 				return err
 			}
 		}
