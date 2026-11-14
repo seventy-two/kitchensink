@@ -39,6 +39,7 @@ func TestUsage(t *testing.T) {
 		{Label: "Fable", Value: "56%", Detail: "resets Sun 03:00", Bar: true, Level: ptr(0.56)},
 	}, res.Summary)
 	assert.Equal(t, "Read 5m ago", res.Subtitle)
+	assert.Empty(t, res.Blocks, "summary only")
 	assert.True(t, res.Timely)
 	assert.Equal(t, 89*time.Minute+1*time.Second, res.Next.Truncate(time.Second), "repolls when the session resets")
 

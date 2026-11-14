@@ -116,8 +116,9 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	}
 	now := env.Now()
 	stats := Stats(r.Limits, now)
+	// Only a summary: a panel of the same bars would add nothing, so
+	// clients keep it as a row.
 	res := monitor.Result{
-		Blocks:   []monitor.Block{{Type: monitor.BlockStats, Stats: stats}},
 		Summary:  stats,
 		Subtitle: "Read " + Ago(now.Sub(r.Read)),
 		Timely:   true,
