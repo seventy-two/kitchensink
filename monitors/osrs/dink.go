@@ -148,6 +148,9 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 	if a.Type == "importDrops" {
 		return m.importDrops(env, a.Data)
 	}
+	if a.Type == "importUniques" {
+		return m.importUniques(env, a.Data)
+	}
 	if a.Type == monitor.UploadAction {
 		return m.uploadProfile(env, a.Text)
 	}
@@ -239,6 +242,9 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 			if dr.KC == 0 {
 				dr.KC = live[id]
 			}
+			if err := recordUniques(env, now, id, x.Source, dr.KC, x.Items); err != nil {
+				return err
+			}
 		}
 		if id == "doom_of_mokhaiotl" {
 			var dv delves
@@ -271,6 +277,9 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 		master := strings.EqualFold(x.ClueType, "master")
 		if master {
 			dr.Metric, dr.KC = "clue_scrolls_master", x.NumberCompleted
+			if err := recordUniques(env, now, dr.Metric, dr.Source, dr.KC, x.Items); err != nil {
+				return err
+			}
 		}
 		if dr.Value >= m.cfg.BigLoot {
 			td.Drops = append(td.Drops, dr)
@@ -483,6 +492,10 @@ var aliases = map[string]string{
 	"reward_cart_wintertodt":       "wintertodt",
 	"reward_pool_tempoross":        "tempoross",
 	"fortis_colosseum":             "sol_heredit",
+	// Loot sources: Grotesque Guardians' loot comes from Dusk, and the
+	// Unsired is the Abyssal Sire's.
+	"dusk":    "grotesque_guardians",
+	"unsired": "abyssal_sire",
 }
 
 // skillMetric is WOM's name for a skill as Dink names it.

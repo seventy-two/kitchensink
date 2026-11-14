@@ -3,8 +3,6 @@ package osrs
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -65,23 +63,7 @@ func (m *Monitor) publish(env monitor.Env, counts stats) error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(m.cfg.Publish), ".osrs-*.json")
-	if err != nil {
-		return fmt.Errorf("publish: %w", err)
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return fmt.Errorf("publish: %w", err)
-	}
-	if err := tmp.Chmod(0o644); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), m.cfg.Publish)
+	return writeFile(m.cfg.Publish, data)
 }
 
 // importDrops adds past drops to the history, as data [{time, source,

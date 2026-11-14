@@ -63,6 +63,13 @@ type Config struct {
 	// uploads their lines once a day, and the counts are published with
 	// the rest. See plugins.go.
 	ProfileFile string `json:"profileFile"`
+	// PublishUniques, if set, is a file the monitor writes after each poll
+	// with every collection log item from the tracked bosses (see
+	// uniques.go), for petsheet's est. profit.
+	PublishUniques string `json:"publishUniques"`
+	// LogItemsURL replaces TempleOSRS's list of collection log items, for
+	// tests.
+	LogItemsURL string `json:"logItemsURL"`
 }
 
 // womEvery is how often Wise Old Man is asked to update the player, at
@@ -101,6 +108,9 @@ func New(raw json.RawMessage) (*Monitor, error) {
 	}
 	if c.HistoryLoot == 0 {
 		c.HistoryLoot = 10_000_000
+	}
+	if c.LogItemsURL == "" {
+		c.LogItemsURL = defaultLogItems
 	}
 	loc, err := time.LoadLocation(c.Timezone)
 	if err != nil {
@@ -187,6 +197,12 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	rows := gains(from, merged(current, live), owned)
 	if err := m.publish(env, merged(current, live)); err != nil {
 		return monitor.Result{}, err
+	}
+	if m.cfg.PublishUniques != "" {
+		m.refreshLogItems(ctx, env)
+		if err := m.publishUniques(env); err != nil {
+			return monitor.Result{}, err
+		}
 	}
 	drops, events := dropsToday(td, day)
 
