@@ -39,6 +39,10 @@ func TestHistoryAndPublish(t *testing.T) {
 		{"id":536,"name":"Dragon bones","quantity":2,"priceEach":3000}]}`)
 	hook(t, m, env, "LOOT", `{"source":"Vorkath","category":"NPC","killCount":116,"items":[{"id":1,"name":"Dragonbone necklace","quantity":1,"priceEach":5000000}]}`)
 	hook(t, m, env, "PET", `{"petName":"Vorki","duplicate":false}`)
+	// Combat achievements (Dink's example shape); a repeat is kept once.
+	ca := `{"tier":"MASTER","task":"Duke Sucellus Master","taskPoints":5,"totalPoints":1841,"tierProgress":0,"tierTotalPoints":865,"totalPossiblePoints":2697,"currentTier":"ELITE","nextTier":"MASTER"}`
+	hook(t, m, env, "COMBAT_ACHIEVEMENT", ca)
+	hook(t, m, env, "COMBAT_ACHIEVEMENT", ca)
 
 	res, err := m.Poll(context.Background(), env)
 	require.NoError(t, err)
@@ -63,6 +67,10 @@ func TestHistoryAndPublish(t *testing.T) {
 	assert.True(t, got.Drops[3].Pet)
 	assert.Equal(t, "vorkath", got.Drops[3].Metric, "the pet is put down to the kill before")
 	assert.True(t, now.Equal(got.Updated))
+	require.NotNil(t, got.CAs)
+	assert.Equal(t, 1841, got.CAs.Points)
+	require.Len(t, got.CAs.Tasks, 1)
+	assert.Equal(t, caDone{Time: got.CAs.Tasks[0].Time, Task: "Duke Sucellus Master", Tier: "MASTER", Points: 5}, got.CAs.Tasks[0])
 }
 
 func TestNoPublish(t *testing.T) {

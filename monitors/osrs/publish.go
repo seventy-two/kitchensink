@@ -23,6 +23,8 @@ type published struct {
 	Seen  time.Time `json:"seen,omitzero"`
 	Stats stats     `json:"stats"`
 	Drops []drop    `json:"drops"`
+	// CAs are the combat achievements Dink has reported done.
+	CAs *caState `json:"cas,omitempty"`
 }
 
 // publish writes the Publish file, if there is one, by writing a
@@ -55,6 +57,12 @@ func (m *Monitor) publish(env monitor.Env, counts stats) error {
 	}
 	if _, err := env.State.Get(historyKey, &out.Drops); err != nil {
 		return err
+	}
+	var cas caState
+	if ok, err := env.State.Get(casKey, &cas); err != nil {
+		return err
+	} else if ok && len(cas.Tasks) > 0 {
+		out.CAs = &cas
 	}
 	if out.Drops == nil {
 		out.Drops = []drop{}

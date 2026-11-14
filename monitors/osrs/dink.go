@@ -92,7 +92,25 @@ const (
 	// historyKey is every drop worth historyLoot and every pet, oldest
 	// first, kept for good: from Dink, or imported with "importDrops".
 	historyKey = "history"
+	// casKey is the combat achievements Dink has reported (caState).
+	casKey = "cas"
 )
+
+// caState is every combat achievement task Dink has reported done, oldest
+// first, and the points total it gave with the latest, for petsheet's CA
+// tab: WikiSync only learns of them when RuneLite syncs to the wiki.
+type caState struct {
+	Points int      `json:"points,omitempty"`
+	Tasks  []caDone `json:"tasks"`
+}
+
+// caDone is one combat achievement task done, as Dink names it.
+type caDone struct {
+	Time   time.Time `json:"time"`
+	Task   string    `json:"task"`
+	Tier   string    `json:"tier,omitempty"` // "MASTER"
+	Points int       `json:"points,omitempty"`
+}
 
 // owned is every pet the player has, by petKey: the config's and Dink's.
 func (m *Monitor) owned(env monitor.Env) (map[string]bool, error) {
@@ -317,6 +335,32 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 			if err := env.State.Set(ownedKey, append(got, x.PetName)); err != nil {
 				return err
 			}
+		}
+	case "COMBAT_ACHIEVEMENT":
+		var x struct {
+			Tier        string `json:"tier"`
+			Task        string `json:"task"`
+			TaskPoints  int    `json:"taskPoints"`
+			TotalPoints int    `json:"totalPoints"`
+		}
+		json.Unmarshal(d.Extra, &x)
+		if x.Task == "" {
+			return nil
+		}
+		var cas caState
+		if _, err := env.State.Get(casKey, &cas); err != nil {
+			return err
+		}
+		known := false
+		for _, done := range cas.Tasks {
+			known = known || strings.EqualFold(done.Task, x.Task)
+		}
+		if !known {
+			cas.Tasks = append(cas.Tasks, caDone{Time: now, Task: x.Task, Tier: x.Tier, Points: x.TaskPoints})
+		}
+		cas.Points = max(cas.Points, x.TotalPoints)
+		if err := env.State.Set(casKey, cas); err != nil {
+			return err
 		}
 	case "LOGIN", "XP_MILESTONE":
 		var x struct {
