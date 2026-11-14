@@ -134,8 +134,8 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	return res, nil
 }
 
-// Stats turns limits into one stat each: the percentage used, toned by how
-// close it is, and when it resets. A limit whose reset has passed shows as
+// Stats turns limits into one stat each: a bar of the percentage used,
+// toned by how close it is, and when it resets. A limit whose reset has passed shows as
 // 0%, as nothing has been used since as far as anyone's said.
 func Stats(ls []Limit, now time.Time) []monitor.Stat {
 	var out []monitor.Stat
@@ -149,6 +149,8 @@ func Stats(ls []Limit, now time.Time) []monitor.Stat {
 			s.Detail = "resets " + When(l.ResetsAt, now)
 		}
 		s.Value = strconv.Itoa(int(pct+0.5)) + "%"
+		level := min(max(pct/100, 0), 1)
+		s.Bar, s.Level = true, &level
 		switch {
 		case pct >= 90:
 			s.Tone = monitor.ToneBad

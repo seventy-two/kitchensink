@@ -331,6 +331,10 @@ type Stat struct {
 	// joined to its neighbours', e.g. the chance of rain each hour.
 	// Nil for none: 0 still draws, along the bottom.
 	Level *float64 `json:"level,omitempty"`
+	// Bar draws the stat as a bar filled to Level, e.g. how much of a
+	// limit is used, with the value small beside the label. Clients that
+	// don't know it draw the value.
+	Bar bool `json:"bar,omitempty"`
 	// Lead sets the stat apart from the ones after it, e.g. the
 	// portfolio's day ahead of the watchlist's moves.
 	Lead bool `json:"lead,omitempty"`

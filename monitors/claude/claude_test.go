@@ -34,9 +34,9 @@ func TestUsage(t *testing.T) {
 	res, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
 	assert.Equal(t, []monitor.Stat{
-		{Label: "Session", Value: "77%", Detail: "resets 04:50", Tone: monitor.ToneWarn},
-		{Label: "Week", Value: "62%", Detail: "resets Sun 03:00"},
-		{Label: "Fable", Value: "56%", Detail: "resets Sun 03:00"},
+		{Label: "Session", Value: "77%", Detail: "resets 04:50", Tone: monitor.ToneWarn, Bar: true, Level: ptr(0.77)},
+		{Label: "Week", Value: "62%", Detail: "resets Sun 03:00", Bar: true, Level: ptr(0.62)},
+		{Label: "Fable", Value: "56%", Detail: "resets Sun 03:00", Bar: true, Level: ptr(0.56)},
 	}, res.Summary)
 	assert.Equal(t, "Read 5m ago", res.Subtitle)
 	assert.True(t, res.Timely)
@@ -45,7 +45,7 @@ func TestUsage(t *testing.T) {
 	now = time.Date(2026, 11, 14, 5, 0, 0, 0, time.UTC)
 	res, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
-	assert.Equal(t, monitor.Stat{Label: "Session", Value: "0%", Detail: "reset"}, res.Summary[0], "a passed reset shows as empty")
+	assert.Equal(t, monitor.Stat{Label: "Session", Value: "0%", Detail: "reset", Bar: true, Level: ptr(0.0)}, res.Summary[0], "a passed reset shows as empty")
 	assert.Contains(t, res.Subtitle, "hasn't run since")
 }
 
@@ -61,3 +61,5 @@ func TestTone(t *testing.T) {
 	s := Stats([]Limit{{Kind: "session", Percent: 95, ResetsAt: now.Add(time.Hour)}}, now)
 	assert.Equal(t, monitor.ToneBad, s[0].Tone)
 }
+
+func ptr(f float64) *float64 { return &f }

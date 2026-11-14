@@ -553,6 +553,9 @@ moves), and one with a `url` opens it when clicked (the dailies' chips).
 A stat's `brief`, if sent, replaces its value where space is tightest (the
 Windows client's ultra compact lines); an empty one leaves only the label
 (Food names the day only up to tomorrow).
+A stat marked `bar` is drawn as a bar filled to its `level` (0 to 1), its
+value small beside the label (Claude's limits); clients that don't know it
+draw the value.
 Every monitor is
 drawn from the same few block types, so clients need no per-monitor code:
 
