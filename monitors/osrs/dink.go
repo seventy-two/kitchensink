@@ -1,6 +1,7 @@
 package osrs
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -166,6 +167,9 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 	}
 	now := env.Now().In(m.loc)
 	day := now.Format(time.DateOnly)
+	if quiet, err := m.quiet(env, d); err != nil || quiet {
+		return cmp.Or(err, monitor.ErrQuiet)
+	}
 
 	var live stats
 	if _, err := env.State.Get(liveKey, &live); err != nil {
@@ -348,6 +352,42 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 		return err
 	}
 	return env.State.Set(todayKey, td)
+}
+
+// quietFor is how long after Dink's last message one about something the
+// monitor ignores leaves the state alone: "seen" (are they playing?)
+// needn't be more exact.
+const quietFor = 5 * time.Minute
+
+// quiet reports whether a message can be ignored: loot (or a kill count)
+// from something no pet comes from, worth less than historyLoot, while
+// "seen" is recent. With Dink sending every loot (its min value 0, for
+// small uniques), that's every slayer kill and pickpocket, which
+// otherwise each rewrite the state and the published files and push the
+// panel to every client.
+func (m *Monitor) quiet(env monitor.Env, d dink) (bool, error) {
+	var x struct {
+		Source string     `json:"source"`
+		Boss   string     `json:"boss"`
+		Items  []dinkItem `json:"items"`
+	}
+	switch d.Type {
+	case "LOOT", "KILL_COUNT":
+		json.Unmarshal(d.Extra, &x)
+	default:
+		return false, nil
+	}
+	if _, ok := metricFor(x.Source + x.Boss); ok {
+		return false, nil
+	}
+	if m.top(x.Items).Value >= min(m.cfg.HistoryLoot, m.cfg.BigLoot) {
+		return false, nil
+	}
+	var seen time.Time
+	if _, err := env.State.Get(seenKey, &seen); err != nil {
+		return false, err
+	}
+	return env.Now().Sub(seen) < quietFor, nil
 }
 
 // top is a loot drop's total value, named by its most valuable item.

@@ -294,6 +294,9 @@ func (e *Engine) Act(ctx context.Context, id string, a monitor.Action) error {
 	r.busy.Lock()
 	err := actor.Act(ctx, e.env(r, log), a)
 	r.busy.Unlock()
+	if errors.Is(err, monitor.ErrQuiet) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}

@@ -74,3 +74,23 @@ func TestUniques(t *testing.T) {
 	got.Uniques[2].Time = now
 	assert.Equal(t, unique{Time: now, Metric: "vorkath", Source: "Vorkath", ItemID: 22111, Item: "Dragonbone necklace", Qty: 2, Price: 100000, KC: 117}, got.Uniques[2], "a noted one (22112) counts as the necklace")
 }
+
+func TestQuietLoot(t *testing.T) {
+	m := newMonitor(t, newFakeWOM(t))
+	env := monitortest.Env(now)
+	quiet := func(extra string) error {
+		body := `{"type":"LOOT","playerName":"GTX 480","accountType":"NORMAL","seasonalWorld":false,"extra":` + extra + `}`
+		return m.Act(context.Background(), env, monitor.Action{Type: monitor.HookAction, Data: json.RawMessage(body)})
+	}
+	goblin := `{"source":"Goblin","category":"NPC","items":[{"id":526,"name":"Bones","quantity":1,"priceEach":100}]}`
+	// Nothing seen yet: it's kept as a sign they're playing.
+	require.NoError(t, quiet(goblin))
+	var seen time.Time
+	_, err := env.State.Get(seenKey, &seen)
+	require.NoError(t, err)
+	assert.True(t, now.Equal(seen))
+	// Just after, a goblin's bones change nothing; a boss's loot isn't quiet.
+	assert.ErrorIs(t, quiet(goblin), monitor.ErrQuiet)
+	assert.ErrorIs(t, quiet(`{"source":"Thug","category":"NPC","items":[{"id":1,"name":"Big","quantity":1,"priceEach":50000000}]}`), nil, "worth keeping")
+	assert.NoError(t, quiet(`{"source":"Vorkath","category":"NPC","killCount":5,"items":[{"id":526,"name":"Bones","quantity":1,"priceEach":100}]}`))
+}

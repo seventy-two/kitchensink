@@ -60,6 +60,11 @@ type Action struct {
 // an unknown type or an item that doesn't exist; the API answers 400.
 var ErrBadAction = errors.New("bad action")
 
+// ErrQuiet is what Act returns for an action that changed nothing worth
+// polling again for (a webhook about something the monitor ignores): the
+// caller gets success, and the monitor isn't refreshed.
+var ErrQuiet = errors.New("nothing to refresh")
+
 // Env is what the engine gives a monitor on each poll.
 type Env struct {
 	// State persists small values between polls and restarts.
