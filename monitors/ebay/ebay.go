@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -284,6 +285,7 @@ const (
 	namesKey    = "names"     // what Gemini called each listing, by ID
 	rarityKey   = "rarity"    // how rare Gemini said each listing is, by ID
 	ignoredKey  = "ignored"   // games never to flag, by key(name), with their names
+	clearKey    = "clear"     // games just ignored, by key(name): their listings' events to end
 )
 
 // forget is how long a listing is remembered after it was last in the
@@ -389,6 +391,28 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 			}
 		}
 		seen[it.ItemID] = now
+	}
+	// A game just ignored: its listings' notifications end, so clients
+	// drop them. Ones that never notified are no event at all, and the
+	// engine passes over them.
+	clear := map[string]bool{}
+	if _, err := env.State.Get(clearKey, &clear); err != nil {
+		return monitor.Result{}, err
+	}
+	if len(clear) > 0 {
+		var ids []string
+		for id, name := range names {
+			if clear[key(name)] {
+				ids = append(ids, id)
+			}
+		}
+		sort.Strings(ids)
+		for _, id := range ids {
+			events = append(events, monitor.Event{Key: "listing/" + id, Update: true, Title: names[id], Body: "Ignored", Until: now})
+		}
+		if err := env.State.Set(clearKey, map[string]bool{}); err != nil {
+			return monitor.Result{}, err
+		}
 	}
 	for id, t := range seen {
 		if now.Sub(t) > forget {
@@ -534,5 +558,14 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 	}
 	ignored[key(name)] = name
 	env.Log.Info("ignoring a game", "name", name)
-	return env.State.Set(ignoredKey, ignored)
+	if err := env.State.Set(ignoredKey, ignored); err != nil {
+		return err
+	}
+	// The poll after this ends the game's notifications.
+	clear := map[string]bool{}
+	if _, err := env.State.Get(clearKey, &clear); err != nil {
+		return err
+	}
+	clear[key(name)] = true
+	return env.State.Set(clearKey, clear)
 }

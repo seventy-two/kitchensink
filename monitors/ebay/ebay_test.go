@@ -298,9 +298,17 @@ func TestIgnore(t *testing.T) {
 	assert.Equal(t, monitor.CellAction{Type: "ignore", ID: "v1|1|0", Label: "Ignore WipEout from now on"}, *rows[0][3].Action)
 	assert.Nil(t, rows[1][3].Action, "a common one has nothing to ignore")
 
+	require.Equal(t, []string{"listing/v1|1|0"}, monitortest.Keys(res.Events), "notified")
+
 	require.NoError(t, m.Act(context.Background(), env, monitor.Action{Type: "ignore", ID: "v1|1|0"}))
 	res, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
+	// Its notification ends, so clients drop it; only once.
+	require.Len(t, res.Events, 1)
+	assert.Equal(t, monitor.Event{Key: "listing/v1|1|0", Update: true, Title: "WipEout", Body: "Ignored", Until: now}, res.Events[0])
+	res2, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Empty(t, res2.Events)
 	rows = res.Blocks[0].Rows
 	assert.Equal(t, "", rows[0][0].Detail, "now counts as common")
 	assert.Equal(t, monitor.ToneNone, rows[0][0].Tone)
