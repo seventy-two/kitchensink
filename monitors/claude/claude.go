@@ -118,10 +118,12 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	stats := Stats(r.Limits, now)
 	// Only a summary: a panel of the same bars would add nothing, so
 	// clients keep it as a row.
+	// When it was read only matters on a closer look.
 	res := monitor.Result{
-		Summary:  stats,
-		Subtitle: "Read " + Ago(now.Sub(r.Read)),
-		Timely:   true,
+		Summary:       stats,
+		Subtitle:      "Read " + Ago(now.Sub(r.Read)),
+		SubtitleHover: true,
+		Timely:        true,
 	}
 	if now.Sub(r.Read) > m.stale {
 		res.Subtitle += " (Claude Code hasn't run since)"

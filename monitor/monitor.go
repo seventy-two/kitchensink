@@ -94,6 +94,9 @@ type Result struct {
 	// Subtitle says what the monitor is watching when that isn't obvious,
 	// e.g. a car search's filters. Clients show it above the panel.
 	Subtitle string
+	// SubtitleHover shows the subtitle only while the panel is hovered,
+	// in place of when it was updated, e.g. when Claude's usage was read.
+	SubtitleHover bool
 	// Summary is the few things most worth seeing at a glance, e.g. the
 	// next meeting or the biggest movers. Clients show it in place of the
 	// blocks when space is short.
@@ -186,8 +189,9 @@ type Snapshot struct {
 	Updated time.Time `json:"updated"`
 	// Error is the last poll's error, if it failed. Blocks then still hold
 	// the last good data.
-	Error    string `json:"error,omitempty"`
-	Subtitle string `json:"subtitle,omitempty"`
+	Error         string `json:"error,omitempty"`
+	Subtitle      string `json:"subtitle,omitempty"`
+	SubtitleHover bool   `json:"subtitleHover,omitempty"`
 	// Timely is the last good poll's Result.Timely.
 	Timely bool `json:"timely,omitempty"`
 	// Relevant is the last good poll's Result.Relevant.
