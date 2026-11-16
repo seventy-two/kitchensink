@@ -288,13 +288,20 @@ const (
 // Block is one part of a dashboard panel. Only the fields for its Type are
 // set.
 type Block struct {
-	Type    BlockType `json:"type"`
-	Title   string    `json:"title,omitempty"`
-	Stats   []Stat    `json:"stats,omitempty"`
-	Columns []Column  `json:"columns,omitempty"`
-	Rows    [][]Cell  `json:"rows,omitempty"`
-	Items   []Item    `json:"items,omitempty"`
-	Text    string    `json:"text,omitempty"`
+	Type  BlockType `json:"type"`
+	Title string    `json:"title,omitempty"`
+	Stats []Stat    `json:"stats,omitempty"`
+	// Chips draws a stats block as a grid of chips, e.g. the watchlist's
+	// charts. Clients that don't know it draw tiles.
+	Chips bool `json:"chips,omitempty"`
+	// Views are sets of a stats block's stats to switch between, e.g. the
+	// watchlist over today, a week and a month; Stats is the first's, for
+	// clients that don't know them.
+	Views   []View   `json:"views,omitempty"`
+	Columns []Column `json:"columns,omitempty"`
+	Rows    [][]Cell `json:"rows,omitempty"`
+	Items   []Item   `json:"items,omitempty"`
+	Text    string   `json:"text,omitempty"`
 	// AddHint is the placeholder for a checklist's box for new items.
 	AddHint string `json:"addHint,omitempty"`
 	// DeleteHint says what a checklist's delete button does when that
@@ -320,6 +327,12 @@ type Block struct {
 	// Private marks personal figures, e.g. money, which clients can hide
 	// on request.
 	Private bool `json:"private,omitempty"`
+}
+
+// View is one of a stats block's sets of stats, named for a switch.
+type View struct {
+	Label string `json:"label"`
+	Stats []Stat `json:"stats"`
 }
 
 // Stat is a labelled value in a stats block.

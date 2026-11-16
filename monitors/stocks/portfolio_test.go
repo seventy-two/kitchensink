@@ -176,11 +176,7 @@ func TestPortfolioPoll(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "AAA|GBP=", asked, "the exchange rate is fetched too")
-	var symbols []string
-	for _, r := range res.Blocks[len(res.Blocks)-1].Rows {
-		symbols = append(symbols, r[0].Text)
-	}
-	assert.Equal(t, []string{"AAA"}, symbols, "but not listed")
+	assert.Equal(t, []string{"AAA"}, statLabels(res.Blocks[len(res.Blocks)-1].Stats), "but not listed")
 	assert.Equal(t, "£805", res.Blocks[0].Stats[0].Value)
 	assert.Equal(t, monitor.Stat{Label: "Today", Value: "−£16", Tone: monitor.ToneBad, Private: true, Lead: true}, res.Summary[0])
 	assert.False(t, strings.Contains(res.Summary[1].Label, "GBP"))

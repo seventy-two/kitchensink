@@ -108,8 +108,11 @@ func newChartServer(t *testing.T, bars map[string][]bar) *chartServer {
 		for _, b := range bs {
 			parts = append(parts, fmt.Sprintf(`{"open":"%.2f","close":"%.2f","tradeTime":"%s%02d%02d00"}`, b.price, b.price, b.day, b.min/60, b.min%60))
 		}
-		// CNBC's running total, with no open, which is skipped.
-		parts = append(parts, `{"open":"0.00","close":"1.00","tradeTime":"20261116235900"}`)
+		// CNBC's running total, with no open, at the latest price.
+		if len(bs) > 0 {
+			last := bs[len(bs)-1]
+			parts = append(parts, fmt.Sprintf(`{"open":"0.00","close":"%.2f","tradeTime":"%s235900"}`, last.price, last.day))
+		}
 		fmt.Fprintf(w, `{"data":{"chartData":{"priceBars":[%s]}}}`, strings.Join(parts, ","))
 	}))
 	t.Cleanup(s.Close)
@@ -239,4 +242,49 @@ func TestSparksBackOffAfterFailing(t *testing.T) {
 	q.Last = "100.50"
 	m.sparks(context.Background(), env, []quote{q})
 	assert.Equal(t, 1, srv.count(chartToday), "not again for five minutes")
+}
+
+func TestChartViews(t *testing.T) {
+	week := append(minutes("20261113", preOpen, postClose, flat(100)), minutes("20261116", regOpen, regOpen+60, flat(104))...)
+	var month []bar
+	// CNBC's "1M" goes back further than a month.
+	month = append(month, bar{day: "20260601", price: 10}, bar{day: "20261015", price: 70})
+	for i, d := range []string{"20261016", "20261030", "20261113", "20261116"} {
+		month = append(month, bar{day: d, price: 80 + float64(i)*10})
+	}
+	srv := newChartServer(t, map[string][]bar{chartWeek: week, "1M": month})
+	m := newMonitor(t, "unused", map[string]any{"chartURL": srv.URL})
+	at := time.Date(2026, 11, 16, 15, 30, 0, 0, time.UTC)
+	env := monitortest.Env(at)
+	q := usQuote("REG_MKT", "105.00", "", "")
+	q.LastTime = "2026-11-16"
+
+	hist := m.histories(context.Background(), env, []quote{q})
+	b := m.chartsBlock([]quote{q}, nil, hist, map[string]float64{"NVDA": 84}, at)
+	require.Len(t, b.Views, 3)
+
+	w := b.Views[1].Stats[0]
+	assert.Equal(t, "+25.00%", w.Value, "from the close a week ago")
+	require.NotNil(t, w.Spark)
+	assert.Equal(t, 104.0, w.Spark.Points[len(w.Spark.Points)-2], "the regular sessions only")
+	assert.Equal(t, 105.0, w.Spark.Points[len(w.Spark.Points)-1], "then the live price")
+	assert.Equal(t, 84.0, *w.Spark.Base)
+
+	mo := b.Views[2].Stats[0]
+	assert.Equal(t, "+31.25%", mo.Value, "from the month's first close")
+	assert.Equal(t, []float64{80, 90, 100, 105}, mo.Spark.Points, "today's close is the live price")
+	assert.Equal(t, monitor.ToneGood, mo.Tone)
+
+	// Kept: nothing's fetched again until the quote moves and half an hour
+	// passes, or for the month, the next day.
+	m.histories(context.Background(), env, []quote{q})
+	q.Last = "106.00"
+	env.Now = func() time.Time { return at.Add(10 * time.Minute) }
+	m.histories(context.Background(), env, []quote{q})
+	assert.Equal(t, 1, srv.count(chartWeek))
+	assert.Equal(t, 1, srv.count("1M"))
+	env.Now = func() time.Time { return at.Add(31 * time.Minute) }
+	m.histories(context.Background(), env, []quote{q})
+	assert.Equal(t, 2, srv.count(chartWeek))
+	assert.Equal(t, 1, srv.count("1M"))
 }

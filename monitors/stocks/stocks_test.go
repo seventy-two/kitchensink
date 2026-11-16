@@ -47,20 +47,23 @@ func TestPollTable(t *testing.T) {
 	assert.Equal(t, "AAPL|.FTSE|TSLA|BTC.CM=|BADSYM", q.Get("symbols"))
 
 	require.Len(t, res.Blocks, 1)
-	rows := res.Blocks[0].Rows
-	// Unknown symbols are dropped and the rest sorted by the day's move.
-	require.Len(t, rows, 4)
-	var order []string
-	for _, r := range rows {
-		order = append(order, r[0].Text)
+	b := res.Blocks[0]
+	assert.True(t, b.Chips)
+	var labels []string
+	for _, v := range b.Views {
+		labels = append(labels, v.Label)
 	}
-	assert.Equal(t, []string{"TSLA", ".FTSE", "BTC.CM=", "AAPL"}, order)
-
-	aapl := rows[3]
-	assert.Equal(t, "336.64", aapl[2].Text)
-	assert.Equal(t, monitor.ToneBad, aapl[4].Tone)
-	assert.Equal(t, "336.08 -0.17%", aapl[5].Text, "after-hours price shown outside the regular session")
-	assert.Equal(t, "", rows[1][5].Text, "no extended price for the FTSE")
+	assert.Equal(t, []string{"Today", "1W", "1M"}, labels)
+	assert.Equal(t, b.Views[0].Stats, b.Stats, "today's for clients without views")
+	// Unknown symbols are dropped and the rest sorted by the day's move.
+	day := b.Views[0].Stats
+	require.Len(t, day, 4)
+	assert.Equal(t, []string{"TSLA", "FTSE 100", "Bitcoin/USD Coin Metrics", "AAPL"}, statLabels(day))
+	aapl := day[3]
+	assert.Equal(t, "336.64 USD", aapl.Detail)
+	assert.Equal(t, "-1.11%", aapl.Value)
+	assert.Equal(t, monitor.ToneBad, aapl.Tone)
+	assert.Equal(t, "https://www.cnbc.com/quotes/AAPL", aapl.URL)
 	assert.Empty(t, res.Events, "no move reaches the default 5%")
 }
 
@@ -319,13 +322,8 @@ func TestHoldings(t *testing.T) {
 	res, err := m.Poll(context.Background(), monitortest.Env(now))
 	require.NoError(t, err)
 
-	var order []string
-	for _, r := range res.Blocks[0].Rows {
-		order = append(order, r[0].Text)
-	}
-	assert.Equal(t, []string{".FTSE", "AAPL", "TSLA", "BTC.CM="}, order, "holdings first, largest first, then the biggest risers")
-	assert.Equal(t, monitor.ToneAccent, res.Blocks[0].Rows[0][0].Tone, "holdings highlighted")
-	assert.Equal(t, monitor.ToneNone, res.Blocks[0].Rows[2][0].Tone)
+	assert.Equal(t, []string{"FTSE 100", "AAPL", "TSLA", "Bitcoin/USD Coin Metrics"}, statLabels(res.Blocks[0].Stats),
+		"holdings first, largest first, then the biggest risers")
 
 	var summary []string
 	for _, s := range res.Summary {
@@ -343,21 +341,13 @@ func TestWeekChange(t *testing.T) {
 
 	res, err := m.Poll(context.Background(), env)
 	require.NoError(t, err)
-	b := res.Blocks[0]
-	assert.Equal(t, "1w", b.Columns[6].Title, "on the far right")
-	var aapl []monitor.Cell
-	for _, r := range b.Rows {
-		if r[0].Text == "AAPL" {
-			aapl = r
-		}
-	}
-	require.NotNil(t, aapl)
+	aapl := viewStat(t, res, "1W", "AAPL")
 	// Against Friday 2 October's close of 200, the last on or before a
 	// week ago; the out-of-order bar for 1 October doesn't count.
-	assert.Equal(t, "+68.32%", aapl[6].Text)
-	assert.Equal(t, monitor.ToneGood, aapl[6].Tone)
+	assert.Equal(t, "+68.32%", aapl.Value)
+	assert.Equal(t, monitor.ToneGood, aapl.Tone)
 	fetched := len(weekRequests(chart))
-	assert.Equal(t, 4, fetched, "one fetch per quoted symbol")
+	assert.Equal(t, 8, fetched, "per quoted symbol, one for the week's close and one for the month's chart")
 	assert.Contains(t, chart.Requests()[0].Query, "getQuoteChartData")
 
 	// The closes are kept for the day.
@@ -391,16 +381,16 @@ func TestWeekChangeUnavailable(t *testing.T) {
 	env := monitortest.Env(now)
 	res, err := m.Poll(context.Background(), env)
 	require.NoError(t, err, "the quotes still show")
-	for _, r := range res.Blocks[0].Rows {
-		assert.Empty(t, r[6].Text)
+	for _, st := range res.Blocks[0].Views[1].Stats {
+		assert.Empty(t, st.Value)
 	}
 	// Each range was tried, and nothing was kept, so the next poll tries
-	// again.
+	// again; the month's chart waits a while.
 	tries := len(weekRequests(chart))
-	assert.Equal(t, 4*len(chartRanges), tries)
+	assert.Equal(t, 4*len(chartRanges)+4, tries)
 	_, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
-	assert.Len(t, weekRequests(chart), 2*tries)
+	assert.Len(t, weekRequests(chart), tries+4*len(chartRanges))
 }
 
 func TestWeekChangeFallsBack(t *testing.T) {
@@ -419,11 +409,33 @@ func TestWeekChangeFallsBack(t *testing.T) {
 	m := newMonitor(t, quotes.URL, map[string]any{"chartURL": chart.URL})
 	res, err := m.Poll(context.Background(), monitortest.Env(now))
 	require.NoError(t, err)
-	for _, r := range res.Blocks[0].Rows {
-		if r[0].Text == "AAPL" {
-			assert.Equal(t, "+68.32%", r[6].Text)
+	assert.Equal(t, "+68.32%", viewStat(t, res, "1W", "AAPL").Value)
+}
+
+// statLabels lists stats' labels, for compact assertions.
+func statLabels(stats []monitor.Stat) []string {
+	var out []string
+	for _, s := range stats {
+		out = append(out, s.Label)
+	}
+	return out
+}
+
+// viewStat finds a symbol's stat in a view of the watchlist's charts.
+func viewStat(t *testing.T, res monitor.Result, view, label string) monitor.Stat {
+	t.Helper()
+	for _, v := range res.Blocks[len(res.Blocks)-1].Views {
+		if v.Label != view {
+			continue
+		}
+		for _, s := range v.Stats {
+			if s.Label == label {
+				return s
+			}
 		}
 	}
+	t.Fatalf("no %s in %s", label, view)
+	return monitor.Stat{}
 }
 
 func TestCloseOnOrBefore(t *testing.T) {

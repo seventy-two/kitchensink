@@ -225,9 +225,10 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		symbols = append(symbols, q.Symbol)
 	}
 	weekAgo := m.weekAgo(ctx, env, symbols)
+	sparks := m.sparks(ctx, env, quotes)
 	res := monitor.Result{
-		Blocks:       []monitor.Block{m.table(quotes, weekAgo)},
-		Summary:      m.summary(quotes, m.sparks(ctx, env, quotes)),
+		Blocks:       []monitor.Block{m.chartsBlock(quotes, sparks, m.histories(ctx, env, quotes), weekAgo, env.Now())},
+		Summary:      m.summary(quotes, sparks),
 		SummaryStyle: monitor.SummaryChips,
 		Events:       events,
 		Timely:       true,
@@ -272,15 +273,19 @@ func (m *Monitor) summary(quotes []quote, sparks map[string]chipSpark) []monitor
 	}
 	var out []monitor.Stat
 	for _, q := range picked {
-		st := monitor.Stat{Label: displayName(q), Value: formatPct(q.ChangePct), Tone: toneOf(q.ChangePct)}
-		cs := sparks[q.Symbol]
-		st.Spark = cs.spark
-		if v, tag, ok := extMove(q, cs); ok {
-			st.Value, st.Tag, st.Tone = v, tag, toneOf(q.Extended.ChangePct)
-		}
-		out = append(out, st)
+		out = append(out, m.chip(q, sparks[q.Symbol]))
 	}
 	return out
+}
+
+// chip is a quote's day: its move with the day's line, or outside the
+// session the pre-market or after-hours move, tagged.
+func (m *Monitor) chip(q quote, cs chipSpark) monitor.Stat {
+	st := monitor.Stat{Label: displayName(q), Value: formatPct(q.ChangePct), Tone: toneOf(q.ChangePct), Spark: cs.spark}
+	if v, tag, ok := extMove(q, cs); ok {
+		st.Value, st.Tag, st.Tone = v, tag, toneOf(q.Extended.ChangePct)
+	}
+	return st
 }
 
 func (m *Monitor) held(q quote) bool {
@@ -465,57 +470,6 @@ func (m *Monitor) ordered(quotes []quote) []quote {
 		return a > b
 	})
 	return sorted
-}
-
-// table lists the quotes in that order. weekAgo holds closes from a week before, by
-// symbol, for the 1w column.
-func (m *Monitor) table(quotes []quote, weekAgo map[string]float64) monitor.Block {
-	sorted := m.ordered(quotes)
-	b := monitor.Block{
-		Type: monitor.BlockTable,
-		Columns: []monitor.Column{
-			{Title: "Symbol"},
-			{Title: "Name"},
-			{Title: "Last", Align: monitor.AlignRight},
-			{Title: "Change", Align: monitor.AlignRight},
-			{Title: "%", Align: monitor.AlignRight},
-			{Title: "Extended", Align: monitor.AlignRight},
-			{Title: "1w", Align: monitor.AlignRight},
-		},
-		Rows: [][]monitor.Cell{},
-	}
-	for _, q := range sorted {
-		tone := toneOf(q.ChangePct)
-		ext := monitor.Cell{Tone: monitor.ToneMuted}
-		if x := q.Extended; x != nil && x.Last != "" && q.MarketStatus != "REG_MKT" {
-			ext = monitor.Cell{Text: x.Last + " " + formatPct(x.ChangePct), Tone: toneOf(x.ChangePct)}
-		}
-		symbol := monitor.Cell{Text: q.Symbol, URL: "https://www.cnbc.com/quotes/" + url.PathEscape(q.Symbol)}
-		if m.held(q) {
-			symbol.Tone = monitor.ToneAccent
-		}
-		b.Rows = append(b.Rows, []monitor.Cell{
-			symbol,
-			{Text: q.Name, Tone: monitor.ToneMuted},
-			{Text: q.Last},
-			{Text: q.Change, Tone: tone},
-			{Text: formatPct(q.ChangePct), Tone: tone},
-			ext,
-			weekCell(q, weekAgo),
-		})
-	}
-	return b
-}
-
-// weekCell is the change since a week ago, blank when that's unknown.
-func weekCell(q quote, weekAgo map[string]float64) monitor.Cell {
-	ref, ok := weekAgo[q.Symbol]
-	last, okLast := parseNumber(q.Last)
-	if !ok || !okLast || ref <= 0 {
-		return monitor.Cell{}
-	}
-	pct := fmt.Sprintf("%+.2f%%", (last/ref-1)*100)
-	return monitor.Cell{Text: pct, Tone: toneOf(pct)}
 }
 
 func displayName(q quote) string {
