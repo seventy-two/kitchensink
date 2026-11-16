@@ -319,3 +319,35 @@ func TestIgnore(t *testing.T) {
 	assert.ErrorIs(t, m.Act(context.Background(), env, monitor.Action{Type: "ignore", ID: "v1|99|0"}), monitor.ErrBadAction)
 	assert.ErrorIs(t, m.Act(context.Background(), env, monitor.Action{Type: "nope"}), monitor.ErrBadAction)
 }
+
+func TestShortViewOnlyRecentUncommonAndRare(t *testing.T) {
+	eb, gem := newFakeEbay(t), newFakeGemini(t)
+	common, uncommon, rare, old := "doom 2 big box", "lba big box", "wipeout big box", "croc big box"
+	gem.names[common], gem.rarity[common] = "Doom II", "common"
+	gem.names[uncommon], gem.rarity[uncommon] = "Little Big Adventure", "uncommon"
+	gem.names[rare], gem.rarity[rare] = "WipEout", "rare"
+	gem.names[old], gem.rarity[old] = "Croc", "rare"
+	eb.items = []map[string]any{
+		listing("1", common, "10", now.Add(-time.Hour), false, 0),
+		listing("2", uncommon, "20", now.Add(-2*time.Hour), false, 0),
+		listing("3", rare, "30", now.Add(-3*time.Hour), false, 0),
+		listing("4", old, "40", now.Add(-25*time.Hour), false, 0),
+	}
+	m := newMonitor(t, eb.URL, gem.URL)
+	res, err := m.Poll(context.Background(), monitortest.Env(now))
+	require.NoError(t, err)
+	require.Len(t, res.Blocks[0].Rows, 4, "the panel still lists everything")
+	require.NotNil(t, res.SummaryBlock)
+	var names []string
+	for _, r := range res.SummaryBlock.Rows {
+		names = append(names, r[0].Text)
+	}
+	assert.Equal(t, []string{"Little Big Adventure", "WipEout"}, names, "no common ones, nor any from over a day ago")
+	assert.Len(t, res.Summary, 2)
+
+	// A day on, nothing.
+	res, err = m.Poll(context.Background(), monitortest.Env(now.Add(22*time.Hour)))
+	require.NoError(t, err)
+	assert.Empty(t, res.SummaryBlock.Rows)
+	assert.Empty(t, res.Summary)
+}

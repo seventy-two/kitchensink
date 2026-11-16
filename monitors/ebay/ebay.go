@@ -290,8 +290,12 @@ const (
 // results, so one that drops out and back isn't reported again.
 const forget = 60 * 24 * time.Hour
 
-// summaryRows is how many of the newest listings the short view shows.
-const summaryRows = 3
+// summaryRows is how many of the newest uncommon or rare listings the
+// short view shows, from those listed within shortFor.
+const (
+	summaryRows = 3
+	shortFor    = 24 * time.Hour
+)
 
 func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, error) {
 	now := env.Now()
@@ -403,9 +407,17 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	}
 
 	table := m.table(items, nameOf, rarityOf, now)
-	short := m.table(items[:min(summaryRows, len(items))], nameOf, rarityOf, now)
+	// Short, only the newest uncommon and rare listings from the last
+	// day: nothing at all when there are none.
+	var worth []item
+	for _, it := range items {
+		if rank(rarityOf(it)) > 0 && now.Sub(it.ItemCreationDate) < shortFor && len(worth) < summaryRows {
+			worth = append(worth, it)
+		}
+	}
+	short := m.table(worth, nameOf, rarityOf, now)
 	var summary []monitor.Stat
-	for _, it := range items[:min(summaryRows, len(items))] {
+	for _, it := range worth {
 		summary = append(summary, monitor.Stat{Label: nameOf(it), Value: it.price(), Detail: m.when(it.ItemCreationDate, now)})
 	}
 	return monitor.Result{
