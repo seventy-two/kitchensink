@@ -205,7 +205,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	}
 	var events []monitor.Event
 	for _, q := range quotes {
-		news := m.moveEvents(q, env.Now())
+		news := m.belowNoted(q, m.moveEvents(q, env.Now()), moves)
 		events = append(events, news...)
 		events = append(events, m.moveUpdates(q, env.Now(), news, moves)...)
 		events = append(events, m.targetEvents(q, crossed, env.Now().Unix())...)
@@ -332,6 +332,23 @@ func (m *Monitor) moveEvents(q quote, now time.Time) []monitor.Event {
 	}}
 }
 
+// belowNoted leaves out q's new move event if a higher level's already
+// been noted today the same way: it's shown until the move's back under
+// the first level.
+func (m *Monitor) belowNoted(q quote, news []monitor.Event, moves map[string]notedMove) []monitor.Event {
+	pct, ok := parsePct(q.ChangePct)
+	if !ok || len(news) == 0 || len(q.LastTime) < 10 {
+		return news
+	}
+	level := float64(int(math.Abs(pct)/m.movePct)) * m.movePct
+	for _, n := range moves {
+		if n.Symbol == q.Symbol && n.Day == q.LastTime[:10] && n.Up == (pct > 0) && n.Level > level {
+			return nil
+		}
+	}
+	return news
+}
+
 // movesKey is the state key holding the day's notified moves, by event
 // key, so their events can be kept up to date.
 const movesKey = "moves"
@@ -344,12 +361,20 @@ type notedMove struct {
 	Up     bool    `json:"up"`
 	Level  float64 `json:"level"`
 	Peak   float64 `json:"peak"`
+	// Ended is set while it's fallen back under its level, its event
+	// ended so clients drop it.
+	Ended bool `json:"ended,omitempty"`
 }
+
+// revived is how long a move's event shows again once it's back past its
+// level, as long as clients keep a new one.
+const revived = 24 * time.Hour
 
 // moveUpdates keeps the day's move events for q up to date as its price
 // changes: while the move's still past its level the event shows the
-// latest figures, and once it's fallen back the event says so and goes
-// quiet, so clients show it muted. A move that's passed a higher level
+// latest figures; once it's fallen back under the first level (movePct)
+// the event is ended (until now), so clients drop it, and if it passes
+// that again it shows again. A move that's passed a higher level
 // since replaces its lower one: that event is ended (until now) and
 // forgotten, so Recent shows one per symbol and direction. news are the
 // move events q raised this poll; ones not seen before are noted, and need
@@ -402,14 +427,18 @@ func (m *Monitor) moveUpdates(q quote, now time.Time, news []monitor.Event, move
 			continue // first raised just now: it says this already
 		}
 		ev := monitor.Event{Key: key, Update: true, Title: fmt.Sprintf("%s %s %.2f%% today", displayName(q), dir, math.Abs(pct)), Body: latest}
-		if along < n.Level {
-			was := "up"
-			if !n.Up {
-				was = "down"
-			}
-			ev.Body = fmt.Sprintf("Earlier %s %.2f%% · %s", was, n.Peak, latest)
-			ev.Quiet = true
+		// Only under the first level is it over: one that passed 6% and
+		// slipped to 5% is still a move worth seeing.
+		under := along < m.movePct
+		switch {
+		case under && n.Ended:
+			continue // gone already
+		case under:
+			ev.Until, n.Ended = now, true
+		case n.Ended:
+			ev.Until, n.Ended = now.Add(revived), false
 		}
+		moves[key] = n
 		out = append(out, ev)
 	}
 	slices.SortFunc(out, func(a, b monitor.Event) int { return strings.Compare(a.Key, b.Key) })

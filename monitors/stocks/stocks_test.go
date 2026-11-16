@@ -160,10 +160,12 @@ func TestMovesStayUpToDate(t *testing.T) {
 	assert.Equal(t, "TSLA up 2.05% today", res.Events[1].Title)
 	assert.False(t, res.Events[1].Quiet)
 
-	// Later TSLA has fallen back to +0.50%: the event says so, quietly.
+	// Later TSLA has fallen back to +0.50%: the event ends, so clients
+	// drop it, and isn't sent again while it stays back.
 	b, err := os.ReadFile(path)
 	require.NoError(t, err)
-	srv.Reply(http.StatusOK, []byte(strings.Replace(strings.Replace(string(b), `"+2.05%"`, `"+0.50%"`, 1), `"+7.70"`, `"+1.90"`, 1)))
+	fallen := []byte(strings.Replace(strings.Replace(string(b), `"+2.05%"`, `"+0.50%"`, 1), `"+7.70"`, `"+1.90"`, 1))
+	srv.Reply(http.StatusOK, fallen)
 	res, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
 	require.Len(t, res.Events, 1)
@@ -171,8 +173,25 @@ func TestMovesStayUpToDate(t *testing.T) {
 	assert.True(t, e.Update)
 	assert.Equal(t, "move:TSLA:2026-10-09:up2", e.Key)
 	assert.Equal(t, "TSLA up 0.50% today", e.Title)
-	assert.Equal(t, "Earlier up 2.05% · 382.70 USD (+1.90)", e.Body)
-	assert.True(t, e.Quiet, "muted once it's fallen back")
+	assert.Equal(t, inSession, e.Until, "ended")
+	assert.False(t, e.Quiet)
+	res, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Empty(t, res.Events)
+
+	// Back up past 2%: it shows again.
+	srv.Reply(http.StatusOK, b)
+	res, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	var back []monitor.Event
+	for _, e := range res.Events {
+		if e.Update {
+			back = append(back, e)
+		}
+	}
+	require.Len(t, back, 1)
+	assert.Equal(t, "TSLA up 2.05% today", back[0].Title)
+	assert.Equal(t, inSession.Add(revived), back[0].Until)
 
 	// The next day's first poll forgets it.
 	next := monitortest.Env(inSession.AddDate(0, 0, 3))
@@ -211,6 +230,21 @@ func TestHigherMovesReplaceLower(t *testing.T) {
 	res, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"move:TSLA:2026-10-09:up2", "move:TSLA:2026-10-09:up2"}, monitortest.Keys(res.Events))
+
+	// Slipping back to 1.50%, under 2% but past the first level, it stays.
+	srv.Reply(http.StatusOK, []byte(strings.Replace(string(b), `"+2.05%"`, `"+1.50%"`, 1)))
+	res, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	require.Equal(t, []string{"move:TSLA:2026-10-09:up2"}, monitortest.Keys(res.Events))
+	assert.Equal(t, "TSLA up 1.50% today", res.Events[0].Title)
+	assert.True(t, res.Events[0].Until.IsZero(), "still shown")
+
+	// Under 1%, it goes.
+	srv.Reply(http.StatusOK, []byte(strings.Replace(string(b), `"+2.05%"`, `"+0.50%"`, 1)))
+	res, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	require.Len(t, res.Events, 1)
+	assert.Equal(t, inSession, res.Events[0].Until)
 }
 
 func TestTargetsNotifyOncePerCrossing(t *testing.T) {
