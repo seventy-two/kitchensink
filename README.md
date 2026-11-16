@@ -22,7 +22,7 @@ notification for each event.
 
 | Type | Source | Notifies |
 | --- | --- | --- |
-| `stocks` | CNBC quotes, plus a week's change from CNBC's daily closes (fetched once a day); `holdings` (largest first) lead the table and the summary, which has every symbol in the table's order (without holdings, the biggest movers first) | a holding's daily move (any symbol's, without `holdings`) passing each multiple of `movePct`, while its market is open, kept up to date through the day and muted once it falls back (a higher level replaces the lower one in Recent); a price crossing a target |
+| `stocks` | CNBC quotes, plus a week's change from CNBC's daily closes (fetched once a day); `holdings` (largest first) lead the table and the summary, which has every symbol in the table's order (without holdings, the biggest movers first). Each chip has the day's price line (`spark`) from CNBC's intraday chart, fetched at most every five minutes per symbol and only once its quote has moved, with the live price added between fetches. US shares' lines carry on with after-hours trading and, before the open, show the last session dimmed with the pre-market after it; while there's extended trading the chip leads with that move, tagged `pre` or `ah` | a holding's daily move (any symbol's, without `holdings`) passing each multiple of `movePct`, while its market is open, kept up to date through the day and muted once it falls back (a higher level replaces the lower one in Recent); a price crossing a target |
 | `nfl` | ESPN scoreboard; the summary is a chip per game today, followed teams' highlighted | kick-off, scores and results for followed teams (a touchdown's score waits up to two minutes for the try, so it's notified once); optionally every result |
 | `weather` | [Open-Meteo](https://open-meteo.com) (no key needed); the summary is the next twelve hours | rain due within the hour, frost, strong gusts |
 | `autotrader` | AutoTrader UK search | newly listed cars |
@@ -542,9 +542,14 @@ few seconds or every `every` seconds; the farming monitor's RuneLite data,
 and the osrs monitor's plugin counts once a day), `blocks` and `summary`: a few
 stats (as in a `stats` block) worth seeing at a glance, which clients show
 instead of the blocks when space is short, and `summaryStyle`: empty for
-label/value/detail tiles, or `chips` for small blocks of the same, filled
-with each stat's tone (the watchlist's daily moves, the hourly forecast,
-today's NFL games). `summaryBlock`, if set, is one block that clients
+label/value/detail tiles, or `chips` for small blocks of the same,
+underlined in each stat's tone (the watchlist's daily moves, the hourly
+forecast, today's NFL games). A chip's `spark` is a small line chart drawn
+under its label and value: `points`, evenly spaced; `ext`, carrying on
+dotted after a tick (the watchlist's pre-market or after-hours trading);
+`base`, a level drawn faintly (the previous close); `tone` and `extTone`
+for the two lines; and `faded` to dim `points` once their session is
+over. A stat's `tag` is a word drawn small after its value (`pre`, `ah`). `summaryBlock`, if set, is one block that clients
 able to draw it show in place of the summary, so the panel looks the same
 short (the OSRS table's top rows). A stat or block marked `private` holds personal
 figures, e.g. money, which clients can hide; a stat marked `lead` is set

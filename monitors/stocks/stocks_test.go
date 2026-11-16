@@ -356,19 +356,31 @@ func TestWeekChange(t *testing.T) {
 	// week ago; the out-of-order bar for 1 October doesn't count.
 	assert.Equal(t, "+68.32%", aapl[6].Text)
 	assert.Equal(t, monitor.ToneGood, aapl[6].Tone)
-	fetched := len(chart.Requests())
+	fetched := len(weekRequests(chart))
 	assert.Equal(t, 4, fetched, "one fetch per quoted symbol")
 	assert.Contains(t, chart.Requests()[0].Query, "getQuoteChartData")
 
 	// The closes are kept for the day.
 	_, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
-	assert.Len(t, chart.Requests(), fetched, "no refetch the same day")
+	assert.Len(t, weekRequests(chart), fetched, "no refetch the same day")
 	next := env
 	next.Now = func() time.Time { return now.Add(24 * time.Hour) }
 	_, err = m.Poll(context.Background(), next)
 	require.NoError(t, err)
-	assert.Len(t, chart.Requests(), 2*fetched, "fetched again the next day")
+	assert.Len(t, weekRequests(chart), 2*fetched, "fetched again the next day")
+}
+
+// weekRequests are the chart requests for the 1w column, leaving out the
+// chips' intraday ones.
+func weekRequests(chart *monitortest.Fixture) []monitortest.Request {
+	var out []monitortest.Request
+	for _, r := range chart.Requests() {
+		if !strings.Contains(r.Query, "%221D%22") && !strings.Contains(r.Query, "%225D%22") {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 func TestWeekChangeUnavailable(t *testing.T) {
@@ -384,11 +396,11 @@ func TestWeekChangeUnavailable(t *testing.T) {
 	}
 	// Each range was tried, and nothing was kept, so the next poll tries
 	// again.
-	tries := len(chart.Requests())
+	tries := len(weekRequests(chart))
 	assert.Equal(t, 4*len(chartRanges), tries)
 	_, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
-	assert.Len(t, chart.Requests(), 2*tries)
+	assert.Len(t, weekRequests(chart), 2*tries)
 }
 
 func TestWeekChangeFallsBack(t *testing.T) {

@@ -349,6 +349,29 @@ type Stat struct {
 	// one-line summaries); an empty one leaves only the label. Nil keeps
 	// Value.
 	Brief *string `json:"brief,omitempty"`
+	// Tag is a word drawn small after the value, e.g. "pre" when the
+	// value is a pre-market move.
+	Tag string `json:"tag,omitempty"`
+	// Spark, if set, is a price line drawn under a chip's label and
+	// value, e.g. a share's day.
+	Spark *Spark `json:"spark,omitempty"`
+}
+
+// Spark is a small line chart of a chip's day, in its own units (clients
+// scale it to fit, Base included). Points are evenly spaced; Ext carries
+// on after them, drawn dotted after a tick, for trading outside the main
+// session (pre-market or after hours).
+type Spark struct {
+	Points []float64 `json:"points"`
+	Ext    []float64 `json:"ext,omitempty"`
+	// Base, if set, is a level drawn as a faint dotted line, e.g. the
+	// previous close the day's move is from.
+	Base *float64 `json:"base,omitempty"`
+	// Tone colours Points, and ExtTone Ext.
+	Tone    Tone `json:"tone,omitempty"`
+	ExtTone Tone `json:"extTone,omitempty"`
+	// Faded dims Points: their session is over.
+	Faded bool `json:"faded,omitempty"`
 }
 
 // Align is a table column's alignment.

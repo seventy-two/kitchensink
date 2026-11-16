@@ -113,6 +113,7 @@ type quote struct {
 	Change       string `json:"change"`
 	ChangePct    string `json:"change_pct"`
 	CurrencyCode string `json:"currencyCode"`
+	PrevClose    string `json:"previous_day_closing"`
 	MarketStatus string `json:"curmktstatus"`
 	Extended     *struct {
 		Type      string `json:"type"`
@@ -226,7 +227,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	weekAgo := m.weekAgo(ctx, env, symbols)
 	res := monitor.Result{
 		Blocks:       []monitor.Block{m.table(quotes, weekAgo)},
-		Summary:      m.summary(quotes),
+		Summary:      m.summary(quotes, m.sparks(ctx, env, quotes)),
 		SummaryStyle: monitor.SummaryChips,
 		Events:       events,
 		Timely:       true,
@@ -254,8 +255,10 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 
 // summary is every quote, as the table orders them, or without holdings
 // the biggest movers today, either way, first. Clients scroll a line of
-// chips that doesn't fit.
-func (m *Monitor) summary(quotes []quote) []monitor.Stat {
+// chips that doesn't fit. Each chip has its day's price line from sparks,
+// if there is one, and outside the session leads with the pre-market or
+// after-hours move, tagged.
+func (m *Monitor) summary(quotes []quote, sparks map[string]chipSpark) []monitor.Stat {
 	var picked []quote
 	if len(m.rank) > 0 {
 		picked = m.ordered(quotes)
@@ -269,7 +272,13 @@ func (m *Monitor) summary(quotes []quote) []monitor.Stat {
 	}
 	var out []monitor.Stat
 	for _, q := range picked {
-		out = append(out, monitor.Stat{Label: displayName(q), Value: formatPct(q.ChangePct), Tone: toneOf(q.ChangePct)})
+		st := monitor.Stat{Label: displayName(q), Value: formatPct(q.ChangePct), Tone: toneOf(q.ChangePct)}
+		cs := sparks[q.Symbol]
+		st.Spark = cs.spark
+		if v, tag, ok := extMove(q, cs); ok {
+			st.Value, st.Tag, st.Tone = v, tag, toneOf(q.Extended.ChangePct)
+		}
+		out = append(out, st)
 	}
 	return out
 }
