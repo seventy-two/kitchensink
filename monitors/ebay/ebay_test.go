@@ -352,10 +352,12 @@ func TestShortViewOnlyRecentUncommonAndRare(t *testing.T) {
 	}
 	assert.Equal(t, []string{"Little Big Adventure", "WipEout"}, names, "no common ones, nor any from over a day ago")
 	assert.Len(t, res.Summary, 2)
+	assert.False(t, res.Background)
 
-	// A day on, nothing.
+	// A day on, nothing: off the dashboard.
 	res, err = m.Poll(context.Background(), monitortest.Env(now.Add(22*time.Hour)))
 	require.NoError(t, err)
 	assert.Empty(t, res.SummaryBlock.Rows)
 	assert.Empty(t, res.Summary)
+	assert.True(t, res.Background)
 }

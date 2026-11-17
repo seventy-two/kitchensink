@@ -270,6 +270,13 @@ func TestReject(t *testing.T) {
 	res, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
 	assert.Empty(t, res.Blocks[0].Rows)
+	// Its notification ends, so clients drop it; only once.
+	require.Len(t, res.Events, 1)
+	assert.Equal(t, monitor.Event{Key: "listing/7", Update: true, Title: "Schecter KM-6 Mk II Hybrid", Body: "Turned down", Until: now}, res.Events[0])
+	res, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Empty(t, res.Events)
+	assert.True(t, res.Background, "nothing left to show")
 
 	assert.ErrorIs(t, m.Act(context.Background(), env, monitor.Action{Type: "reject", ID: "99"}), monitor.ErrBadAction)
 	assert.ErrorIs(t, m.Act(context.Background(), env, monitor.Action{Type: "nope"}), monitor.ErrBadAction)
@@ -326,4 +333,32 @@ func TestWantChanged(t *testing.T) {
 	_, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
 	assert.Len(t, gem.asked, 2)
+}
+
+func TestShortViewOnlyThisWeek(t *testing.T) {
+	rv, gem := newFakeReverb(t), newFakeGemini(t)
+	fresh, old, nope := "Ibanez XPT700 fresh", "Ibanez XPT707 old", "Xiphos body"
+	rv.listings["ibanez xiphos"] = []map[string]any{
+		item(1, nope, "£300", "", now.Add(-time.Hour)),
+		item(2, fresh, "£900", "", now.Add(-6*24*time.Hour)),
+		item(3, old, "£800", "", now.Add(-8*24*time.Hour)),
+	}
+	gem.verdicts[fresh] = verdict{true, "Ibanez XPT700 Xiphos", ""}
+	gem.verdicts[old] = verdict{true, "Ibanez XPT707 Xiphos", ""}
+	gem.verdicts[nope] = verdict{false, "Xiphos body", ""}
+	m := newMonitor(t, rv.URL, gem.URL)
+	res, err := m.Poll(context.Background(), monitortest.Env(now))
+	require.NoError(t, err)
+	require.Len(t, res.Blocks[0].Rows, 2, "the panel still lists every match")
+	require.Len(t, res.SummaryBlock.Rows, 1)
+	assert.Equal(t, "Ibanez XPT700 Xiphos", res.SummaryBlock.Rows[0][0].Text, "no non-matches, nor any from over a week ago")
+	assert.Len(t, res.Summary, 1)
+	assert.False(t, res.Background)
+
+	// Two days on, nothing this week: off the dashboard.
+	res, err = m.Poll(context.Background(), monitortest.Env(now.Add(2*24*time.Hour)))
+	require.NoError(t, err)
+	assert.Empty(t, res.SummaryBlock.Rows)
+	assert.Empty(t, res.Summary)
+	assert.True(t, res.Background)
 }

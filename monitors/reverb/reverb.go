@@ -243,14 +243,20 @@ const (
 	verdictsKey = "verdicts"  // what Gemini said of each listing, by ID
 	rejectedKey = "rejected"  // listings turned down by hand, by ID, with their names
 	wantKey     = "want"      // the want the verdicts were given against
+	clearKey    = "clear"     // listings just turned down, by ID: their events to end
 )
 
 // forget is how long a listing is remembered after it was last in the
 // results, so one that drops out and back isn't reported again.
 const forget = 60 * 24 * time.Hour
 
-// summaryRows is how many of the newest listings the short view shows.
-const summaryRows = 3
+// summaryRows is how many of the newest wanted listings the short view
+// shows, from those listed within shortFor. With none listed in that time
+// the panel is left off the dashboard: these turn up rarely.
+const (
+	summaryRows = 3
+	shortFor    = 7 * 24 * time.Hour
+)
 
 func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, error) {
 	now := env.Now()
@@ -356,6 +362,30 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 			seen[l.id()] = now
 		}
 	}
+	// Listings just turned down: their notifications end, so clients drop
+	// them. Ones that never notified are no event, and the engine passes
+	// over them.
+	clear := map[string]bool{}
+	if _, err := env.State.Get(clearKey, &clear); err != nil {
+		return monitor.Result{}, err
+	}
+	if len(clear) > 0 {
+		ids := make([]string, 0, len(clear))
+		for id := range clear {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		for _, id := range ids {
+			name := rejected[id]
+			if name == "" {
+				name = verdicts[id].Name
+			}
+			events = append(events, monitor.Event{Key: "listing/" + id, Update: true, Title: name, Body: "Turned down", Until: now})
+		}
+		if err := env.State.Set(clearKey, map[string]bool{}); err != nil {
+			return monitor.Result{}, err
+		}
+	}
 	for id, t := range seen {
 		if now.Sub(t) > forget {
 			delete(seen, id)
@@ -373,7 +403,14 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	}
 
 	table := m.table(wanted, nameOf, verdicts, now)
-	shortList := wanted[:min(summaryRows, len(wanted))]
+	// Short, only the newest listed in the last week: nothing when there
+	// are none.
+	var shortList []listing
+	for _, l := range wanted {
+		if now.Sub(l.PublishedAt) < shortFor && len(shortList) < summaryRows {
+			shortList = append(shortList, l)
+		}
+	}
 	short := m.table(shortList, nameOf, verdicts, now)
 	var summary []monitor.Stat
 	for _, l := range shortList {
@@ -384,6 +421,8 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		Summary:      summary,
 		SummaryBlock: &short,
 		Events:       events,
+		// Nothing listed this week: off the dashboard until there is.
+		Background: len(shortList) == 0,
 	}, nil
 }
 
@@ -461,5 +500,14 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 	}
 	rejected[a.ID] = v.Name
 	env.Log.Info("turning down a listing", "id", a.ID, "name", v.Name)
-	return env.State.Set(rejectedKey, rejected)
+	if err := env.State.Set(rejectedKey, rejected); err != nil {
+		return err
+	}
+	// The poll after this ends its notification.
+	clear := map[string]bool{}
+	if _, err := env.State.Get(clearKey, &clear); err != nil {
+		return err
+	}
+	clear[a.ID] = true
+	return env.State.Set(clearKey, clear)
 }

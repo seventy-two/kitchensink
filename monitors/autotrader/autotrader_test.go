@@ -170,3 +170,35 @@ func TestDescribe(t *testing.T) {
 		assert.NotContains(t, s.describe(), "SW1A", "no postcode")
 	}
 }
+
+func TestHiddenWithoutANewAdvertThisWeek(t *testing.T) {
+	srv := monitortest.Serve(t, "/dev/null")
+	srv.Reply(http.StatusOK, results(listingJSON("1", "NATURAL_LISTING")))
+	m := newMonitor(t, srv.URL)
+	env := monitortest.Env(now)
+	poll := func(at time.Time) monitor.Result {
+		t.Helper()
+		env.Now = func() time.Time { return at }
+		res, err := m.Poll(context.Background(), env)
+		require.NoError(t, err)
+		return res
+	}
+
+	assert.True(t, poll(now).Background, "adverts there at the first check are of unknown age")
+	srv.Reply(http.StatusOK, results(listingJSON("2", "NATURAL_LISTING"), listingJSON("1", "NATURAL_LISTING")))
+	res := poll(now.Add(time.Hour))
+	assert.False(t, res.Background, "a new advert")
+	assert.Len(t, res.Blocks[0].Items, 2, "the panel lists them all")
+	assert.False(t, poll(now.Add(7*24*time.Hour)).Background, "still under a week since it turned up")
+	assert.True(t, poll(now.Add(7*24*time.Hour+2*time.Hour)).Background, "a week on")
+}
+
+func TestAdvertsBeforeSightingsCountAsOld(t *testing.T) {
+	srv := monitortest.Serve(t, "/dev/null")
+	srv.Reply(http.StatusOK, results(listingJSON("1", "NATURAL_LISTING")))
+	env := monitortest.Env(now)
+	require.NoError(t, env.State.Set(baselineKey, true))
+	res, err := newMonitor(t, srv.URL).Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.True(t, res.Background, "already there before sightings were kept")
+}

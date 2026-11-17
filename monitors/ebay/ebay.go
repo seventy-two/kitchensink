@@ -448,8 +448,10 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		Blocks:       []monitor.Block{table},
 		Summary:      summary,
 		SummaryBlock: &short,
-		Events:       events,
-		Timely:       true,
+		// Nothing worth seeing today: off the dashboard until there is.
+		Background: len(worth) == 0,
+		Events:     events,
+		Timely:     true,
 	}, nil
 }
 

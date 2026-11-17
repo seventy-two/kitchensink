@@ -115,8 +115,9 @@ type Result struct {
 	// event history then. From may be zero, for now; Until is exclusive.
 	Relevant Window
 	// Background says the monitor works for others (the mail monitor
-	// fills the calendar), so clients leave it off the dashboard and show
-	// it with their settings, for diagnosing it.
+	// fills the calendar), or has nothing worth seeing at the moment (no
+	// recent listings), so clients leave it off the dashboard and show it
+	// with their settings, for diagnosing it.
 	Background bool
 	// Paste, if set, gives the panel a button that sends a "paste" action
 	// with the clipboard's text, e.g. a game's share text for the dailies.

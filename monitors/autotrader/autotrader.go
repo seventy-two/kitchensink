@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/seventy-two/kitchensink/monitor"
 )
@@ -26,7 +27,25 @@ const (
 	// baselineKey records that the first check has run. Adverts found by
 	// the first check are logged quietly, since they aren't new.
 	baselineKey = "baselined"
+	// seenKey records when each advert was first and last in the results.
+	seenKey = "seen"
 )
+
+// recent is how long after an advert first turns up the panel is shown;
+// with none that new, it's left off the dashboard. forget is how long an
+// advert is remembered after it was last in the results.
+const (
+	recent = 7 * 24 * time.Hour
+	forget = 60 * 24 * time.Hour
+)
+
+// sighting is when an advert was first and last in the results. First is
+// zero for adverts already there when this was first recorded, whose age
+// isn't known.
+type sighting struct {
+	First time.Time `json:"first"`
+	Last  time.Time `json:"last"`
+}
 
 // listingsQuery asks for only the fields the monitor needs.
 const listingsQuery = `query SearchResultsListingsGridQuery($filters: [FilterInput!]!, $channel: Channel!, $page: Int, $sortBy: SearchResultsSort, $listingType: [ListingType!], $searchId: String!, $featureFlags: [FeatureFlag]) {
@@ -81,7 +100,39 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		return monitor.Result{}, err
 	}
 
-	res := monitor.Result{Blocks: []monitor.Block{m.list(listings)}, Summary: summary(listings), Subtitle: m.search.describe(), Timely: true}
+	// When each advert first turned up. Without a record yet (the first
+	// check, or the first since this was added), the adverts there are
+	// of unknown age, so they don't count as recent.
+	now := env.Now()
+	seen := map[string]sighting{}
+	recorded, err := env.State.Get(seenKey, &seen)
+	if err != nil {
+		return monitor.Result{}, err
+	}
+	fresh := false
+	for _, l := range listings {
+		s, ok := seen[l.AdvertID]
+		if !ok && recorded && baselined {
+			s.First = now
+		}
+		s.Last = now
+		seen[l.AdvertID] = s
+		if !s.First.IsZero() && now.Sub(s.First) < recent {
+			fresh = true
+		}
+	}
+	for id, s := range seen {
+		if now.Sub(s.Last) > forget {
+			delete(seen, id)
+		}
+	}
+	if err := env.State.Set(seenKey, seen); err != nil {
+		return monitor.Result{}, err
+	}
+
+	res := monitor.Result{Blocks: []monitor.Block{m.list(listings)}, Summary: summary(listings), Subtitle: m.search.describe(), Timely: true,
+		// Nothing new this week: off the dashboard until there is.
+		Background: !fresh}
 	for _, l := range listings {
 		res.Events = append(res.Events, monitor.Event{
 			Key:      "advert:" + l.AdvertID,
