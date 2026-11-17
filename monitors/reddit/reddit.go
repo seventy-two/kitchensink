@@ -255,7 +255,9 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		return monitor.Result{}, err
 	}
 
-	res := monitor.Result{Next: next}
+	// New hot posts aren't news; a highlighted one (a J-Mod's) is, while
+	// it's up: relevant until a little past the next poll, renewed by each.
+	res := monitor.Result{Next: next, Calm: true}
 	// Short, the top few of each, in one table.
 	short := monitor.Block{
 		Type:    monitor.BlockTable,
@@ -281,6 +283,11 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 			st.Detail = shown[0].Title
 		}
 		res.Summary = append(res.Summary, st)
+		for _, p := range shown {
+			if matches(m.cfg.Highlight, p.Author) {
+				res.Relevant = monitor.Window{Until: env.Now().Add(relevantFor)}
+			}
+		}
 	}
 	res.SummaryBlock = &short
 	if read == 0 {
@@ -291,6 +298,11 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	}
 	return res, nil
 }
+
+// relevantFor is how long a poll that finds a highlighted post keeps the
+// panel relevant: past the next poll or two (every 3 minutes, say), so it
+// doesn't flicker, and not long after the post's gone.
+const relevantFor = 10 * time.Minute
 
 // summaryRows is how many of each subreddit's posts the short view shows.
 const summaryRows = 3

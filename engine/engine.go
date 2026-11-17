@@ -179,6 +179,7 @@ func (e *Engine) poll(ctx context.Context, r *runner) time.Duration {
 		snap.SummaryBlock = res.SummaryBlock
 		snap.Timely = res.Timely
 		snap.Relevant = res.Relevant
+		snap.Calm = res.Calm
 		snap.Background = res.Background
 		snap.Paste = res.Paste
 		snap.Upload = res.Upload

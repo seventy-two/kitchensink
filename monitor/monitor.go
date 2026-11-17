@@ -114,6 +114,10 @@ type Result struct {
 	// on or just before a meeting: clients with room put it beside their
 	// event history then. From may be zero, for now; Until is exclusive.
 	Relevant Window
+	// Calm says a change to the summary isn't news, e.g. hot posts
+	// turning over: clients that rank panels by what's new keep it low
+	// unless it's Relevant or has an event.
+	Calm bool
 	// Background says the monitor works for others (the mail monitor
 	// fills the calendar), or has nothing worth seeing at the moment (no
 	// recent listings), so clients leave it off the dashboard and show it
@@ -197,6 +201,8 @@ type Snapshot struct {
 	Timely bool `json:"timely,omitempty"`
 	// Relevant is the last good poll's Result.Relevant.
 	Relevant Window `json:"relevant,omitzero"`
+	// Calm is the last good poll's Result.Calm.
+	Calm bool `json:"calm,omitempty"`
 	// Background is the last good poll's Result.Background.
 	Background bool `json:"background,omitempty"`
 	// Paste is the last good poll's Result.Paste.

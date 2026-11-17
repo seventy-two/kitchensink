@@ -176,3 +176,25 @@ func TestAgo(t *testing.T) {
 	assert.Equal(t, "47h", ago(47*time.Hour))
 	assert.Equal(t, "3d", ago(80*time.Hour))
 }
+
+func TestRelevantOnlyWithAHighlightedPost(t *testing.T) {
+	f := &fakeReddit{}
+	srv := f.serve(t)
+	poll := func(cfg string) monitor.Result {
+		t.Helper()
+		m, err := New([]byte(cfg))
+		require.NoError(t, err)
+		m.base = srv.URL
+		res, err := m.Poll(context.Background(), monitortest.Env(now))
+		require.NoError(t, err)
+		return res
+	}
+	res := poll(`{"subs":["2007scape"],"highlight":["Nobody*"]}`)
+	assert.True(t, res.Calm, "new hot posts aren't news")
+	assert.Zero(t, res.Relevant, "no highlighted post")
+
+	// The feed has a post by JagexGoblin.
+	res = poll(`{"subs":["2007scape"],"highlight":["Jagex*"]}`)
+	assert.True(t, res.Calm)
+	assert.Equal(t, monitor.Window{Until: now.Add(relevantFor)}, res.Relevant)
+}
