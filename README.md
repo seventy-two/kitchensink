@@ -43,6 +43,7 @@ notification for each event.
 | `osrs` | [Wise Old Man](https://wiseoldman.net): an Old School RuneScape `player`'s gains since midnight towards pets only: boss kills, Guardians of the Rift, Soul Wars zeal, master clues, and XP in the skills with a pet (not combat), leaving out any whose pet is in `owned` (pet names) or that Dink has reported as a new pet. It asks WOM to update the player each poll and just after midnight, and compares with the last snapshot from before midnight. The table gives each gain's pet drop rate (from the wiki) and, for bosses that have ever given a drop worth `bigLoot` or a pet, the kills since the last one. Short, it's the table's top three rows (`summaryBlock`); the chips are for clients without that. With `hookSecret` set, the RuneLite plugin [Dink](https://github.com/pajlads/DinkPlugin) can make it live (below): kills count as they happen, and drops worth `bigLoot` or more (default 20m) and pets are listed and notify. Drops worth `historyLoot` (default 10m) and pets are also kept for good, and with `publish` set to a file path, every poll writes the player's counts and that drop history there as JSON for a public page to read (petsheet's progress charts), along with the combat achievement tasks Dink reports done (`cas`: each task's name, tier and points, and the latest points total), which petsheet counts before WikiSync catches up. Every collection log item Dink reports from a tracked boss (whatever it's worth, past cheap stacks under 50k; the list of items is TempleOSRS's, fetched daily) is kept too, and with `publishUniques` set to a file path it's written there (petsheet's est. profit); past ones can be added with an `importUniques` action (`[{time, source or metric, id, item, qty, price, kc}]`, e.g. from Loot Logger), which skips ones it already has | `hookSecret` (e.g. `"${OSRS_HOOK_SECRET}"`), `owned`, `historyLoot`, `publish`, `publishUniques` |
 | `farming` | RuneLite's Time Tracking plugin, uploaded by the Windows client (below): an Old School RuneScape account's farm runs that count towards the Tangleroot pet (quick patches, trees, fruit trees, hardwoods and the Farming Guild's specials, spirit trees left out), a table each: every patch RuneLite has seen, what's in it, the pet chance at the `player`'s Farming level (from Wise Old Man) and when it's ready, or what it needs. For fruit trees and hardwoods, where every crop gives the same chance, the table's title names the cheapest to plant at GE prices (the OSRS Wiki's), with the gardener's payment unless `protect` is false; trees are always maples, priced the same way. Each row of those tables has the payment and what it costs. The summary is a chip per run | when every patch of a kind (fruit trees, say) has finished growing |
 | `lights` | [Home Assistant](https://www.home-assistant.io)'s REST API: a checklist row per light (by its name in Home Assistant), switched from clients (below); the summary says how many are on, then a chip for each one that's on | nothing for light changes; one quiet event if Home Assistant can't be reached for `offlineAfter` (default 30 minutes) |
+| `ai` | which language model each monitor that uses one (`calendar`, `groceries`, `mail`, `ebay`, `reverb`) asks: Gemini or Claude, and the model at each, chosen from drop-downs (below); a `background` monitor, so clients show it with their settings | nothing |
 
 Each monitor also returns a dashboard panel and a short summary (shown when
 space is short), polls on its own interval and can ask to be polled sooner
@@ -393,6 +394,29 @@ a patch for, unless `profile` names one (the key after
 `timetracking.rsprofile.`). Keep the plugin on, and visit patches with
 RuneLite running: like the plugin, it only knows what it's seen.
 
+### AI models
+
+The monitors that ask a language model (calendar notes, mail, groceries,
+eBay and Reverb) go through the `ai` package, which sends each request to
+Gemini (the Interactions API) or Claude (the Messages API, with structured
+outputs, low effort, and web search where Gemini would use Google Search).
+Each still takes its `gemini` (or `explain`) config as before, and its
+`model` there is the Gemini model it starts on.
+
+The `ai` monitor shows a row per monitor with three drop-downs: who it asks,
+its Gemini model and its Claude model (`claude-haiku-5-5` until one is
+picked). Picking one sends action `choose` with ID `<monitor>/provider`,
+`/gemini` or `/claude` and the value as text; the choice is saved in the
+database and used from the next request. The lists come from each
+provider's models API (refreshed every `refresh`, default `12h`): Gemini 3
+text models, and current Claude models that take structured outputs and low
+effort. Claude's key is the `ANTHROPIC_API_KEY` environment variable (or
+`claudeKey`); Gemini's for the list is `geminiKey`.
+
+```json
+{ "type": "ai", "title": "AI models", "interval": "1h", "config": { "geminiKey": "${GEMINI_API_KEY}" } }
+```
+
 ### Lights
 
 The `lights` monitor reads and switches lights through Home Assistant's
@@ -575,7 +599,7 @@ drawn from the same few block types, so clients need no per-monitor code:
 | Block `type` | Fields |
 | --- | --- |
 | `stats` | `stats`: `label`, `value`, `detail`, `tone`, `series` (a sparkline), `icon` (a weather picture by the value: `sun`, `moon`, `sun-cloud`, `moon-cloud`, `cloud`, `fog`, `drizzle`, `rain`, `showers`, `snow` or `storm`), `level` (0 to 1, drawn faintly behind the chip as a chart joined to its neighbours', e.g. the chance of rain; 0 draws along the bottom, absent draws nothing); `chips` (draw them as a grid of chips, e.g. the watchlist's charts) and `views` (`label` and `stats` each: sets to switch between, e.g. Today, 1W and 1M; `stats` is the first's) |
-| `table` | `columns` (`title`, `align`, `fill` for the column that takes spare width) and `rows` of cells (`text`, `tone`, `url`, `detail` for a smaller line under the text, `open`: an app on the client's own machine to open `url` with, where it's installed (else the browser opens it as usual), and `local`: `{"app", "arg"}`, a button for an app on the client's own machine, e.g. the watchlist's downloader, drawn only by clients that have it; and `action`: `{"type", "id", "label"}`, a button that sends the monitor that action, with `label` saying what it does, e.g. eBay's ignore) |
+| `table` | `columns` (`title`, `align`, `fill` for the column that takes spare width) and `rows` of cells (`text`, `tone`, `url`, `detail` for a smaller line under the text, `open`: an app on the client's own machine to open `url` with, where it's installed (else the browser opens it as usual), and `local`: `{"app", "arg"}`, a button for an app on the client's own machine, e.g. the watchlist's downloader, drawn only by clients that have it; and `action`: `{"type", "id", "label"}`, a button that sends the monitor that action, with `label` saying what it does, e.g. eBay's ignore; and `choice`: `{"action", "id", "value", "options": [{"label", "value"}], "hint"}`, a drop-down in place of the text that sends `action` with `id` and the picked option's value as text, e.g. the `ai` monitor's models; clients that don't draw it show `text`) |
 | `list` | `items`: `title`, `subtitle`, `detail`, `url`, `open` (as for a table cell), `image`, `tone` |
 | `checklist` | `items` (`id`, `title`, `done`, `tone`) with checkboxes that send `toggle` and `delete` actions; `addHint` adds a box for `add`, `deleteHint` names what delete does when it isn't deleting (the reorders' "Stop tracking") and `noDelete` leaves it out; `movable` adds up and down buttons that send `move` with text `up` or `down` (reordering the to-do list), named by `upHint` and `downHint` when they do something else (the chores' days); `switch` draws items as on/off switches, on while not `done` (the lights); an item's `slider` (`value` 0-100, `action`, `hint`) is a control that sends its `action` with the new value as text when let go, and its `colour` (`value` `#rrggbb`, `action`, `wheel` for any colour, `presets` of `label`, `value` sent, `show` drawn) a swatch that opens a picker sending its `action` with the colour (the lights) |
 | `text` | `text` |

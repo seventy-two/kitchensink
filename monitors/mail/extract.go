@@ -1,12 +1,10 @@
 package mail
 
 import (
-	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"net/http"
 	"regexp"
@@ -17,6 +15,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/seventy-two/kitchensink/ai"
 	"github.com/seventy-two/kitchensink/monitor"
 	"github.com/seventy-two/kitchensink/monitors/calendar"
 	"github.com/seventy-two/kitchensink/monitors/chores"
@@ -27,7 +26,8 @@ type Gemini struct {
 	// APIKey is a Gemini API key; use "${NAME}" to keep it in the
 	// environment.
 	APIKey string `json:"apiKey"`
-	// Model defaults to gemini-3.5-flash-lite: picking details out of an
+	// Model defaults to gemini-3.5-flash-lite, until another is chosen
+	// in the "ai" monitor: picking details out of an
 	// email is simple work, and there can be hundreds on a first read.
 	Model string `json:"model"`
 	// Context tells Gemini a little about you, e.g. who lives with you, to
@@ -37,7 +37,10 @@ type Gemini struct {
 	URL string `json:"url"`
 }
 
-type gemini struct{ Gemini }
+type gemini struct {
+	ai      *ai.Client
+	context string
+}
 
 // geminiTimeout bounds each request to Gemini.
 const geminiTimeout = 60 * time.Second
@@ -46,13 +49,9 @@ func newGemini(c Gemini) (*gemini, error) {
 	if c.APIKey == "" {
 		return nil, fmt.Errorf("gemini needs an apiKey")
 	}
-	if c.Model == "" {
-		c.Model = "gemini-3.5-flash-lite"
-	}
-	if c.URL == "" {
-		c.URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
-	}
-	return &gemini{c}, nil
+	client := ai.New(ai.Use{ID: "mail", Label: "Mail", Gemini: cmp.Or(c.Model, "gemini-3.5-flash-lite")},
+		ai.GeminiConfig{APIKey: c.APIKey, URL: c.URL}, ai.WithTimeout(geminiTimeout))
+	return &gemini{ai: client, context: c.Context}, nil
 }
 
 const instruction = `You read one email for someone's personal dashboard and pull out only what belongs on their calendar, to-do list or chores. Most emails, including marketing that merely mentions orders or bookings, give nothing: then return kind "other" and empty lists.
@@ -154,75 +153,18 @@ func (m *Monitor) prompt(h header, text string, now time.Time) string {
 	return b.String()
 }
 
-// errUnavailable is a Gemini error that isn't about the email: the key's
+// errUnavailable is an error that isn't about the email: the key's
 // refused, out of credit or rate-limited, so every email would fail.
-var errUnavailable = errors.New("Gemini unavailable")
+var errUnavailable = ai.ErrUnavailable
 
 func (g *gemini) extract(ctx context.Context, client *http.Client, input string) (extraction, error) {
 	sys := instruction
-	if g.Context != "" {
-		sys += "\n\nAbout them: " + g.Context
-	}
-	body, _ := json.Marshal(map[string]any{
-		"model":              g.Model,
-		"input":              input,
-		"system_instruction": sys,
-		"generation_config":  map[string]any{"thinking_level": "low", "max_output_tokens": 8000},
-		"response_format":    map[string]any{"type": "text", "mime_type": "application/json", "schema": schema},
-		"store":              false,
-	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.URL, bytes.NewReader(body))
-	if err != nil {
-		return extraction{}, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-goog-api-key", g.APIKey)
-	// A long email can take Gemini longer than the engine's usual
-	// timeout.
-	slow := *client
-	slow.Timeout = geminiTimeout
-	resp, err := slow.Do(req)
-	if err != nil {
-		return extraction{}, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
-		err := fmt.Errorf("returned %s: %s", resp.Status, strings.TrimSpace(string(msg)))
-		switch resp.StatusCode {
-		case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden, http.StatusTooManyRequests:
-			return extraction{}, fmt.Errorf("%w: %w", errUnavailable, err)
-		}
-		return extraction{}, err
-	}
-	var in struct {
-		Steps []struct {
-			Type    string `json:"type"`
-			Content []struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
-			} `json:"content"`
-		} `json:"steps"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&in); err != nil {
-		return extraction{}, fmt.Errorf("decoding the reply: %w", err)
-	}
-	var text strings.Builder
-	for _, s := range in.Steps {
-		if s.Type != "model_output" {
-			continue
-		}
-		for _, c := range s.Content {
-			if c.Type == "text" {
-				text.WriteString(c.Text)
-			}
-		}
+	if g.context != "" {
+		sys += "\n\nAbout them: " + g.context
 	}
 	var x extraction
-	if err := json.Unmarshal([]byte(text.String()), &x); err != nil {
-		return extraction{}, fmt.Errorf("the reply isn't the JSON asked for: %w (%q)", err, clip(text.String(), 400))
-	}
-	return x, nil
+	err := g.ai.Ask(ctx, client, ai.Request{System: sys, Text: input, Schema: schema, MaxTokens: 8000}, &x)
+	return x, err
 }
 
 // todoMaxAge is how old an email can be for its to-dos to be added: older

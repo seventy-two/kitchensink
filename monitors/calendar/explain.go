@@ -1,17 +1,15 @@
 package calendar
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/seventy-two/kitchensink/ai"
 	"github.com/seventy-two/kitchensink/monitor"
 )
 
@@ -20,7 +18,8 @@ type Explain struct {
 	// APIKey is a Gemini API key; use "${NAME}" to keep it in the
 	// environment.
 	APIKey string `json:"apiKey"`
-	// Model defaults to gemini-3.8-flash.
+	// Model defaults to gemini-3.8-flash, until another is chosen in
+	// the "ai" monitor.
 	Model string `json:"model"`
 	// Context tells Gemini a little about you, to help it guess, e.g.
 	// where you live and what you're often up to.
@@ -30,8 +29,7 @@ type Explain struct {
 }
 
 const (
-	defaultModel      = "gemini-3.8-flash"
-	defaultExplainURL = "https://generativelanguage.googleapis.com/v1beta/interactions"
+	defaultModel = "gemini-3.8-flash"
 	// notesKey is the state key holding today's notes, by event.
 	notesKey = "notes"
 )
@@ -158,82 +156,38 @@ func (m *Monitor) askGemini(ctx context.Context, client *http.Client, events []o
 		instruction += "\n\nAbout them: " + cfg.Context
 	}
 
-	body, _ := json.Marshal(map[string]any{
-		"model":              cfg.Model,
-		"input":              input,
-		"system_instruction": instruction,
-		"generation_config":  map[string]any{"thinking_level": "low", "max_output_tokens": 4000},
-		// Search finds what's actually on: fixtures, films, gigs.
-		"tools": []any{map[string]any{"type": "google_search"}},
-		"response_format": map[string]any{
-			"type":      "text",
-			"mime_type": "application/json",
-			"schema": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"notes": map[string]any{
-						"type": "array",
-						"items": map[string]any{
-							"type": "object",
-							"properties": map[string]any{
-								"id":   map[string]any{"type": "integer"},
-								"note": map[string]any{"type": "string"},
-							},
-							"required": []string{"id", "note"},
-						},
-					},
-				},
-				"required": []string{"notes"},
-			},
-		},
-		"store": false,
-	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.URL, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-goog-api-key", cfg.APIKey)
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
-		return nil, fmt.Errorf("gemini returned %s: %s", resp.Status, strings.TrimSpace(string(msg)))
-	}
-	var in struct {
-		Steps []struct {
-			Type    string `json:"type"`
-			Content []struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
-			} `json:"content"`
-		} `json:"steps"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&in); err != nil {
-		return nil, fmt.Errorf("decoding gemini's reply: %w", err)
-	}
-	var text strings.Builder
-	for _, s := range in.Steps {
-		if s.Type != "model_output" {
-			continue
-		}
-		for _, c := range s.Content {
-			if c.Type == "text" {
-				text.WriteString(c.Text)
-			}
-		}
-	}
 	var answer struct {
 		Notes []struct {
 			ID   int    `json:"id"`
 			Note string `json:"note"`
 		} `json:"notes"`
 	}
-	if err := json.Unmarshal([]byte(text.String()), &answer); err != nil {
-		return nil, fmt.Errorf("gemini's reply isn't the JSON asked for: %w", err)
+	err := m.ai.Ask(ctx, client, ai.Request{
+		System:    instruction,
+		Text:      input,
+		MaxTokens: 4000,
+		// Search finds what's actually on: fixtures, films, gigs.
+		Search: true,
+		Schema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"notes": map[string]any{
+					"type": "array",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"id":   map[string]any{"type": "integer"},
+							"note": map[string]any{"type": "string"},
+						},
+						"required": []string{"id", "note"},
+					},
+				},
+			},
+			"required": []string{"notes"},
+		},
+	}, &answer)
+	if err != nil {
+		return nil, err
 	}
 	out := map[int]string{}
 	for _, n := range answer.Notes {

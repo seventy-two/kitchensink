@@ -8,12 +8,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/seventy-two/kitchensink/ai"
 	"github.com/seventy-two/kitchensink/monitor"
 	"github.com/seventy-two/kitchensink/monitor/monitortest"
 	"github.com/stretchr/testify/require"
 )
 
-// TestLiveGemini reads a real receipt with the real Gemini API, then asks
+// TestLiveGemini reads a real receipt with the real Gemini (or Claude) API, then asks
 // for recipes; it runs only with GROCERIES_LIVE_GEMINI_KEY set, and
 // GROCERIES_LIVE_PDF naming a receipt (and GROCERIES_LIVE_TEXT its email).
 func TestLiveGemini(t *testing.T) {
@@ -27,7 +28,14 @@ func TestLiveGemini(t *testing.T) {
 	cfg, _ := json.Marshal(map[string]any{"gemini": Gemini{APIKey: key, Model: os.Getenv("GROCERIES_LIVE_MODEL"), Context: os.Getenv("GROCERIES_LIVE_CONTEXT")}})
 	m, err := New(cfg)
 	require.NoError(t, err)
-	m.gemini.URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
+	// GROCERIES_LIVE_PROVIDER=claude asks Claude instead (with
+	// ANTHROPIC_API_KEY set), and GROCERIES_LIVE_CLAUDE_MODEL picks its model.
+	if p := os.Getenv("GROCERIES_LIVE_PROVIDER"); p != "" {
+		require.NoError(t, ai.Shared.Set("groceries", "provider", p))
+	}
+	if cm := os.Getenv("GROCERIES_LIVE_CLAUDE_MODEL"); cm != "" {
+		require.NoError(t, ai.Shared.Set("groceries", "claude", cm))
+	}
 	o := Order{Email: "<live@x>", From: "Waitrose & Partners <no_reply@waitrose.co.uk>", Subject: "Order receipt",
 		Received: time.Now(), Text: string(text), Files: []File{{Name: "receipt.pdf", Type: "application/pdf", Data: data}}}
 	act, _ := json.Marshal(o)

@@ -4,6 +4,7 @@
 package calendar
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/seventy-two/kitchensink/ai"
 	"github.com/seventy-two/kitchensink/monitor"
 )
 
@@ -59,6 +61,8 @@ type Monitor struct {
 	cfg    Config
 	loc    *time.Location
 	remind time.Duration
+	// ai writes the notes, if Explain is set.
+	ai *ai.Client
 }
 
 // New builds the monitor from its JSON config.
@@ -94,14 +98,12 @@ func New(raw json.RawMessage) (*Monitor, error) {
 		if e.APIKey == "" {
 			return nil, fmt.Errorf("explain needs an apiKey")
 		}
-		if e.Model == "" {
-			e.Model = defaultModel
-		}
-		if e.URL == "" {
-			e.URL = defaultExplainURL
-		}
 	}
 	m := &Monitor{cfg: c, loc: loc, remind: 10 * time.Minute}
+	if e := c.Explain; e != nil {
+		m.ai = ai.New(ai.Use{ID: "calendar", Label: "Calendar notes", Gemini: cmp.Or(e.Model, defaultModel)},
+			ai.GeminiConfig{APIKey: e.APIKey, URL: e.URL})
+	}
 	if c.RemindMinutes != nil {
 		m.remind = time.Duration(*c.RemindMinutes) * time.Minute
 	}

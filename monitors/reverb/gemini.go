@@ -1,16 +1,16 @@
 package reverb
 
 import (
-	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
-	"fmt"
 	"html"
-	"io"
 	"net/http"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/seventy-two/kitchensink/ai"
 )
 
 // Gemini checks each listing against what's wanted, and names it.
@@ -18,7 +18,8 @@ type Gemini struct {
 	// APIKey is a Gemini API key; use "${NAME}" to keep it in the
 	// environment.
 	APIKey string `json:"apiKey"`
-	// Model defaults to gemini-3.8-flash: telling one version of a model
+	// Model defaults to gemini-3.8-flash, until another is chosen in
+	// the "ai" monitor: telling one version of a model
 	// from another needs what it knows of them, which the lite model is
 	// weaker on.
 	Model string `json:"model"`
@@ -26,16 +27,11 @@ type Gemini struct {
 	URL string `json:"url"`
 }
 
-type gemini struct{ Gemini }
+type gemini struct{ ai *ai.Client }
 
 func newGemini(c Gemini) *gemini {
-	if c.Model == "" {
-		c.Model = "gemini-3.8-flash"
-	}
-	if c.URL == "" {
-		c.URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
-	}
-	return &gemini{c}
+	return &gemini{ai.New(ai.Use{ID: "reverb", Label: "Reverb", Gemini: cmp.Or(c.Model, "gemini-3.8-flash")},
+		ai.GeminiConfig{APIKey: c.APIKey, URL: c.URL}, ai.WithTimeout(geminiTimeout))}
 }
 
 const instruction = `You check Reverb listings for someone's personal dashboard against what they're looking for, given below.
@@ -110,60 +106,18 @@ func (g *gemini) judge(ctx context.Context, client *http.Client, want string, ls
 		list = append(list, in{l.id(), l.Title, l.Make, l.Model, l.Year, l.Finish, strings.Join(cats, "; "), plain(l.Description)})
 	}
 	input, _ := json.Marshal(list)
-	body, _ := json.Marshal(map[string]any{
-		"model":              g.Model,
-		"input":              "Check each listing, by its id:\n" + string(input),
-		"system_instruction": instruction + "\n\nWhat they're looking for:\n" + want,
-		"generation_config":  map[string]any{"thinking_level": "low", "max_output_tokens": 8000},
-		"response_format":    map[string]any{"type": "text", "mime_type": "application/json", "schema": schema},
-		"store":              false,
-	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.URL, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-goog-api-key", g.APIKey)
-	slow := *client
-	slow.Timeout = geminiTimeout
-	resp, err := slow.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
-		return nil, fmt.Errorf("Gemini returned %s: %s", resp.Status, strings.TrimSpace(string(msg)))
-	}
-	var out struct {
-		Steps []struct {
-			Type    string `json:"type"`
-			Content []struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
-			} `json:"content"`
-		} `json:"steps"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
-		return nil, fmt.Errorf("decoding Gemini's reply: %w", err)
-	}
-	var text strings.Builder
-	for _, s := range out.Steps {
-		if s.Type != "model_output" {
-			continue
-		}
-		for _, c := range s.Content {
-			if c.Type == "text" {
-				text.WriteString(c.Text)
-			}
-		}
-	}
 	var got []struct {
 		ID, Name, Note string
 		Match          bool
 	}
-	if err := json.Unmarshal([]byte(text.String()), &got); err != nil {
-		return nil, fmt.Errorf("Gemini's reply isn't the JSON asked for: %w", err)
+	err := g.ai.Ask(ctx, client, ai.Request{
+		System:    instruction + "\n\nWhat they're looking for:\n" + want,
+		Text:      "Check each listing, by its id:\n" + string(input),
+		Schema:    schema,
+		MaxTokens: 8000,
+	}, &got)
+	if err != nil {
+		return nil, err
 	}
 	asked := map[string]bool{}
 	for _, l := range ls {

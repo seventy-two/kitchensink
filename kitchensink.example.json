@@ -20,6 +20,12 @@
       }
     },
     {
+      "type": "ai",
+      "title": "AI models",
+      "interval": "1h",
+      "config": { "geminiKey": "${GEMINI_API_KEY}" }
+    },
+    {
       "type": "todo",
       "title": "To do",
       "interval": "1h"

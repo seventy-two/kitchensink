@@ -1,16 +1,16 @@
 package groceries
 
 import (
-	"bytes"
+	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/seventy-two/kitchensink/ai"
 )
 
 // Gemini configures the model that reads orders and suggests recipes.
@@ -18,7 +18,8 @@ type Gemini struct {
 	// APIKey is a Gemini API key; use "${NAME}" to keep it in the
 	// environment.
 	APIKey string `json:"apiKey"`
-	// Model defaults to gemini-3.8-flash: how long food keeps and what
+	// Model defaults to gemini-3.8-flash, until another is chosen in
+	// the "ai" monitor: how long food keeps and what
 	// to cook with it need what it knows, and it's asked rarely (once an
 	// order, and for recipes when what's going off changes).
 	Model string `json:"model"`
@@ -29,7 +30,10 @@ type Gemini struct {
 	URL string `json:"url"`
 }
 
-type gemini struct{ Gemini }
+type gemini struct {
+	ai      *ai.Client
+	context string
+}
 
 // geminiTimeout bounds each request: reading a long receipt can be slow.
 const geminiTimeout = 90 * time.Second
@@ -38,13 +42,9 @@ func newGemini(c Gemini) (*gemini, error) {
 	if c.APIKey == "" {
 		return nil, errors.New("gemini needs an apiKey")
 	}
-	if c.Model == "" {
-		c.Model = "gemini-3.8-flash"
-	}
-	if c.URL == "" {
-		c.URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
-	}
-	return &gemini{c}, nil
+	client := ai.New(ai.Use{ID: "groceries", Label: "Food", Gemini: cmp.Or(c.Model, "gemini-3.8-flash")},
+		ai.GeminiConfig{APIKey: c.APIKey, URL: c.URL}, ai.WithTimeout(geminiTimeout))
+	return &gemini{ai: client, context: c.Context}, nil
 }
 
 const orderInstruction = `You read a supermarket home delivery's receipt for someone's kitchen dashboard and list the food and drink it brought, with how long each keeps, so they can use things before they go off.
@@ -95,17 +95,16 @@ type orderReply struct {
 
 // orderInput is the receipt as Gemini's given it: its PDFs, then the
 // email.
-func (m *Monitor) orderInput(o Order) []any {
-	var in []any
+func (m *Monitor) orderInput(o Order) ai.Request {
+	r := ai.Request{Text: fmt.Sprintf("Email received %s from %s\nSubject: %s\n\n%s",
+		o.Received.In(m.loc).Format("Mon 2 Jan 2006 15:04"), o.From, o.Subject, o.Text)}
 	for _, f := range o.Files {
-		in = append(in, map[string]any{"type": "document", "mime_type": f.Type, "data": f.Data}) // base64 by encoding/json
+		r.Files = append(r.Files, ai.File{Type: f.Type, Data: f.Data})
 	}
-	text := fmt.Sprintf("Email received %s from %s\nSubject: %s\n\n%s",
-		o.Received.In(m.loc).Format("Mon 2 Jan 2006 15:04"), o.From, o.Subject, o.Text)
-	return append(in, map[string]any{"type": "text", "text": text})
+	return r
 }
 
-func (g *gemini) order(ctx context.Context, client *http.Client, input []any) (orderReply, error) {
+func (g *gemini) order(ctx context.Context, client *http.Client, input ai.Request) (orderReply, error) {
 	var x orderReply
 	err := g.ask(ctx, client, orderInstruction, input, orderSchema, &x)
 	return x, err
@@ -185,85 +184,23 @@ func (m *Monitor) recipesInput(soon, all []Item, today time.Time) string {
 
 func (g *gemini) recipes(ctx context.Context, client *http.Client, input string, n int) ([]Recipe, error) {
 	var list []Recipe
-	err := g.ask(ctx, client, recipesInstruction, fmt.Sprintf("%s\nSuggest %d recipes.", input, n), recipesSchema, &list)
+	err := g.ask(ctx, client, recipesInstruction, ai.Request{Text: fmt.Sprintf("%s\nSuggest %d recipes.", input, n)}, recipesSchema, &list)
 	if len(list) > n {
 		list = list[:n]
 	}
 	return list, err
 }
 
-// errUnavailable is a Gemini error that isn't about what was asked: the
-// key's refused, out of credit or rate-limited.
-var errUnavailable = errors.New("Gemini unavailable")
+// errUnavailable is an error that isn't about what was asked: the key's
+// refused, out of credit or rate-limited.
+var errUnavailable = ai.ErrUnavailable
 
 // ask sends one request and decodes the JSON reply into out.
-func (g *gemini) ask(ctx context.Context, client *http.Client, instruction string, input any, schema map[string]any, out any) error {
-	sys := instruction
-	if g.Context != "" {
-		sys += "\n\nAbout them: " + g.Context
+func (g *gemini) ask(ctx context.Context, client *http.Client, instruction string, input ai.Request, schema map[string]any, out any) error {
+	input.System = instruction
+	if g.context != "" {
+		input.System += "\n\nAbout them: " + g.context
 	}
-	body, err := json.Marshal(map[string]any{
-		"model":              g.Model,
-		"input":              input,
-		"system_instruction": sys,
-		"generation_config":  map[string]any{"thinking_level": "low", "max_output_tokens": 16000},
-		"response_format":    map[string]any{"type": "text", "mime_type": "application/json", "schema": schema},
-		"store":              false,
-	})
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.URL, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-goog-api-key", g.APIKey)
-	slow := *client
-	slow.Timeout = geminiTimeout
-	resp, err := slow.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
-		err := fmt.Errorf("returned %s: %s", resp.Status, strings.TrimSpace(string(msg)))
-		switch resp.StatusCode {
-		case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden, http.StatusTooManyRequests:
-			return fmt.Errorf("%w: %w", errUnavailable, err)
-		}
-		return err
-	}
-	var in struct {
-		Steps []struct {
-			Type    string `json:"type"`
-			Content []struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
-			} `json:"content"`
-		} `json:"steps"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&in); err != nil {
-		return fmt.Errorf("decoding the reply: %w", err)
-	}
-	var text strings.Builder
-	for _, s := range in.Steps {
-		if s.Type != "model_output" {
-			continue
-		}
-		for _, c := range s.Content {
-			if c.Type == "text" {
-				text.WriteString(c.Text)
-			}
-		}
-	}
-	if err := json.Unmarshal([]byte(text.String()), out); err != nil {
-		t := text.String()
-		if len(t) > 300 {
-			t = t[:300] + "…"
-		}
-		return fmt.Errorf("the reply isn't the JSON asked for: %w (%q)", err, t)
-	}
-	return nil
+	input.Schema, input.MaxTokens = schema, 16000
+	return g.ai.Ask(ctx, client, input, out)
 }

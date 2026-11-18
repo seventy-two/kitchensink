@@ -354,7 +354,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 			// Out of credit, say: no fault of this email's, so it keeps
 			// its place (three went unread on 24 Oct 2026 that way).
 			if errors.Is(err, errUnavailable) {
-				readErr = "Gemini: " + err.Error()
+				readErr = err.Error()
 				break
 			}
 			if failed[h.ID]++; failed[h.ID] >= maxAttempts {
@@ -366,7 +366,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 				queue = queue[1:]
 				continue
 			}
-			readErr = "Gemini: " + err.Error()
+			readErr = err.Error()
 			break // try again soon
 		}
 		delete(failed, h.ID)

@@ -433,6 +433,28 @@ type Cell struct {
 	// Action, if set, is a button that sends the monitor an action (see
 	// Actor), drawn in place of the cell's text.
 	Action *CellAction `json:"action,omitempty"`
+	// Choice, if set, is a drop-down drawn in place of the cell's text,
+	// e.g. which model a monitor uses. Clients that don't know it show
+	// Text, which should be the chosen option's label.
+	Choice *Choice `json:"choice,omitempty"`
+}
+
+// Choice is a table cell's drop-down: picking an option, the client sends
+// the monitor an Action of type Action, ID ID and Text the option's Value.
+type Choice struct {
+	Action string `json:"action"`
+	ID     string `json:"id,omitempty"`
+	// Value is the option chosen now.
+	Value   string   `json:"value"`
+	Options []Option `json:"options"`
+	// Hint says what it chooses, e.g. for a tooltip.
+	Hint string `json:"hint,omitempty"`
+}
+
+// Option is one of a Choice's options.
+type Option struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
 }
 
 // CellAction is a table cell's button: clicked, the client sends the

@@ -15,6 +15,7 @@ import (
 	"time"
 	_ "time/tzdata" // monitors take IANA zones regardless of the host's zone data
 
+	"github.com/seventy-two/kitchensink/ai"
 	"github.com/seventy-two/kitchensink/config"
 	"github.com/seventy-two/kitchensink/engine"
 	"github.com/seventy-two/kitchensink/monitor"
@@ -24,6 +25,7 @@ import (
 
 	// Each monitor kind registers itself; import a package to make its
 	// kind available to the config file.
+	_ "github.com/seventy-two/kitchensink/monitors/aimodels"
 	_ "github.com/seventy-two/kitchensink/monitors/autotrader"
 	_ "github.com/seventy-two/kitchensink/monitors/battery"
 	_ "github.com/seventy-two/kitchensink/monitors/calendar"
@@ -83,6 +85,10 @@ func run(path string, check bool) error {
 		return fmt.Errorf("opening database: %w", err)
 	}
 	defer st.Close()
+	// Which model each monitor asks is kept with the "ai" monitor's state.
+	if err := ai.Shared.Attach(st.State("ai")); err != nil {
+		return err
+	}
 
 	log := slog.Default()
 	eng, err := engine.New(st, specs, engine.Options{Log: log, Notifiers: notifiers})
