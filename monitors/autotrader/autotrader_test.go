@@ -202,3 +202,18 @@ func TestAdvertsBeforeSightingsCountAsOld(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, res.Background, "already there before sightings were kept")
 }
+
+func TestDealersOnly(t *testing.T) {
+	srv := monitortest.Serve(t, "/dev/null")
+	dealer := strings.Replace(listingJSON("2", "NATURAL_LISTING"), `"sellerType":"PRIVATE"`, `"sellerType":"TRADE"`, 1)
+	srv.Reply(http.StatusOK, results(listingJSON("1", "NATURAL_LISTING"), dealer))
+	raw, _ := json.Marshal(map[string]any{"searchURL": testSearchURL, "gatewayURL": srv.URL, "dealersOnly": true})
+	m, err := New(raw)
+	require.NoError(t, err)
+
+	res, err := m.Poll(context.Background(), monitortest.Env(now))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"advert:2"}, monitortest.Keys(res.Events), "the private seller's advert is left out")
+	assert.Equal(t, "1 listed", res.Blocks[0].Title)
+	assert.Equal(t, "Mazda3 · Automatic · up to £14,000 · 2021 on · dealers", res.Subtitle)
+}

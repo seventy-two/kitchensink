@@ -61,12 +61,15 @@ type Config struct {
 	SearchURL string `json:"searchURL"`
 	// GatewayURL replaces AutoTrader's API endpoint, for tests.
 	GatewayURL string `json:"gatewayURL"`
+	// DealersOnly leaves out private sellers' adverts.
+	DealersOnly bool `json:"dealersOnly"`
 }
 
 // Monitor is the AutoTrader monitor.
 type Monitor struct {
-	search  *search
-	gateway string
+	search      *search
+	gateway     string
+	dealersOnly bool
 }
 
 // New builds the monitor from its JSON config.
@@ -82,7 +85,7 @@ func New(raw json.RawMessage) (*Monitor, error) {
 	if err != nil {
 		return nil, err
 	}
-	m := &Monitor{search: s, gateway: c.GatewayURL}
+	m := &Monitor{search: s, gateway: c.GatewayURL, dealersOnly: c.DealersOnly}
 	if m.gateway == "" {
 		m.gateway = gatewayURL
 	}
@@ -94,6 +97,9 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	if err != nil {
 		// If AutoTrader starts blocking us, the next poll just tries again.
 		return monitor.Result{}, err
+	}
+	if m.dealersOnly {
+		listings = dealers(listings)
 	}
 	var baselined bool
 	if _, err := env.State.Get(baselineKey, &baselined); err != nil {
@@ -130,7 +136,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		return monitor.Result{}, err
 	}
 
-	res := monitor.Result{Blocks: []monitor.Block{m.list(listings)}, Summary: summary(listings), Subtitle: m.search.describe(), Timely: true,
+	res := monitor.Result{Blocks: []monitor.Block{m.list(listings)}, Summary: summary(listings), Subtitle: m.subtitle(), Timely: true,
 		// Nothing new this week: off the dashboard until there is.
 		Background: !fresh}
 	for _, l := range listings {
@@ -238,6 +244,25 @@ func (m *Monitor) fetch(ctx context.Context, client *http.Client) ([]listing, er
 		}
 	}
 	return listings, nil
+}
+
+// subtitle describes the search, and says when private sellers are left out.
+func (m *Monitor) subtitle() string {
+	if m.dealersOnly {
+		return m.search.describe() + " · dealers"
+	}
+	return m.search.describe()
+}
+
+// dealers keeps only trade sellers' adverts.
+func dealers(listings []listing) []listing {
+	var out []listing
+	for _, l := range listings {
+		if l.SellerType == "TRADE" {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 func (m *Monitor) list(listings []listing) monitor.Block {

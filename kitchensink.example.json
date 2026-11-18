@@ -166,7 +166,7 @@
       "type": "autotrader",
       "title": "AutoTrader",
       "interval": "2h",
-      "config": { "searchURL": "${AUTOTRADER_SEARCH_URL}" }
+      "config": { "searchURL": "${AUTOTRADER_SEARCH_URL}", "dealersOnly": true }
     }
   ]
 }
