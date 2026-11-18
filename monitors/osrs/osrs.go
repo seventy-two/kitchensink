@@ -79,17 +79,36 @@ type Config struct {
 // womEvery is how often Wise Old Man is asked to update the player, at
 // most. The hiscores only change when the player logs out, and Dink's
 // hooks (which have the monitor poll after every kill) cover the time in
-// between, so an hourly update does.
-const womEvery = 55 * time.Minute
+// between, so WOM is only a backstop (the user's call: every 6 hours).
+const womEvery = 6 * time.Hour
+
+// womRetry is how long to wait after WOM fails before asking again. Its
+// API is often down or slow; a failure is only logged, and the last stats
+// (or Dink's alone) are shown meanwhile.
+const womRetry = 30 * time.Minute
+
+// womKey keeps the last WOM stats across restarts, so a restart doesn't
+// need WOM.
+const womKey = "wom"
+
+// womState is what womKey holds.
+type womState struct {
+	At    time.Time `json:"at"`
+	Stats stats     `json:"stats"`
+}
 
 // Monitor is the OSRS monitor.
 type Monitor struct {
 	cfg Config
 	loc *time.Location
 
-	// The player's stats from WOM, and when.
-	wom   stats
-	womAt time.Time
+	// The player's stats from WOM, and when; loaded tells whether
+	// womKey has been read since starting.
+	wom    stats
+	womAt  time.Time
+	loaded bool
+	// When WOM last failed, for the update and for the day's start.
+	womFailed, baseFailed time.Time
 }
 
 // New builds the monitor from its JSON config.
@@ -145,14 +164,13 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, m.loc)
 	day := midnight.Format(time.DateOnly)
 
-	if m.wom == nil || env.Now().Sub(m.womAt) >= womEvery {
-		wom, err := m.update(ctx, env.HTTP)
-		if err != nil {
-			return monitor.Result{}, err
-		}
-		m.wom, m.womAt = wom, env.Now()
+	if err := m.refreshWOM(ctx, env); err != nil {
+		return monitor.Result{}, err
 	}
 	current := m.wom
+	if current == nil {
+		current = stats{} // WOM hasn't answered yet: Dink's counts alone
+	}
 
 	// What Dink has sent is newer than WOM's, until WOM catches up.
 	var live, lastBig stats
@@ -171,13 +189,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		return monitor.Result{}, err
 	}
 	if base.Day != day {
-		start, err := m.before(ctx, env.HTTP, midnight.Add(5*time.Minute))
-		if err != nil {
-			return monitor.Result{}, err
-		}
-		if start == nil {
-			start = current // nothing earlier: today starts now
-		}
+		start, keep := m.dayStart(ctx, env, midnight, current)
 		// The hiscores only update at logout, so mid-session the snapshot
 		// lags. Until Dink speaks today, all it has counted is from before
 		// midnight (and once it has, today's Starts hold that instead).
@@ -185,8 +197,10 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 			start = merged(start, live)
 		}
 		base = baseline{Day: day, Stats: start}
-		if err := env.State.Set(baselineKey, base); err != nil {
-			return monitor.Result{}, err
+		if keep {
+			if err := env.State.Set(baselineKey, base); err != nil {
+				return monitor.Result{}, err
+			}
 		}
 	}
 
@@ -243,6 +257,61 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		Events:       events,
 		Next:         midnight.AddDate(0, 0, 1).Add(time.Minute).Sub(now),
 	}, nil
+}
+
+// refreshWOM loads the last WOM stats from state after a restart, then
+// asks WOM again when they're womEvery old. A failure is only logged
+// (WOM is unreliable and Dink covers the gap) and retried after
+// womRetry; only a state error is returned.
+func (m *Monitor) refreshWOM(ctx context.Context, env monitor.Env) error {
+	if !m.loaded {
+		var w womState
+		if _, err := env.State.Get(womKey, &w); err != nil {
+			return err
+		}
+		m.wom, m.womAt, m.loaded = w.Stats, w.At, true
+	}
+	now := env.Now()
+	if m.wom != nil && now.Sub(m.womAt) < womEvery {
+		return nil
+	}
+	if now.Sub(m.womFailed) < womRetry {
+		return nil
+	}
+	wom, err := m.update(ctx, env.HTTP)
+	if err != nil {
+		m.womFailed = now
+		if env.Log != nil {
+			env.Log.Warn("osrs: Wise Old Man update failed; using the last stats", "err", err)
+		}
+		return nil
+	}
+	m.wom, m.womAt = wom, now
+	return env.State.Set(womKey, womState{At: now, Stats: wom})
+}
+
+// dayStart is the player's stats at midnight, from WOM's last snapshot
+// before it, and whether it's sure enough to keep for the day. When WOM
+// fails, stats fetched before midnight will do (and are kept); failing
+// that, current stands in until WOM answers (tried again after womRetry).
+func (m *Monitor) dayStart(ctx context.Context, env monitor.Env, midnight time.Time, current stats) (stats, bool) {
+	if env.Now().Sub(m.baseFailed) >= womRetry {
+		start, err := m.before(ctx, env.HTTP, midnight.Add(5*time.Minute))
+		if err == nil {
+			if start == nil {
+				return current, true // nothing earlier: today starts now
+			}
+			return start, true
+		}
+		m.baseFailed = env.Now()
+		if env.Log != nil {
+			env.Log.Warn("osrs: Wise Old Man snapshots failed", "err", err)
+		}
+	}
+	if m.wom != nil && m.womAt.Before(midnight) {
+		return m.wom, true
+	}
+	return current, false
 }
 
 // merged is a with each of b's numbers that's higher.

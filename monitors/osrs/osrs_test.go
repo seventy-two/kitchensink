@@ -125,29 +125,68 @@ func TestToday(t *testing.T) {
 	assert.Equal(t, "13.25M xp", res.Blocks[0].Rows[3][2].Text)
 	assert.Equal(t, 4*time.Hour+time.Minute, res.Next, "wakes just after midnight to mark the new day")
 
-	// A poll soon after (as after a hook) doesn't ask WOM again.
-	env.Now = func() time.Time { return now.Add(50 * time.Minute) }
+	// A poll hours later (as after a hook) doesn't ask WOM again, nor read
+	// the day's start again.
+	env.Now = func() time.Time { return now.Add(3 * time.Hour) }
 	_, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
 	assert.Equal(t, 1, f.count("POST /players/GTX 480"))
+	assert.Equal(t, 1, f.count("GET /players/GTX 480/snapshots"), "the day's start is read once")
 
-	// Later the same day: WOM refuses an update so soon, so the latest
-	// snapshot does; the day's start is kept.
+	// Six hours on (a new day too): WOM refuses an update so soon, so the
+	// latest snapshot does, and the new day reads its start again.
 	f.mu.Lock()
 	f.limited = true
 	f.mu.Unlock()
-	env.Now = func() time.Time { return now.Add(time.Hour) }
-	res, err = m.Poll(context.Background(), env)
-	require.NoError(t, err)
-	assert.Len(t, res.Summary, 4)
-	assert.Equal(t, 1, f.count("GET /players/GTX 480"))
-	assert.Equal(t, 1, f.count("GET /players/GTX 480/snapshots"), "the day's start is read once")
-
-	// A new day reads its start again.
-	env.Now = func() time.Time { return now.Add(5 * time.Hour) }
+	env.Now = func() time.Time { return now.Add(6 * time.Hour) }
 	_, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
+	assert.Equal(t, 2, f.count("POST /players/GTX 480"))
+	assert.Equal(t, 1, f.count("GET /players/GTX 480"))
 	assert.Equal(t, 2, f.count("GET /players/GTX 480/snapshots"))
+
+	// After a restart, the stats kept in state do, without WOM.
+	m = newMonitor(t, f)
+	env.Now = func() time.Time { return now.Add(7 * time.Hour) }
+	_, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Equal(t, 2, f.count("POST /players/GTX 480"))
+}
+
+// When WOM is down, the poll still succeeds: on what it last had, or on
+// Dink's counts alone, and it doesn't keep asking.
+func TestWOMDown(t *testing.T) {
+	var calls int
+	var mu sync.Mutex
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calls++
+		mu.Unlock()
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	t.Cleanup(down.Close)
+	raw, _ := json.Marshal(map[string]any{"player": "GTX 480", "womURL": down.URL, "hookSecret": "s3cret"})
+	m, err := New(raw)
+	require.NoError(t, err)
+	env := monitortest.Env(now)
+
+	res, err := m.Poll(context.Background(), env)
+	require.NoError(t, err, "a WOM failure isn't the monitor's")
+	assert.Equal(t, []monitor.Stat{{Label: "Today", Value: "Nothing yet", Tone: monitor.ToneMuted}}, res.Summary)
+	assert.Equal(t, 2, calls, "the update and the day's start")
+	var base baseline
+	ok, _ := env.State.Get(baselineKey, &base)
+	assert.False(t, ok, "a stand-in start isn't kept")
+
+	env.Now = func() time.Time { return now.Add(10 * time.Minute) }
+	_, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Equal(t, 2, calls, "not asked again so soon")
+
+	env.Now = func() time.Time { return now.Add(31 * time.Minute) }
+	_, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Equal(t, 4, calls, "tried again after womRetry")
 }
 
 func TestNothingYet(t *testing.T) {

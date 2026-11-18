@@ -365,8 +365,11 @@ to the tracked bosses (anything else is dropped) and drops already there
 
 Notifications from other accounts and from leagues or Deadman worlds are
 ignored. Each one has the monitor poll, but it asks WOM to update at most
-hourly (the hiscores only change at logout), so skill XP between logins
-comes from Dink's login summary. Kill counts
+every 6 hours (the hiscores only change at logout), so skill XP between
+logins comes from Dink's login summary. WOM's API is unreliable, so its
+failures are only logged: the panel carries on with the last stats it gave
+(kept in state across restarts) plus Dink's, and asks again after 30
+minutes. Kill counts
 for bosses the hiscores don't rank yet start from the first kill Dink
 reports that day, rather than counting every earlier kill as today's.
 Big drops from before Dink can be filled in with a `lastBig` action,
