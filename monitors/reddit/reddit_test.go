@@ -130,6 +130,12 @@ func TestPollBusyKeepsLastRead(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, res.Blocks[0].Rows, 3)
 	assert.Equal(t, retryBusy, res.Next, "tries again once the limit's reset")
+
+	// An hour on with nothing read, the old posts aren't shown as current.
+	env.Now = func() time.Time { return now.Add(staleAfter + time.Minute) }
+	_, err = m.Poll(context.Background(), env)
+	assert.ErrorContains(t, err, "hasn't been read since")
+	assert.ErrorContains(t, err, errBusy.Error())
 }
 
 func TestParseFeedDoubleEscaped(t *testing.T) {

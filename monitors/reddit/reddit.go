@@ -242,6 +242,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		s = sub{Posts: posts, Read: env.Now()}
 		turn++
 	case err == errBusy:
+		s.Err = err.Error()
 		next = retryBusy
 	default:
 		s.Err = err.Error()
@@ -290,6 +291,16 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		}
 	}
 	res.SummaryBlock = &short
+	// Posts kept from long ago would pass for today's: once nothing's been
+	// read for a while, say so instead (clients show it as failed).
+	if newest := latestRead(subs); read > 0 && env.Now().Sub(newest) > staleAfter {
+		why := subs[name].Err
+		if why == "" {
+			why = "no answer"
+		}
+		return monitor.Result{}, fmt.Errorf("Reddit hasn't been read since %s (last try: %s)",
+			newest.UTC().Format("2 Jan 15:04 MST"), why)
+	}
 	if read == 0 {
 		if err != nil {
 			return monitor.Result{}, err
@@ -297,6 +308,21 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		return monitor.Result{}, fmt.Errorf("nothing read yet")
 	}
 	return res, nil
+}
+
+// staleAfter is how long without a good read before the posts are too
+// old to show as current.
+const staleAfter = time.Hour
+
+// latestRead is when any subreddit was last read.
+func latestRead(subs map[string]sub) time.Time {
+	var t time.Time
+	for _, s := range subs {
+		if s.Read.After(t) {
+			t = s.Read
+		}
+	}
+	return t
 }
 
 // relevantFor is how long a poll that finds a highlighted post keeps the
