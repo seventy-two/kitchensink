@@ -11,6 +11,7 @@ import (
 	"unicode"
 
 	"github.com/seventy-two/kitchensink/monitor"
+	"github.com/seventy-two/kitchensink/monitors/farming"
 )
 
 // Live updates come from Dink (https://github.com/pajlads/DinkPlugin), a
@@ -169,6 +170,9 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 	}
 	if a.Type == "importUniques" {
 		return m.importUniques(env, a.Data)
+	}
+	if a.Type == farming.OSRSAction {
+		return m.takeRolls(env, a.Data)
 	}
 	if a.Type == monitor.UploadAction {
 		return m.uploadProfile(env, a.Text)

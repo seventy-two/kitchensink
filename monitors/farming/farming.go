@@ -52,6 +52,10 @@ type Config struct {
 	Protect *bool `json:"protect"`
 	// Timezone is for the times shown. It defaults to Europe/London.
 	Timezone string `json:"timezone"`
+	// OSRS is the osrs monitor's ID, which is sent the Tangleroot rolls
+	// seen (checks and replantings) for its day's gains. It defaults to
+	// "osrs"; "-" sends nothing.
+	OSRS string `json:"osrs"`
 	// PricesURL and WOMURL replace the OSRS Wiki's prices API and Wise
 	// Old Man's, for tests.
 	PricesURL string `json:"pricesURL"`
@@ -90,6 +94,12 @@ func New(raw json.RawMessage) (*Monitor, error) {
 	}
 	if c.WOMURL == "" {
 		c.WOMURL = "https://api.wiseoldman.net/v2"
+	}
+	switch c.OSRS {
+	case "":
+		c.OSRS = "osrs"
+	case "-":
+		c.OSRS = ""
 	}
 	loc, err := time.LoadLocation(c.Timezone)
 	if err != nil {
@@ -179,6 +189,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		return res, nil
 	}
 	m.refresh(ctx, env)
+	m.sendRolls(ctx, env, pr)
 
 	now := env.Now()
 	board := m.board(pr, now)
@@ -205,16 +216,23 @@ func (m *Monitor) refresh(ctx context.Context, env monitor.Env) {
 		}
 		m.pricesAt = now
 	}
+	if m.level == 0 {
+		env.State.Get(levelKey, &m.level) // the last one known, until WOM answers
+	}
 	if m.cfg.Player != "" && now.Sub(m.levelAt) >= 6*time.Hour {
 		level, err := m.fetchLevel(ctx, env.HTTP)
 		if err != nil {
 			env.Log.Warn("fetching Farming level", "err", err)
-		} else {
+		} else if level > 0 {
 			m.level = level
+			env.State.Set(levelKey, level)
 		}
 		m.levelAt = now
 	}
 }
+
+// levelKey keeps the Farming level across restarts, as WOM is unreliable.
+const levelKey = "level"
 
 // row is one patch on the board.
 type row struct {

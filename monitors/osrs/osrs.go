@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/seventy-two/kitchensink/monitor"
+	"github.com/seventy-two/kitchensink/monitors/farming"
 )
 
 func init() {
@@ -212,7 +213,15 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	if err != nil {
 		return monitor.Result{}, err
 	}
-	rows := gains(from, merged(current, live), owned)
+	var rolls []farming.Roll
+	if _, err := env.State.Get(farmingKey, &rolls); err != nil {
+		return monitor.Result{}, err
+	}
+	var extra []gain
+	if g, ok := farmingGain(rolls, midnight); ok {
+		extra = append(extra, g)
+	}
+	rows := gains(from, merged(current, live), owned, extra...)
 	if err := m.publish(env, merged(current, live)); err != nil {
 		return monitor.Result{}, err
 	}
@@ -347,18 +356,27 @@ type gain struct {
 	metric
 	ID            string
 	Gained, Total int64
+	// Today, if set, is how the gain is shown, in place of Gained, and
+	// there's no total (Farming's patches checked).
+	Today string
 }
 
 // gains are the tracked metrics that went up, leaving out those whose pet
 // is owned (by petKey): kills and scores first, then XP, each most first.
-func gains(from, to stats, owned map[string]bool) []gain {
+// Farming comes from patches checked instead of XP (see farmingGain).
+func gains(from, to stats, owned map[string]bool, extra ...gain) []gain {
 	var out []gain
 	for id, mt := range tracked {
-		if owned[petKey(mt.Pet)] {
+		if owned[petKey(mt.Pet)] || id == "farming" {
 			continue
 		}
 		if d := to[id] - from[id]; d > 0 {
 			out = append(out, gain{metric: mt, ID: id, Gained: d, Total: to[id]})
+		}
+	}
+	for _, g := range extra {
+		if !owned[petKey(g.Pet)] {
+			out = append(out, g)
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -389,10 +407,14 @@ func table(rows []gain, lastBig stats, bigLoot int64) monitor.Block {
 		if last, ok := lastBig[g.ID]; ok && g.Kind != xp && g.Total >= last {
 			since = comma(g.Total - last)
 		}
+		today, total := "+"+amount(g.Kind, g.Gained), amount(g.Kind, g.Total)
+		if g.Today != "" {
+			today, total = g.Today, ""
+		}
 		b.Rows = append(b.Rows, []monitor.Cell{
 			{Text: g.Name},
-			{Text: "+" + amount(g.Kind, g.Gained), Tone: monitor.ToneGood},
-			{Text: amount(g.Kind, g.Total), Tone: monitor.ToneMuted},
+			{Text: today, Tone: monitor.ToneGood},
+			{Text: total, Tone: monitor.ToneMuted},
 			{Text: g.Rate, Tone: monitor.ToneMuted},
 			{Text: since, Tone: monitor.ToneMuted},
 		})
@@ -411,7 +433,11 @@ func summary(rows []gain, drops bool) []monitor.Stat {
 	}
 	var out []monitor.Stat
 	for _, g := range rows {
-		out = append(out, monitor.Stat{Label: g.Name, Value: "+" + amount(g.Kind, g.Gained), Tone: monitor.ToneGood})
+		v := "+" + amount(g.Kind, g.Gained)
+		if g.Today != "" {
+			v = g.Today
+		}
+		out = append(out, monitor.Stat{Label: g.Name, Value: v, Tone: monitor.ToneGood})
 	}
 	return out
 }

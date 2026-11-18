@@ -3,6 +3,7 @@ package farming
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -249,4 +250,73 @@ func TestTreesPlantMaple(t *testing.T) {
 
 func TestNoSpiritTrees(t *testing.T) {
 	assert.Equal(t, -1, runOf("SPIRIT_TREE"))
+}
+
+func treePatch(t *testing.T) (region, patch) {
+	for _, r := range regions {
+		for _, p := range r.Patches {
+			if p.Impl == "TREE" {
+				return r, p
+			}
+		}
+	}
+	t.Fatal("no tree patch")
+	return region{}, patch{}
+}
+
+func TestRolls(t *testing.T) {
+	r, p := treePatch(t)
+	key := fmt.Sprintf("%d.%d", r.ID, p.Varbit)
+	at := time.Date(2026, 11, 18, 10, 0, 0, 0, time.UTC)
+	saw := func(value int, t time.Time) profile {
+		return profile{key: fmt.Sprintf("%d:%d", value, t.Unix())}
+	}
+	var rs rolls
+	now := at.Add(time.Hour)
+
+	assert.True(t, rs.record(saw(31, at.Add(-time.Hour)), 99, now), "growing, seen")
+	assert.Empty(t, rs.Rolls, "growing isn't a roll")
+	rs.record(saw(33, at), 99, now)
+	require.Len(t, rs.Rolls, 1, "checked")
+	assert.Equal(t, Roll{At: at, Patch: key, Crop: "Maple", Chance: 14052 - 25*99}, rs.Rolls[0])
+
+	assert.False(t, rs.record(saw(33, at), 99, now), "the same value again changes nothing")
+	rs.record(saw(34, at.Add(time.Minute)), 99, now)
+	rs.record(saw(24, at.Add(2*time.Minute)), 99, now)
+	assert.Len(t, rs.Rolls, 1, "the stump and the replant are the same roll")
+
+	// The new tree grows and is checked hours later: another roll.
+	rs.record(saw(32, at.Add(6*time.Hour)), 99, now.Add(6*time.Hour))
+	rs.record(saw(33, at.Add(6*time.Hour+time.Minute)), 99, now.Add(6*time.Hour))
+	assert.Len(t, rs.Rolls, 2)
+
+	// Two days on, the old rolls are dropped.
+	rs.record(saw(24, at.Add(72*time.Hour)), 99, now.Add(72*time.Hour))
+	require.Len(t, rs.Rolls, 1)
+	assert.Equal(t, at.Add(72*time.Hour), rs.Rolls[0].At)
+}
+
+func TestSendRolls(t *testing.T) {
+	r, p := treePatch(t)
+	key := fmt.Sprintf("%d.%d", r.ID, p.Varbit)
+	at := time.Date(2026, 11, 18, 10, 0, 0, 0, time.UTC)
+	m, err := New(json.RawMessage(`{}`))
+	require.NoError(t, err)
+	m.level = 99
+	env := monitortest.Env(at)
+	var sent []monitor.Action
+	env.Act = func(_ context.Context, id string, a monitor.Action) error {
+		assert.Equal(t, "osrs", id)
+		sent = append(sent, a)
+		return nil
+	}
+	m.sendRolls(context.Background(), env, profile{key: fmt.Sprintf("33:%d", at.Unix())})
+	require.Len(t, sent, 1)
+	assert.Equal(t, OSRSAction, sent[0].Type)
+	var got []Roll
+	require.NoError(t, json.Unmarshal(sent[0].Data, &got))
+	assert.Len(t, got, 1)
+
+	m.sendRolls(context.Background(), env, profile{key: fmt.Sprintf("34:%d", at.Unix()+60)})
+	assert.Len(t, sent, 1, "nothing new, nothing sent")
 }

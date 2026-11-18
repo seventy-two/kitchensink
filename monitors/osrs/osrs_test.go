@@ -13,6 +13,7 @@ import (
 
 	"github.com/seventy-two/kitchensink/monitor"
 	"github.com/seventy-two/kitchensink/monitor/monitortest"
+	"github.com/seventy-two/kitchensink/monitors/farming"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -433,4 +434,44 @@ func TestSessionPastMidnight(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "+4", vorkath(res), "not +12, the whole session")
 	})
+}
+
+// Farming counts the patches the farming monitor saw checked today, at
+// each crop's rate, not Farming XP.
+func TestFarmingRolls(t *testing.T) {
+	f := newFakeWOM(t)
+	m := newMonitor(t, f)
+	env := monitortest.Env(now)
+	rolls := []farming.Roll{
+		{At: now.Add(-time.Hour), Patch: "1.1", Crop: "Maple", Chance: 11577},
+		{At: now.Add(-time.Hour), Patch: "1.2", Crop: "Teak", Chance: 2525},
+		{At: now.Add(-48 * time.Hour), Patch: "1.3", Crop: "Teak", Chance: 2525}, // not today
+	}
+	data, _ := json.Marshal(rolls)
+	act := func() error {
+		return m.Act(context.Background(), env, monitor.Action{Type: farming.OSRSAction, Data: data})
+	}
+	require.NoError(t, act())
+	assert.ErrorIs(t, act(), monitor.ErrQuiet, "the same rolls again")
+
+	g, ok := farmingGain(rolls, now.Add(-20*time.Hour))
+	require.True(t, ok)
+	assert.Equal(t, "+2 patches", g.Today)
+	assert.Equal(t, "1/2,073", g.Rate, "at least one of 1/11,577 and 1/2,525")
+
+	// WOM has mining XP only; farming XP there is left out.
+	res, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Contains(t, res.Summary, monitor.Stat{Label: "Farming", Value: "+2 patches", Tone: monitor.ToneGood})
+	var row []monitor.Cell
+	for _, r := range res.Blocks[0].Rows {
+		if r[0].Text == "Farming" {
+			row = r
+		}
+	}
+	require.NotNil(t, row)
+	assert.Equal(t, "", row[2].Text)
+	assert.Equal(t, "1/2,073", row[3].Text)
+
+	assert.Empty(t, gains(stats{"farming": 1}, stats{"farming": 500_000}, nil), "no farming XP")
 }
