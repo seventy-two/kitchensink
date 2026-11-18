@@ -55,7 +55,10 @@ var patchNames = map[string]string{
 
 // petBase is each crop's base chance of Tangleroot (1 in base - 25 ×
 // Farming level), per check-health, or per final harvest for crops
-// without one, from the wiki's Tangleroot page.
+// without one, from the wiki's Tangleroot page. Camphor, ironwood and
+// rosewood are suspected to match teak and mahogany but were never
+// confirmed; Mod Ash's 145,013 and 72,321 (March 2026) turned out to be
+// the beaver's rates, not Tangleroot's.
 var petBase = map[string]int{
 	"OAK": 22483, "WILLOW": 16059, "MAPLE": 14052, "YEW": 11242, "MAGIC": 9368,
 	"APPLE": 9000, "BANANA": 9000, "ORANGE": 9000, "CURRY": 9000, "PINEAPPLE": 9000,
