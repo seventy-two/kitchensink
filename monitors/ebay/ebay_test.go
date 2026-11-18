@@ -204,13 +204,16 @@ func TestPoll(t *testing.T) {
 	require.Len(t, rows, 2)
 	assert.Equal(t, "SimCity 2000", rows[0][0].Text)
 	assert.Equal(t, "https://www.ebay.co.uk/itm/2", rows[0][0].URL)
-	assert.Equal(t, "£24.99", rows[0][1].Text)
-	assert.Equal(t, "", rows[0][1].Detail)
-	assert.Equal(t, "19:30", rows[0][3].Text)
+	assert.Equal(t, "£24.99", rows[0][2].Text)
+	assert.Equal(t, "19:30", rows[0][5].Text)
 	assert.Equal(t, "Ultima VII: The Black Gate", rows[1][0].Text)
-	assert.Equal(t, "£45", rows[1][1].Text)
-	assert.Equal(t, "3 bids", rows[1][1].Detail)
-	assert.Equal(t, "Mon 19:30", rows[1][3].Text)
+	assert.Equal(t, "£45 · 3 bids", rows[1][2].Text)
+	assert.Equal(t, "Mon 19:30", rows[1][5].Text)
+	for _, r := range rows {
+		for _, c := range r {
+			assert.Empty(t, c.Detail, "one line a row")
+		}
+	}
 	require.NotNil(t, res.SummaryBlock)
 
 	// A new listing: reported, named, and nothing asked about twice.
@@ -243,7 +246,7 @@ func TestGeminiDown(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, res.Events, "held back until it has a name")
 	assert.Equal(t, title, res.Blocks[0].Rows[0][0].Text, "shown by its title meanwhile")
-	assert.Equal(t, "auction", res.Blocks[0].Rows[0][1].Detail)
+	assert.Equal(t, "£30 · auction", res.Blocks[0].Rows[0][2].Text)
 
 	gem.fail = false
 	gem.names[title] = "Dune II"
@@ -289,11 +292,12 @@ func TestRarity(t *testing.T) {
 	assert.Equal(t, "£150 · rare", res.Events[1].Body)
 
 	rows := res.Blocks[0].Rows
-	assert.Equal(t, "", rows[0][0].Detail)
-	assert.Equal(t, "uncommon", rows[1][0].Detail)
+	assert.Equal(t, "", rows[0][1].Text)
+	assert.Equal(t, "uncommon", rows[1][1].Text)
 	assert.Equal(t, monitor.ToneNone, rows[1][0].Tone)
-	assert.Equal(t, "rare", rows[2][0].Detail)
+	assert.Equal(t, "rare", rows[2][1].Text)
 	assert.Equal(t, monitor.ToneAccent, rows[2][0].Tone)
+	assert.Equal(t, monitor.ToneAccent, rows[2][1].Tone)
 }
 
 func TestRarityOfListingsNamedBefore(t *testing.T) {
@@ -337,9 +341,9 @@ func TestIgnore(t *testing.T) {
 	res, err := m.Poll(context.Background(), env)
 	require.NoError(t, err)
 	rows := res.Blocks[0].Rows
-	require.NotNil(t, rows[0][5].Action, "a rare listing can be ignored")
-	assert.Equal(t, monitor.CellAction{Type: "ignore", ID: "v1|1|0", Label: "Ignore WipEout from now on"}, *rows[0][5].Action)
-	assert.Nil(t, rows[1][5].Action, "a common one has nothing to ignore")
+	require.NotNil(t, rows[0][7].Action, "a rare listing can be ignored")
+	assert.Equal(t, monitor.CellAction{Type: "ignore", ID: "v1|1|0", Label: "Ignore WipEout from now on"}, *rows[0][7].Action)
+	assert.Nil(t, rows[1][7].Action, "a common one has nothing to ignore")
 
 	require.Equal(t, []string{"listing/v1|1|0"}, monitortest.Keys(res.Events), "notified")
 
@@ -355,7 +359,7 @@ func TestIgnore(t *testing.T) {
 	rows = res.Blocks[0].Rows
 	assert.Equal(t, "", rows[0][0].Detail, "now counts as common")
 	assert.Equal(t, monitor.ToneNone, rows[0][0].Tone)
-	assert.Nil(t, rows[0][5].Action)
+	assert.Nil(t, rows[0][7].Action)
 
 	// Another copy, named a little differently, is ignored too.
 	again := "Wipeout pc cd rom 1995 RARE"
@@ -446,7 +450,7 @@ func TestGrailsAndPostage(t *testing.T) {
 	require.NoError(t, err)
 
 	rows := res.Blocks[0].Rows
-	tier := func(i int) string { return rows[i][0].Detail }
+	tier := func(i int) string { return rows[i][1].Text }
 	assert.Equal(t, grail, tier(0), "the 1995 Wipeout")
 	assert.Equal(t, monitor.ToneMuted, rows[0][0].Tone, "a grail, greyed out by its postage")
 	assert.Equal(t, "rare", tier(1), "its sequel isn't on the list")
@@ -457,14 +461,15 @@ func TestGrailsAndPostage(t *testing.T) {
 	assert.Equal(t, "", tier(6), "an expansion isn't the game")
 
 	// Postage: over half a Buy It Now price is marked; half exactly isn't.
-	assert.Equal(t, monitor.ToneMuted, rows[0][1].Tone)
-	assert.Equal(t, "+£10.01 postage, over half", rows[0][1].Detail, "the cheapest option")
-	assert.Equal(t, monitor.ToneNone, rows[2][1].Tone)
+	assert.Equal(t, monitor.ToneMuted, rows[0][2].Tone)
+	assert.Equal(t, "+£10.01 (high)", rows[0][3].Text, "the cheapest option")
+	assert.Equal(t, monitor.ToneNone, rows[2][2].Tone)
 	assert.Equal(t, monitor.ToneGood, rows[2][0].Tone, "a grail at a fair postage stands out")
-	assert.Equal(t, "+£10 postage", rows[2][1].Detail)
-	assert.Equal(t, "", rows[1][1].Detail, "none given")
-	assert.Equal(t, monitor.ToneNone, rows[7][1].Tone, "an auction's final price isn't known")
-	assert.Equal(t, "auction · +£5 postage", rows[7][1].Detail)
+	assert.Equal(t, "+£10", rows[2][3].Text)
+	assert.Equal(t, "", rows[1][3].Text, "none given")
+	assert.Equal(t, monitor.ToneNone, rows[7][2].Tone, "an auction's final price isn't known")
+	assert.Equal(t, "£1 · auction", rows[7][2].Text)
+	assert.Equal(t, "+£5", rows[7][3].Text)
 
 	byKey := map[string]monitor.Event{}
 	for _, e := range res.Events {
@@ -510,14 +515,14 @@ func TestDeals(t *testing.T) {
 	assert.True(t, gem.searched, "looked up")
 
 	rows := res.Blocks[0].Rows
-	assert.Equal(t, monitor.Cell{Text: "good deal", Detail: "£25–40", Tone: monitor.ToneGood}, rows[0][2])
-	assert.Equal(t, monitor.Cell{}, rows[1][2], "common: not judged")
-	assert.Equal(t, monitor.Cell{}, rows[2][2], "an auction: not judged")
-	assert.Equal(t, monitor.Cell{Text: "overpriced", Detail: "yours £30", Tone: monitor.ToneMuted}, rows[3][2], "£40 against your £30")
+	assert.Equal(t, monitor.Cell{Text: "good deal £25–40", Tone: monitor.ToneGood}, rows[0][4])
+	assert.Equal(t, monitor.Cell{}, rows[1][4], "common: not judged")
+	assert.Equal(t, monitor.Cell{}, rows[2][4], "an auction: not judged")
+	assert.Equal(t, monitor.Cell{Text: "overpriced, yours £30", Tone: monitor.ToneMuted}, rows[3][4], "£40 against your £30")
 	assert.Equal(t, monitor.ToneMuted, rows[3][0].Tone, "the whole row greys out")
-	assert.Equal(t, monitor.ToneMuted, rows[3][1].Tone)
+	assert.Equal(t, monitor.ToneMuted, rows[3][2].Tone)
 	assert.Equal(t, monitor.ToneNone, rows[0][0].Tone, "a good deal doesn't")
-	assert.Equal(t, monitor.Cell{}, rows[4][2], "not in pounds")
+	assert.Equal(t, monitor.Cell{}, rows[4][4], "not in pounds")
 	assert.Equal(t, "£14 +£5 postage · uncommon · good deal", res.Events[0].Body)
 
 	// Judged once a price; a new price is judged again.
@@ -534,7 +539,7 @@ func TestDeals(t *testing.T) {
 	eb.items[3] = withPostage(listing("4", "croc", "20", now, false, 0), "0.00")
 	res, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
-	assert.Equal(t, "good deal", res.Blocks[0].Rows[3][2].Text)
+	assert.Equal(t, "good deal, yours £30", res.Blocks[0].Rows[3][4].Text)
 }
 
 func TestHide(t *testing.T) {
@@ -550,9 +555,9 @@ func TestHide(t *testing.T) {
 	res, err := m.Poll(context.Background(), env)
 	require.NoError(t, err)
 	require.Equal(t, []string{"listing/v1|1|0"}, monitortest.Keys(res.Events))
-	hide := res.Blocks[0].Rows[0][4].Action
+	hide := res.Blocks[0].Rows[0][6].Action
 	require.NotNil(t, hide)
-	assert.Equal(t, monitor.CellAction{Type: "hide", ID: "v1|1|0", Label: "Hide this listing (a dud); keep looking for the game", Icon: "delete"}, *hide)
+	assert.Equal(t, monitor.CellAction{Type: "hide", ID: "v1|1|0", Label: "Hide this listing (a dud); keep looking for the thing", Icon: "delete"}, *hide)
 
 	require.NoError(t, m.Act(context.Background(), env, monitor.Action{Type: "hide", ID: "v1|1|0"}))
 	res, err = m.Poll(context.Background(), env)
@@ -569,7 +574,7 @@ func TestHide(t *testing.T) {
 	res, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
 	require.Len(t, res.Blocks[0].Rows, 1)
-	assert.Equal(t, grail, res.Blocks[0].Rows[0][0].Detail)
+	assert.Equal(t, grail, res.Blocks[0].Rows[0][1].Text)
 	assert.Equal(t, []string{"listing/v1|2|0"}, monitortest.Keys(res.Events))
 	assert.ErrorIs(t, m.Act(context.Background(), env, monitor.Action{Type: "hide"}), monitor.ErrBadAction)
 }

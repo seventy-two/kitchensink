@@ -721,11 +721,14 @@ func (sc *section) notifies(rarity string) bool {
 // ignore the game. An overpriced listing (by the deal, or postage over half
 // the price) is greyed out.
 func (m *Monitor) table(items []item, nameOf, rarityOf func(item) string, deals map[string]deal, now time.Time) monitor.Block {
+	// One line a row: each detail has a column of its own.
 	b := monitor.Block{
 		Type: monitor.BlockTable,
 		Columns: []monitor.Column{
 			{Title: "Listing", Fill: true},
+			{Title: "Tier"},
 			{Title: "Price", Align: monitor.AlignRight},
+			{Title: "Post", Align: monitor.AlignRight},
 			{Title: "Deal"},
 			{Title: "Listed", Align: monitor.AlignRight},
 			{Title: ""},
@@ -736,35 +739,43 @@ func (m *Monitor) table(items []item, nameOf, rarityOf func(item) string, deals 
 	for _, it := range items {
 		name := monitor.Cell{Text: nameOf(it), URL: it.link()}
 		r := rarityOf(it)
-		var ignore monitor.Cell
+		var tier, ignore monitor.Cell
 		if rank(r) > 0 {
-			name.Detail = r
+			tier.Text = r
 			ignore.Action = &monitor.CellAction{Type: ignoreAction, ID: it.ItemID, Label: "Ignore " + nameOf(it) + " from now on"}
 		}
 		switch r {
 		case grail:
-			name.Tone = monitor.ToneGood
+			name.Tone, tier.Tone = monitor.ToneGood, monitor.ToneGood
 		case "rare":
-			name.Tone = monitor.ToneAccent
+			name.Tone, tier.Tone = monitor.ToneAccent, monitor.ToneAccent
+		default:
+			tier.Tone = monitor.ToneMuted
 		}
-		price := monitor.Cell{Text: it.price(), Detail: it.kind()}
-		if p := it.postageText(); p != "" {
-			price.Detail = strings.TrimPrefix(price.Detail+" · "+p, " · ")
+		price := monitor.Cell{Text: it.price()}
+		if k := it.kind(); k != "" {
+			price.Text += " · " + k
 		}
-		if it.highPostage() {
-			price.Detail = strings.Replace(price.Detail, "postage", "postage, over half", 1)
+		post := monitor.Cell{Tone: monitor.ToneMuted}
+		if p := it.postage(); p != nil && it.postageText() != "" {
+			post.Text = "+" + money(p)
+			if it.highPostage() {
+				post.Text += " (high)"
+			}
 		}
 		dc := dealCell(deals[it.ItemID])
 		// Overpriced, by postage or otherwise: the whole row greys out.
 		if it.highPostage() || deals[it.ItemID].Verdict == "overpriced" {
-			name.Tone, price.Tone, dc.Tone = monitor.ToneMuted, monitor.ToneMuted, monitor.ToneMuted
+			name.Tone, tier.Tone, price.Tone, dc.Tone = monitor.ToneMuted, monitor.ToneMuted, monitor.ToneMuted, monitor.ToneMuted
 		}
 		b.Rows = append(b.Rows, []monitor.Cell{
 			name,
+			tier,
 			price,
+			post,
 			dc,
 			{Text: m.when(it.ItemCreationDate, now), Tone: monitor.ToneMuted},
-			{Action: &monitor.CellAction{Type: hideAction, ID: it.ItemID, Label: "Hide this listing (a dud); keep looking for the game", Icon: "delete"}},
+			{Action: &monitor.CellAction{Type: hideAction, ID: it.ItemID, Label: "Hide this listing (a dud); keep looking for the thing", Icon: "delete"}},
 			ignore,
 		})
 	}
@@ -791,21 +802,19 @@ func (m *Monitor) when(t, now time.Time) string {
 	return t.Format("2 Jan 2006")
 }
 
-// dealCell shows a listing's deal: the verdict, and the fair range (or
-// your price) under it.
+// dealCell shows a listing's deal on one line: the verdict and the fair
+// range, or your price.
 func dealCell(d deal) monitor.Cell {
 	if d.Verdict == "" {
 		return monitor.Cell{}
 	}
-	c := monitor.Cell{Text: dealLabel(d.Verdict), Detail: fmt.Sprintf("£%.0f–%.0f", d.Low, d.High)}
+	c := monitor.Cell{Text: fmt.Sprintf("%s £%.0f–%.0f", dealLabel(d.Verdict), d.Low, d.High)}
 	if d.Yours {
-		c.Detail = fmt.Sprintf("yours £%.0f", d.Low/yourLow)
+		c.Text = fmt.Sprintf("%s, yours £%.0f", dealLabel(d.Verdict), d.Low/yourLow)
 	}
 	switch d.Verdict {
 	case "good":
 		c.Tone = monitor.ToneGood
-	case "overpriced":
-		c.Tone = monitor.ToneWarn
 	default:
 		c.Tone = monitor.ToneMuted
 	}
