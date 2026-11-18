@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -70,9 +71,16 @@ const geminiTimeout = 90 * time.Second
 // rarities are how rare Gemini can say a listing is, least first.
 var rarities = []string{"common", "uncommon", "rare"}
 
-// rank places a rarity in rarities, or -1 for none or one not known.
+// grail is the tier above rare: a game on the config's Grails list,
+// never given by the model.
+const grail = "grail"
+
+// tiers are rarities and grail, least first.
+var tiers = append(slices.Clone(rarities), grail)
+
+// rank places a tier, or -1 for none or one not known.
 func rank(r string) int {
-	for i, x := range rarities {
+	for i, x := range tiers {
 		if x == r {
 			return i
 		}

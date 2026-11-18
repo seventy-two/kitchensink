@@ -46,8 +46,14 @@ type Config struct {
 	// without Gemini.
 	Name   string `json:"name"`
 	Gemini Gemini `json:"gemini"`
+	// Grails are games always worth having, a tier above rare
+	// ("grail"), whatever the model says: matched against its name for a
+	// listing (any game in a lot), ignoring capitals and punctuation. An
+	// entry ending in "*" matches names starting with it, e.g. "Metal Gear
+	// Solid*" for the whole series.
+	Grails []string `json:"grails"`
 	// Notify is the least rarity Gemini must give a new listing for it to
-	// notify: "uncommon" or "rare". Others make no event, so they're only
+	// notify: "uncommon", "rare" or "grail". Others make no event, so they're only
 	// in the panel. Empty notifies for every new listing, as does one
 	// Gemini gave no rarity.
 	Notify string `json:"notify"`
@@ -99,7 +105,7 @@ func New(raw json.RawMessage) (*Monitor, error) {
 		c.Marketplace = "EBAY_GB"
 	}
 	if c.Notify != "" && rank(c.Notify) < 0 {
-		return nil, fmt.Errorf("ebay notify must be one of %s", strings.Join(rarities, ", "))
+		return nil, fmt.Errorf("ebay notify must be one of %s", strings.Join(tiers, ", "))
 	}
 	if c.Limit <= 0 {
 		c.Limit = 50
@@ -136,6 +142,9 @@ type item struct {
 		ImageURL string `json:"imageUrl"`
 	} `json:"image"`
 	ItemCreationDate time.Time `json:"itemCreationDate"`
+	ShippingOptions  []struct {
+		ShippingCost *amount `json:"shippingCost"`
+	} `json:"shippingOptions"`
 }
 
 type amount struct {
@@ -164,6 +173,56 @@ func (it item) price() string {
 	if it.auction() && it.CurrentBidPrice != nil {
 		a = it.CurrentBidPrice
 	}
+	return money(a)
+}
+
+// postage is the cheapest delivery eBay quotes, if it gave one.
+func (it item) postage() *amount {
+	var best *amount
+	bestV := 0.0
+	for _, o := range it.ShippingOptions {
+		if o.ShippingCost == nil {
+			continue
+		}
+		v, err := strconv.ParseFloat(o.ShippingCost.Value, 64)
+		if err == nil && (best == nil || v < bestV) {
+			best, bestV = o.ShippingCost, v
+		}
+	}
+	return best
+}
+
+// highPostage is true when postage is over half a Buy It Now price. An
+// auction's final price isn't known, so its postage isn't judged.
+func (it item) highPostage() bool {
+	p := it.postage()
+	if it.auction() || it.Price == nil || p == nil || p.Currency != it.Price.Currency {
+		return false
+	}
+	price, err1 := strconv.ParseFloat(it.Price.Value, 64)
+	post, err2 := strconv.ParseFloat(p.Value, 64)
+	return err1 == nil && err2 == nil && post > price/2
+}
+
+// postageText is the postage for the price's detail line: empty when it's
+// free or not given.
+func (it item) postageText() string {
+	p := it.postage()
+	if v, err := strconv.ParseFloat(p.valueOr("0"), 64); p == nil || err != nil || v == 0 {
+		return ""
+	}
+	return "+" + money(p) + " postage"
+}
+
+func (a *amount) valueOr(def string) string {
+	if a == nil {
+		return def
+	}
+	return a.Value
+}
+
+// money writes an amount, e.g. "£3.50" or "£20".
+func money(a *amount) string {
 	if a == nil {
 		return ""
 	}
@@ -342,10 +401,14 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		}
 		return strings.TrimSpace(it.Title)
 	}
-	// An ignored game counts as common, whatever Gemini says.
+	// An ignored game counts as common, and a grail is one, whatever the
+	// model says.
 	rarityOf := func(it item) string {
 		if _, ok := ignored[key(nameOf(it))]; ok {
 			return "common"
+		}
+		if m.grail(nameOf(it)) {
+			return grail
 		}
 		return rarity[it.ItemID]
 	}
@@ -374,19 +437,30 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 			// Recent.
 			if r := rarityOf(it); baselined && m.notifies(r) {
 				body := it.price()
+				if p := it.postageText(); p != "" {
+					body += " " + p
+				}
+				if it.highPostage() {
+					body += " (high)"
+				}
 				if k := it.kind(); k != "" {
 					body += " · " + k
 				}
 				if rank(r) > 0 {
 					body += " · " + r
 				}
+				priority := monitor.PriorityNormal
+				if r == grail {
+					priority = monitor.PriorityHigh
+				}
 				events = append(events, monitor.Event{
-					Key:   "listing/" + it.ItemID,
-					Time:  it.ItemCreationDate,
-					Title: nameOf(it),
-					Body:  body,
-					URL:   it.link(),
-					Image: it.Image.ImageURL,
+					Priority: priority,
+					Key:      "listing/" + it.ItemID,
+					Time:     it.ItemCreationDate,
+					Title:    nameOf(it),
+					Body:     body,
+					URL:      it.link(),
+					Image:    it.Image.ImageURL,
 				})
 			}
 		}
@@ -462,8 +536,9 @@ func (m *Monitor) notifies(rarity string) bool {
 	return m.cfg.Notify == "" || r < 0 || r >= rank(m.cfg.Notify)
 }
 
-// table lists the listings; uncommon and rare ones say so under their name,
-// rare ones stand out, and both have a button to ignore the game.
+// table lists the listings; uncommon, rare and grail ones say so under
+// their name, rare and grail ones stand out, and all have a button to
+// ignore the game. A price with postage over half of it is marked.
 func (m *Monitor) table(items []item, nameOf, rarityOf func(item) string, now time.Time) monitor.Block {
 	b := monitor.Block{
 		Type: monitor.BlockTable,
@@ -483,12 +558,24 @@ func (m *Monitor) table(items []item, nameOf, rarityOf func(item) string, now ti
 			name.Detail = r
 			ignore.Action = &monitor.CellAction{Type: ignoreAction, ID: it.ItemID, Label: "Ignore " + nameOf(it) + " from now on"}
 		}
-		if r == "rare" {
+		switch r {
+		case grail:
+			name.Tone = monitor.ToneGood
+		case "rare":
 			name.Tone = monitor.ToneAccent
+		}
+		price := monitor.Cell{Text: it.price(), Detail: it.kind()}
+		if p := it.postageText(); p != "" {
+			price.Detail = strings.TrimPrefix(price.Detail+" · "+p, " · ")
+		}
+		if it.highPostage() {
+			// Postage over half the price: worth knowing before buying.
+			price.Tone = monitor.ToneWarn
+			price.Detail = strings.Replace(price.Detail, "postage", "postage, over half", 1)
 		}
 		b.Rows = append(b.Rows, []monitor.Cell{
 			name,
-			{Text: it.price(), Detail: it.kind()},
+			price,
 			{Text: m.when(it.ItemCreationDate, now), Tone: monitor.ToneMuted},
 			ignore,
 		})
@@ -519,6 +606,24 @@ func (m *Monitor) when(t, now time.Time) string {
 // ignoreAction is the action that ignores a listing's game: from then on,
 // its listings count as common, so they're neither marked nor notified.
 const ignoreAction = "ignore"
+
+// grail says whether a listing named name is one of Grails, or a lot with
+// one in it.
+func (m *Monitor) grail(name string) bool {
+	for _, part := range strings.Split(name, " + ") {
+		k := key(part)
+		for _, g := range m.cfg.Grails {
+			if prefix, ok := strings.CutSuffix(g, "*"); ok {
+				if p := key(prefix); k == p || strings.HasPrefix(k, p+" ") {
+					return true
+				}
+			} else if k == key(g) {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 // key is how game names are matched when ignoring: Gemini may write the
 // same name with different capitals or punctuation.

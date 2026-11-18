@@ -361,3 +361,73 @@ func TestShortViewOnlyRecentUncommonAndRare(t *testing.T) {
 	assert.Empty(t, res.Summary)
 	assert.True(t, res.Background)
 }
+
+func withPostage(it map[string]any, cost string) map[string]any {
+	it["shippingOptions"] = []any{
+		map[string]any{"shippingCostType": "FIXED", "shippingCost": map[string]any{"value": cost, "currency": "GBP"}},
+		map[string]any{"shippingCostType": "FIXED", "shippingCost": map[string]any{"value": "99.00", "currency": "GBP"}},
+	}
+	return it
+}
+
+func TestGrailsAndPostage(t *testing.T) {
+	eb, gem := newFakeEbay(t), newFakeGemini(t)
+	m := newMonitorWith(t, eb.URL, gem.URL, map[string]any{"notify": "uncommon",
+		"grails": []string{"Wipeout", "Metal Gear Solid*", "Black & White", "Croc 2"}})
+	env := monitortest.Env(now)
+	_, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+
+	for title, j := range map[string][2]string{
+		"wipeout pc big box psygnosis":      {"WipEout", "common"},
+		"wipeout 2097 pc big box":           {"Wipeout 2097", "rare"},
+		"MGS2 substance pc":                 {"Metal Gear Solid 2: Substance", "common"},
+		"black and white lionhead":          {"Black & White", "common"},
+		"croc 1 and 2 lot":                  {"Croc: Legend of the Gobbos + Croc 2", "uncommon"},
+		"metal gear (msx) not solid":        {"Metal Gear", "common"},
+		"black & white creature isle addon": {"Black & White: Creature Isle", "common"},
+	} {
+		gem.names[title], gem.rarity[title] = j[0], j[1]
+	}
+	eb.items = []map[string]any{
+		withPostage(listing("1", "wipeout pc big box psygnosis", "20", now, false, 0), "10.01"),
+		listing("2", "wipeout 2097 pc big box", "40", now, false, 0),
+		withPostage(listing("3", "MGS2 substance pc", "20", now, false, 0), "10.00"),
+		listing("4", "black and white lionhead", "15", now, false, 0),
+		listing("5", "croc 1 and 2 lot", "30", now, false, 0),
+		listing("6", "metal gear (msx) not solid", "30", now, false, 0),
+		listing("7", "black & white creature isle addon", "5", now, false, 0),
+		withPostage(listing("8", "wipeout pc big box psygnosis", "1", now, true, 0), "5.00"),
+	}
+	res, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+
+	rows := res.Blocks[0].Rows
+	tier := func(i int) string { return rows[i][0].Detail }
+	assert.Equal(t, grail, tier(0), "the 1995 Wipeout")
+	assert.Equal(t, monitor.ToneGood, rows[0][0].Tone)
+	assert.Equal(t, "rare", tier(1), "its sequel isn't on the list")
+	assert.Equal(t, grail, tier(2), "any Metal Gear Solid")
+	assert.Equal(t, grail, tier(3), "& and and match")
+	assert.Equal(t, grail, tier(4), "a lot with a grail in it")
+	assert.Equal(t, "", tier(5), "a prefix only matches whole words of the name")
+	assert.Equal(t, "", tier(6), "an expansion isn't the game")
+
+	// Postage: over half a Buy It Now price is marked; half exactly isn't.
+	assert.Equal(t, monitor.ToneWarn, rows[0][1].Tone)
+	assert.Equal(t, "+£10.01 postage, over half", rows[0][1].Detail, "the cheapest option")
+	assert.Equal(t, monitor.ToneNone, rows[2][1].Tone)
+	assert.Equal(t, "+£10 postage", rows[2][1].Detail)
+	assert.Equal(t, "", rows[1][1].Detail, "none given")
+	assert.Equal(t, monitor.ToneNone, rows[7][1].Tone, "an auction's final price isn't known")
+	assert.Equal(t, "auction · +£5 postage", rows[7][1].Detail)
+
+	byKey := map[string]monitor.Event{}
+	for _, e := range res.Events {
+		byKey[e.Key] = e
+	}
+	assert.Equal(t, monitor.PriorityHigh, byKey["listing/v1|1|0"].Priority, "grails notify loudly")
+	assert.Equal(t, "£20 +£10.01 postage (high) · grail", byKey["listing/v1|1|0"].Body)
+	assert.Equal(t, monitor.PriorityNormal, byKey["listing/v1|2|0"].Priority)
+	assert.NotContains(t, byKey, "listing/v1|6|0", "common, so no event")
+}

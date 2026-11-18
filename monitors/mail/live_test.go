@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/seventy-two/kitchensink/ai"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,6 +23,14 @@ func TestLiveGemini(t *testing.T) {
 	}
 	g, err := newGemini(Gemini{APIKey: key, Model: os.Getenv("MAIL_LIVE_GEMINI_MODEL")})
 	require.NoError(t, err)
+	// MAIL_LIVE_PROVIDER=claude asks Claude instead (ANTHROPIC_API_KEY),
+	// with MAIL_LIVE_CLAUDE_MODEL picking its model.
+	if p := os.Getenv("MAIL_LIVE_PROVIDER"); p != "" {
+		require.NoError(t, ai.Shared.Set("mail", "provider", p))
+	}
+	if cm := os.Getenv("MAIL_LIVE_CLAUDE_MODEL"); cm != "" {
+		require.NoError(t, ai.Shared.Set("mail", "claude", cm))
+	}
 	m := &Monitor{gemini: g, loc: london, chores: "chores",
 		choresDone: map[string]string{"waitrose-order": "a Waitrose groceries order being placed"}}
 	for _, e := range []struct{ from, subject, body string }{

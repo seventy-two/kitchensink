@@ -300,14 +300,27 @@ version of a box; uncommon the same, less striking; everything else
 games, anything after about 2004) is common; `notify` is the least rarity that
 notifies; the rest make no event and are only in the panel (empty: every new listing).
 
+`grails` are games always worth having: a tier above rare (`grail`,
+highlighted, notified at high priority) whatever the model says, matched
+against its name for a listing (or any game in a lot) ignoring capitals and
+punctuation; an entry ending in `*` matches every name starting with it,
+e.g. `"Metal Gear Solid*"`. Each price shows the cheapest postage eBay
+quotes, marked when it's over half a Buy It Now price (an auction's final
+price isn't known, so auctions aren't judged).
+
 ```json
 "config": {
   "searchURL": "https://www.ebay.co.uk/sch/i.html?_nkw=big+box+pc&_sacat=0",
   "clientId": "${EBAY_CLIENT_ID}", "clientSecret": "${EBAY_CLIENT_SECRET}",
   "name": "a boxed PC game", "notify": "uncommon",
+  "grails": ["Wipeout", "Metal Gear Solid*", "Worms Armageddon"],
   "gemini": { "apiKey": "${GEMINI_API_KEY}" }
 }
 ```
+
+`TestLiveCompare` (in `monitors/ebay`, run with `EBAY_LIVE_COMPARE` set)
+rates the newest listings with Gemini and with Claude and lists where they
+differ.
 
 ### Reverb
 
