@@ -182,11 +182,10 @@ func (m *Monitor) hourly(f *forecast) []hour {
 			x.label = "Now"
 			x.temp = fmt.Sprintf("%.0f°", f.Current.Temperature)
 		}
-		switch {
-		case m.gustMPH > 0 && h.Gusts[i] >= m.gustMPH:
+		// Only gusts colour an hour: the chance of rain is already drawn
+		// behind the hours, and has its own column in the table.
+		if m.gustMPH > 0 && h.Gusts[i] >= m.gustMPH {
 			x.tone = monitor.ToneWarn
-		case h.RainProb[i] >= 50:
-			x.tone = monitor.ToneAccent
 		}
 		out = append(out, x)
 	}
@@ -214,7 +213,7 @@ func rainStat(series []float64) monitor.Stat {
 	}
 	if total > 0 {
 		rain.Value = fmt.Sprintf("%.1f mm", total)
-		rain.Tone = monitor.ToneAccent
+		rain.Tone = monitor.ToneRain
 	}
 	return rain
 }

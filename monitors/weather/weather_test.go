@@ -68,7 +68,7 @@ func TestPoll(t *testing.T) {
 	require.Len(t, hourly.Rows, 3)
 	assert.Equal(t, "Rain", hourly.Rows[1][3].Text, "the sky, even when rain's likely")
 	assert.Equal(t, "60%", hourly.Rows[2][3].Text)
-	assert.Equal(t, monitor.ToneAccent, hourly.Rows[2][3].Tone)
+	assert.Equal(t, monitor.ToneNone, hourly.Rows[2][3].Tone, "the chance has its own column, uncoloured")
 
 	days := res.Blocks[2]
 	require.Len(t, days.Rows, 5)
@@ -111,9 +111,9 @@ func TestSummary(t *testing.T) {
 	require.Len(t, res.Summary, 12, "an hour to a chip")
 	assert.Equal(t, monitor.Stat{Label: "Now", Value: "13°", Icon: "moon", Level: ptr(0.0)}, res.Summary[0], "now is the current temperature")
 	assert.Equal(t, monitor.Stat{Label: "19:00", Value: "13°", Icon: "moon-cloud", Level: ptr(0.1)}, res.Summary[1])
-	assert.Equal(t, monitor.Stat{Label: "20:00", Value: "12°", Tone: monitor.ToneAccent, Icon: "rain", Level: ptr(0.6)}, res.Summary[2],
-		"likely rain is marked; the chance of it is the level")
-	assert.Equal(t, monitor.ToneWarn, res.Summary[3].Tone, "strong gusts outrank rain")
+	assert.Equal(t, monitor.Stat{Label: "20:00", Value: "12°", Icon: "rain", Level: ptr(0.6)}, res.Summary[2],
+		"likely rain isn't coloured; the chance of it is the level")
+	assert.Equal(t, monitor.ToneWarn, res.Summary[3].Tone, "strong gusts are marked")
 	assert.Equal(t, "fog", res.Summary[10].Icon)
 }
 

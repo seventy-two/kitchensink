@@ -290,6 +290,8 @@ const (
 	ToneWarn   Tone = "warn"
 	ToneMuted  Tone = "muted"
 	ToneAccent Tone = "accent"
+	// ToneRain is rain in the weather: blue, apart from the accent.
+	ToneRain Tone = "rain"
 )
 
 // Block is one part of a dashboard panel. Only the fields for its Type are
