@@ -154,10 +154,13 @@ func get(ctx context.Context, client *http.Client, u string) (string, error) {
 }
 
 // State keys: the slugs seen at the last poll; the whole list as last
-// read, with when it was read in full.
+// read, with when it was read in full; when each film was first seen,
+// for films added since the monitor started keeping it (Letterboxd's
+// pages give no date).
 const (
-	seenKey = "seen"
-	listKey = "list"
+	seenKey  = "seen"
+	listKey  = "list"
+	addedKey = "added"
 )
 
 // list is the watchlist as last read.
@@ -166,8 +169,9 @@ type list struct {
 	Full  time.Time `json:"full"` // when it was last read in full
 }
 
-// summaryRows is how many of the newest films the short view shows.
-const summaryRows = 3
+// recent is how long a film counts as newly added: the short view (the
+// clients' compact rows) lists only those.
+const recent = 3 * 24 * time.Hour
 
 func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, error) {
 	var last list
@@ -214,10 +218,25 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	for _, s := range seen {
 		known[s] = true
 	}
+	added := map[string]time.Time{}
+	if _, err := env.State.Get(addedKey, &added); err != nil {
+		return monitor.Result{}, err
+	}
 	var events []monitor.Event
 	slugs := make([]string, 0, len(films))
+	stillAdded := map[string]time.Time{}
+	var fresh []film
 	for _, f := range films {
 		slugs = append(slugs, f.Slug)
+		if had && !known[f.Slug] {
+			added[f.Slug] = now
+		}
+		if at, ok := added[f.Slug]; ok {
+			stillAdded[f.Slug] = at
+			if now.Sub(at) < recent {
+				fresh = append(fresh, f)
+			}
+		}
 		if had && !known[f.Slug] {
 			events = append(events, monitor.Event{
 				Key:   "added/" + f.Slug,
@@ -231,9 +250,14 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	if err := env.State.Set(seenKey, slugs); err != nil {
 		return monitor.Result{}, err
 	}
+	if err := env.State.Set(addedKey, stillAdded); err != nil {
+		return monitor.Result{}, err
+	}
 
 	table := m.table(films)
-	short := m.table(films[:min(summaryRows, len(films))])
+	// With nothing recent the short table has no rows, which clients draw
+	// as nothing.
+	short := m.table(fresh)
 	summary := []monitor.Stat{{Label: "Watchlist", Value: plural(len(films), "film")}}
 	if len(films) > 0 {
 		summary[0].Detail = "Newest: " + title(films[0])

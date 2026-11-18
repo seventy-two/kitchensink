@@ -75,7 +75,7 @@ func TestPoll(t *testing.T) {
 	assert.Equal(t, "Amélie", table.Rows[2][0].Text)
 	assert.Equal(t, "Newest: The Third Man (1949)", res.Summary[0].Detail)
 	require.NotNil(t, res.SummaryBlock)
-	assert.Len(t, res.SummaryBlock.Rows, summaryRows)
+	assert.Empty(t, res.SummaryBlock.Rows, "films already there have no date, so aren't recent")
 
 	extra = `<div class="react-component" data-item-name="Fish Tank (2009)" data-item-slug="fish-tank" >`
 	res, err = m.Poll(context.Background(), env)
@@ -84,6 +84,33 @@ func TestPoll(t *testing.T) {
 	assert.True(t, res.Events[0].Quiet)
 	assert.Equal(t, "Added to the watchlist: Fish Tank (2009)", res.Events[0].Title)
 	assert.Equal(t, "Fish Tank", res.Blocks[0].Rows[0][0].Text)
+	require.Len(t, res.SummaryBlock.Rows, 1, "the short view has only the addition")
+	assert.Equal(t, "Fish Tank", res.SummaryBlock.Rows[0][0].Text)
+
+	// Still there three days on, less a minute; gone from it after.
+	res, err = m.Poll(context.Background(), at(env, now.Add(recent-time.Minute)))
+	require.NoError(t, err)
+	assert.Len(t, res.SummaryBlock.Rows, 1)
+	res, err = m.Poll(context.Background(), at(env, now.Add(recent)))
+	require.NoError(t, err)
+	assert.Empty(t, res.SummaryBlock.Rows)
+	assert.Equal(t, "Fish Tank", res.Blocks[0].Rows[0][0].Text, "the open panel keeps every film")
+}
+
+func TestReaddedIsRecentAgain(t *testing.T) {
+	extra := `<div class="react-component" data-item-name="Fish Tank (2009)" data-item-slug="fish-tank" >`
+	m := newMonitor(t, fakeLetterboxd(t, &extra), "")
+	env := monitortest.Env(now)
+	_, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	extra = ""
+	_, err = m.Poll(context.Background(), at(env, now.Add(2*time.Hour)))
+	require.NoError(t, err)
+	extra = `<div class="react-component" data-item-name="Fish Tank (2009)" data-item-slug="fish-tank" >`
+	res, err := m.Poll(context.Background(), at(env, now.Add(4*time.Hour)))
+	require.NoError(t, err)
+	require.Len(t, res.SummaryBlock.Rows, 1)
+	assert.Equal(t, "Fish Tank", res.SummaryBlock.Rows[0][0].Text)
 }
 
 func TestNoLocalApp(t *testing.T) {
