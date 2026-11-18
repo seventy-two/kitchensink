@@ -3,7 +3,6 @@ package osrs
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"slices"
 	"time"
 
@@ -36,24 +35,15 @@ func (m *Monitor) takeRolls(env monitor.Env, data json.RawMessage) error {
 // Tangleroot, from each crop's own rate. Farming XP isn't used: checks
 // are what roll for the pet, and the hiscores only have XP after logout.
 func farmingGain(rolls []farming.Roll, midnight time.Time) (gain, bool) {
-	none := 1.0 // the chance none of them gave it
-	n := 0
+	by := map[int]int64{}
 	for _, r := range rolls {
-		if r.At.Before(midnight) || r.Chance <= 0 {
-			continue
+		if !r.At.Before(midnight) {
+			by[r.Chance]++
 		}
-		none *= 1 - 1/float64(r.Chance)
-		n++
 	}
-	if n == 0 {
-		return gain{}, false
+	g, ok := rollGain(tracked["farming"].Name, tracked["farming"].Pet, "farming", by, "patches")
+	if ok && g.Gained == 1 {
+		g.Today = "+1 patch"
 	}
-	mt := tracked["farming"]
-	mt.Kind = score
-	mt.Rate = "1/" + comma(int64(math.Round(1/(1-none))))
-	unit := " patches"
-	if n == 1 {
-		unit = " patch"
-	}
-	return gain{metric: mt, ID: "farming", Gained: int64(n), Today: "+" + comma(int64(n)) + unit}, true
+	return g, ok
 }

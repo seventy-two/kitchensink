@@ -92,7 +92,7 @@ func TestDelves(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, res.Upload)
 	assert.Equal(t, []string{"delvecalculator.killCountData=", "goatindicators.totalCaught="}, res.Upload.Prefixes)
-	assert.Equal(t, int64(86400), res.Upload.Every)
+	assert.Equal(t, int64(60), res.Upload.Every, "every minute, for the day's goats")
 
 	upload := func(text string) error {
 		return m.Act(context.Background(), env, monitor.Action{Type: monitor.UploadAction, Text: text})

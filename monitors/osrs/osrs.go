@@ -61,8 +61,9 @@ type Config struct {
 	// plugins keep counts the hiscores don't: the Delve Calculator's Doom
 	// of Mokhaiotl delve levels (Dom's chance depends on the level) and the
 	// goat hunting plugin's goats caught (Mr McGroot). The Windows client
-	// uploads their lines once a day, and the counts are published with
-	// the rest. See plugins.go.
+	// uploads their lines when they change (looking every minute), and the
+	// counts are published with the rest; goats also count in the day's
+	// gains. See plugins.go.
 	ProfileFile string `json:"profileFile"`
 	// PublishUniques, if set, is a file the monitor writes after each poll
 	// with every collection log item from the tracked bosses (see
@@ -110,6 +111,10 @@ type Monitor struct {
 	loaded bool
 	// When WOM last failed, for the update and for the day's start.
 	womFailed, baseFailed time.Time
+	// When a chat message last had the panel refresh, and whether one
+	// since hasn't (see chatEvery).
+	chatAt  time.Time
+	pending bool
 }
 
 // New builds the monitor from its JSON config.
@@ -221,6 +226,11 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	if g, ok := farmingGain(rolls, midnight); ok {
 		extra = append(extra, g)
 	}
+	hunting, err := m.hunterGains(env, day, merged(current, live)["hunter"])
+	if err != nil {
+		return monitor.Result{}, err
+	}
+	extra = append(extra, hunting...)
 	rows := gains(from, merged(current, live), owned, extra...)
 	if err := m.publish(env, merged(current, live)); err != nil {
 		return monitor.Result{}, err
@@ -254,7 +264,13 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	var upload *monitor.Upload
 	if m.cfg.ProfileFile != "" {
 		// Once a day is enough for pets this rare (the user's call).
-		upload = &monitor.Upload{Path: m.cfg.ProfileFile, Prefixes: []string{delvePrefix, goatPrefix}, Every: 24 * 60 * 60}
+		// Every minute, for the day's goats (only changed lines are sent).
+		upload = &monitor.Upload{Path: m.cfg.ProfileFile, Prefixes: []string{delvePrefix, goatPrefix}, Every: 60}
+	}
+	next := midnight.AddDate(0, 0, 1).Add(time.Minute).Sub(now)
+	if m.pending {
+		m.pending = false
+		next = min(next, chatEvery)
 	}
 	return monitor.Result{
 		Upload:       upload,
@@ -264,7 +280,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		SummaryStyle: monitor.SummaryChips,
 		SummaryBlock: &short,
 		Events:       events,
-		Next:         midnight.AddDate(0, 0, 1).Add(time.Minute).Sub(now),
+		Next:         next,
 	}, nil
 }
 
@@ -323,6 +339,9 @@ func (m *Monitor) dayStart(ctx context.Context, env monitor.Env, midnight time.T
 	return current, false
 }
 
+// byRolls are the skills counted by their pets' rolls, not XP.
+var byRolls = map[string]bool{"farming": true, "hunter": true}
+
 // merged is a with each of b's numbers that's higher.
 func merged(a, b stats) stats {
 	out := stats{}
@@ -363,11 +382,12 @@ type gain struct {
 
 // gains are the tracked metrics that went up, leaving out those whose pet
 // is owned (by petKey): kills and scores first, then XP, each most first.
-// Farming comes from patches checked instead of XP (see farmingGain).
+// Farming and Hunter come from the rolls for their pets instead of XP
+// (see farmingGain and hunterGains).
 func gains(from, to stats, owned map[string]bool, extra ...gain) []gain {
 	var out []gain
 	for id, mt := range tracked {
-		if owned[petKey(mt.Pet)] || id == "farming" {
+		if owned[petKey(mt.Pet)] || byRolls[id] {
 			continue
 		}
 		if d := to[id] - from[id]; d > 0 {

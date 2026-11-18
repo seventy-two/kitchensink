@@ -84,6 +84,9 @@ func (m *Monitor) uploadProfile(env monitor.Env, text string) error {
 		if err != nil {
 			return fmt.Errorf("%w: goats caught: %v", monitor.ErrBadAction, err)
 		}
+		if err := m.countGoats(env, goats); err != nil {
+			return err
+		}
 		if err := env.State.Set(goatsKey, goats); err != nil {
 			return err
 		}

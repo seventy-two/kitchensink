@@ -392,10 +392,20 @@ line, so it can still post to Discord). Then turn on:
 - **Pet**: listed and notified at high priority.
 - For skill XP at each login, put the same URL in **Advanced → Custom
   Metadata Handler**.
+- **Chat**, with the message types at Game and the pattern
+  `You've caught a*chinchompa*`: each chinchompa caught counts towards
+  the baby chinchompa at its own rate (grey, red or black). Other chat
+  messages are logged and ignored. A catch refreshes the panel at most
+  once a minute.
+
+Hunter isn't counted by XP: its pets come only from chinchompas and
+Wyrmscraig's goats (the goat plugin's count, below), so the panel has a
+row for each with the chance at least one of the day's catches gave the
+pet, at the Hunter level the XP gives.
 
 With `profileFile` set to the RuneLite profile file where plugins keep
 their settings, the Windows client uploads two plugins' counts from it
-once a day, and the published file has them too: the Delve Calculator's
+when they change (looking every minute), and the published file has them too: the Delve Calculator's
 Doom of Mokhaiotl delve levels completed from 6 on (`doom_delve_6` to
 `doom_delve_9`, 9 being past 8), which is what Dom's chance depends on
 (the hiscores only count level 8s), and the goat hunting plugin's goats

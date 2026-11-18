@@ -475,3 +475,74 @@ func TestFarmingRolls(t *testing.T) {
 
 	assert.Empty(t, gains(stats{"farming": 1}, stats{"farming": 500_000}, nil), "no farming XP")
 }
+
+func TestLevelFor(t *testing.T) {
+	assert.Equal(t, 1, levelFor(0))
+	assert.Equal(t, 2, levelFor(83))
+	assert.Equal(t, 98, levelFor(13_034_430))
+	assert.Equal(t, 99, levelFor(13_034_431))
+	assert.Equal(t, 99, levelFor(200_000_000))
+}
+
+func TestChinKind(t *testing.T) {
+	for msg, want := range map[string]string{
+		"You've caught a chinchompa.":             "grey",
+		"You've caught a carnivorous chinchompa.": "red",
+		"You've caught a black chinchompa.":       "black",
+		"You've caught a red chinchompa.":         "red",
+		"The chinchompa escapes.":                 "",
+		"You've caught a ferret.":                 "",
+	} {
+		assert.Equal(t, want, chinKind(msg), msg)
+	}
+}
+
+// Hunter counts chinchompas (from Dink's chat) and goats (from the goat
+// plugin), each at its rate, in place of Hunter XP.
+func TestHunting(t *testing.T) {
+	f := newFakeWOM(t)
+	m := newMonitor(t, f)
+	m.cfg.ProfileFile = `C:\x.properties`
+	env := monitortest.Env(now)
+	hook(t, m, env, "LOGIN", `{"skills":{"experience":{"Hunter":21361995}}}`)
+	chat := func(msg string) error {
+		body := `{"type":"CHAT","playerName":"GTX 480","seasonalWorld":false,"extra":{"type":"GAMEMESSAGE","message":"` + msg + `"}}`
+		return m.Act(context.Background(), env, monitor.Action{Type: monitor.HookAction, Data: json.RawMessage(body)})
+	}
+	require.NoError(t, chat("You've caught a black chinchompa."), "the first refreshes the panel")
+	assert.ErrorIs(t, chat("You've caught a black chinchompa."), monitor.ErrQuiet, "the next within a minute doesn't")
+	assert.ErrorIs(t, chat("Your trap has collapsed."), monitor.ErrQuiet)
+
+	// Goats: yesterday's last count, then today's.
+	goats := func(n int) {
+		require.NoError(t, m.Act(context.Background(), env, monitor.Action{Type: monitor.UploadAction, Text: fmt.Sprintf("goatindicators.totalCaught=%d", n)}))
+	}
+	env.Now = func() time.Time { return now.Add(-54 * time.Hour) }
+	goats(500) // the first: that day starts here
+	env.Now = func() time.Time { return now.Add(-30 * time.Hour) } // yesterday
+	goats(1000)
+	env.Now = func() time.Time { return now }
+	goats(1000)
+	goats(1900)
+
+	res, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Equal(t, time.Minute, res.Next, "a catch not shown yet: poll again soon")
+	// Hunter 99: blacks 1/80,283 each, goats 1/37,525.
+	assert.Contains(t, res.Summary, monitor.Stat{Label: "Goats", Value: "+900 caught", Tone: monitor.ToneGood})
+	assert.Contains(t, res.Summary, monitor.Stat{Label: "Chinchompas", Value: "+2 caught", Tone: monitor.ToneGood})
+	for _, r := range res.Blocks[0].Rows {
+		switch r[0].Text {
+		case "Goats":
+			assert.Equal(t, "1/42", r[3].Text)
+		case "Chinchompas":
+			assert.Equal(t, "1/40,142", r[3].Text)
+		case "Hunter":
+			t.Error("no Hunter XP row")
+		}
+	}
+
+	res, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Greater(t, res.Next, time.Hour, "caught up")
+}

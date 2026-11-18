@@ -189,6 +189,9 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 	}
 	now := env.Now().In(m.loc)
 	day := now.Format(time.DateOnly)
+	if d.Type == "CHAT" {
+		return m.chat(env, d, day)
+	}
 	if quiet, err := m.quiet(env, d); err != nil || quiet {
 		return cmp.Or(err, monitor.ErrQuiet)
 	}
