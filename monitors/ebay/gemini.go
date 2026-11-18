@@ -132,3 +132,85 @@ func (g *gemini) judge(ctx context.Context, client *http.Client, what string, it
 	}
 	return judgements, nil
 }
+
+// dealInstruction asks whether asking prices are fair.
+const dealInstruction = `You judge eBay listings of boxed PC games for a collector in the UK: is the asking price (postage included) a good deal, fair, or overpriced, against what such items actually sell for on eBay UK today (not what sellers ask)? Go by the game as described (complete, sealed, disc only, manual only, a lot of several) in the condition the title suggests, used and in good order if it doesn't say.
+
+For each give:
+- verdict: "good" if it's clearly below what it sells for, "overpriced" if clearly above, else "fair".
+- low, high: the fair range in whole pounds, postage included.
+- why: a few words, e.g. "sells for £25-35 complete".`
+
+var dealSchema = map[string]any{
+	"type": "array",
+	"items": map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"id":      map[string]any{"type": "string"},
+			"verdict": map[string]any{"type": "string", "enum": []string{"good", "fair", "overpriced"}},
+			"low":     map[string]any{"type": "number"},
+			"high":    map[string]any{"type": "number"},
+			"why":     map[string]any{"type": "string"},
+		},
+		"required": []string{"id", "verdict", "low", "high", "why"},
+	},
+}
+
+// deal is what an asking price is: good, fair or overpriced against the
+// fair range Low to High (pounds, postage included), and why. Asking is
+// the price it was judged at; Yours says the range came from the config's
+// Prices rather than the model.
+type deal struct {
+	ID      string  `json:"id,omitempty"`
+	Verdict string  `json:"verdict"`
+	Low     float64 `json:"low"`
+	High    float64 `json:"high"`
+	Why     string  `json:"why,omitempty"`
+	Asking  float64 `json:"asking,omitempty"`
+	Yours   bool    `json:"yours,omitempty"`
+}
+
+// dealBatch is how many listings are judged in one request: few, so each
+// gets looked up.
+const dealBatch = 8
+
+// deals asks whether each listing's asking price (pounds, postage
+// included, by item ID) is a good deal, with web search for what such
+// things sell for. what says what kind of thing they are.
+func (g *gemini) deals(ctx context.Context, client *http.Client, what string, items []item, asking map[string]float64) (map[string]deal, error) {
+	type in struct {
+		ID     string  `json:"id"`
+		Title  string  `json:"title"`
+		Asking float64 `json:"asking"`
+	}
+	var list []in
+	for _, it := range items {
+		list = append(list, in{it.ItemID, it.Title, asking[it.ItemID]})
+	}
+	input, _ := json.Marshal(list)
+	sys := dealInstruction
+	if what != "" {
+		sys += "\n\nEach listing is " + what + "."
+	}
+	var got []deal
+	if err := g.ai.Ask(ctx, client, ai.Request{
+		System:    sys,
+		Text:      "Judge each listing's asking price (in pounds, postage included), by its id:\n" + string(input),
+		Schema:    dealSchema,
+		MaxTokens: 8000,
+		Search:    true,
+	}, &got); err != nil {
+		return nil, err
+	}
+	out := map[string]deal{}
+	for _, d := range got {
+		if _, ok := asking[d.ID]; ok && rankDeal(d.Verdict) && d.High >= d.Low {
+			d.Asking, d.Why = asking[d.ID], strings.TrimSpace(d.Why)
+			out[d.ID] = d
+		}
+	}
+	return out, nil
+}
+
+// rankDeal says whether v is a verdict the model may give.
+func rankDeal(v string) bool { return v == "good" || v == "fair" || v == "overpriced" }

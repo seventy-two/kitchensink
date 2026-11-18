@@ -464,6 +464,10 @@ type CellAction struct {
 	Type  string `json:"type"`
 	ID    string `json:"id,omitempty"`
 	Label string `json:"label"`
+	// Icon names the button's picture: "delete" (a bin) for removing one
+	// thing, where a cross would mean something bigger. Clients draw a
+	// cross for none or one they don't know.
+	Icon string `json:"icon,omitempty"`
 }
 
 // Local is something a client can do with an app installed beside it,

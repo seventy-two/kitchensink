@@ -82,17 +82,51 @@ type fakeGemini struct {
 	rarity map[string]string // by title
 	asked  [][]string
 	fail   bool
+	// deals answers price questions, by title; priced records what was
+	// asked (title: asking) and searched whether search was on.
+	deals    map[string]deal
+	priced   []map[string]float64
+	searched bool
 }
 
 func newFakeGemini(t *testing.T) *fakeGemini {
-	g := &fakeGemini{names: map[string]string{}, rarity: map[string]string{}}
+	g := &fakeGemini{names: map[string]string{}, rarity: map[string]string{}, deals: map[string]deal{}}
 	g.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct{ Input string }
+		var req struct {
+			Input string
+			Tools []any
+		}
 		json.NewDecoder(r.Body).Decode(&req)
 		g.mu.Lock()
 		defer g.mu.Unlock()
 		if g.fail {
 			http.Error(w, "busy", http.StatusServiceUnavailable)
+			return
+		}
+		reply := func(v any) {
+			text, _ := json.Marshal(v)
+			json.NewEncoder(w).Encode(map[string]any{"steps": []any{map[string]any{
+				"type": "model_output", "content": []any{map[string]any{"type": "text", "text": string(text)}},
+			}}})
+		}
+		if strings.HasPrefix(req.Input, "Judge each listing's asking price") {
+			var list []struct {
+				ID, Title string
+				Asking    float64
+			}
+			json.Unmarshal([]byte(req.Input[strings.Index(req.Input, "["):]), &list)
+			asked := map[string]float64{}
+			var out []deal
+			for _, l := range list {
+				asked[l.Title] = l.Asking
+				if d, ok := g.deals[l.Title]; ok {
+					d.ID = l.ID
+					out = append(out, d)
+				}
+			}
+			g.priced = append(g.priced, asked)
+			g.searched = len(req.Tools) > 0
+			reply(out)
 			return
 		}
 		var list []struct{ ID, Title string }
@@ -163,11 +197,11 @@ func TestPoll(t *testing.T) {
 	assert.Equal(t, "https://www.ebay.co.uk/itm/2", rows[0][0].URL)
 	assert.Equal(t, "£24.99", rows[0][1].Text)
 	assert.Equal(t, "", rows[0][1].Detail)
-	assert.Equal(t, "19:30", rows[0][2].Text)
+	assert.Equal(t, "19:30", rows[0][3].Text)
 	assert.Equal(t, "Ultima VII: The Black Gate", rows[1][0].Text)
 	assert.Equal(t, "£45", rows[1][1].Text)
 	assert.Equal(t, "3 bids", rows[1][1].Detail)
-	assert.Equal(t, "Mon 19:30", rows[1][2].Text)
+	assert.Equal(t, "Mon 19:30", rows[1][3].Text)
 	require.NotNil(t, res.SummaryBlock)
 
 	// A new listing: reported, named, and nothing asked about twice.
@@ -294,9 +328,9 @@ func TestIgnore(t *testing.T) {
 	res, err := m.Poll(context.Background(), env)
 	require.NoError(t, err)
 	rows := res.Blocks[0].Rows
-	require.NotNil(t, rows[0][3].Action, "a rare listing can be ignored")
-	assert.Equal(t, monitor.CellAction{Type: "ignore", ID: "v1|1|0", Label: "Ignore WipEout from now on"}, *rows[0][3].Action)
-	assert.Nil(t, rows[1][3].Action, "a common one has nothing to ignore")
+	require.NotNil(t, rows[0][5].Action, "a rare listing can be ignored")
+	assert.Equal(t, monitor.CellAction{Type: "ignore", ID: "v1|1|0", Label: "Ignore WipEout from now on"}, *rows[0][5].Action)
+	assert.Nil(t, rows[1][5].Action, "a common one has nothing to ignore")
 
 	require.Equal(t, []string{"listing/v1|1|0"}, monitortest.Keys(res.Events), "notified")
 
@@ -312,7 +346,7 @@ func TestIgnore(t *testing.T) {
 	rows = res.Blocks[0].Rows
 	assert.Equal(t, "", rows[0][0].Detail, "now counts as common")
 	assert.Equal(t, monitor.ToneNone, rows[0][0].Tone)
-	assert.Nil(t, rows[0][3].Action)
+	assert.Nil(t, rows[0][5].Action)
 
 	// Another copy, named a little differently, is ignored too.
 	again := "Wipeout pc cd rom 1995 RARE"
@@ -430,4 +464,99 @@ func TestGrailsAndPostage(t *testing.T) {
 	assert.Equal(t, "£20 +£10.01 postage (high) · grail", byKey["listing/v1|1|0"].Body)
 	assert.Equal(t, monitor.PriorityNormal, byKey["listing/v1|2|0"].Priority)
 	assert.NotContains(t, byKey, "listing/v1|6|0", "common, so no event")
+}
+
+func TestDeals(t *testing.T) {
+	eb, gem := newFakeEbay(t), newFakeGemini(t)
+	m := newMonitorWith(t, eb.URL, gem.URL, map[string]any{"notify": "uncommon", "deals": true,
+		"prices": map[string]float64{"Croc": 30}})
+	env := monitortest.Env(now)
+	_, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+
+	for title, j := range map[string][2]string{
+		"lba big box": {"Little Big Adventure", "uncommon"},
+		"quake":       {"Quake", "common"},
+		"lba auction": {"Little Big Adventure", "uncommon"},
+		"croc":        {"Croc", "common"},
+		"lba usd":     {"Little Big Adventure", "uncommon"},
+	} {
+		gem.names[title], gem.rarity[title] = j[0], j[1]
+	}
+	gem.deals["lba big box"] = deal{Verdict: "good", Low: 25, High: 40, Why: "sells for £25-40 complete"}
+	usd := listing("5", "lba usd", "10", now, false, 0)
+	usd["price"] = map[string]any{"value": "10", "currency": "USD"}
+	eb.items = []map[string]any{
+		withPostage(listing("1", "lba big box", "14", now, false, 0), "5.00"),
+		listing("2", "quake", "10", now, false, 0),
+		listing("3", "lba auction", "5", now, true, 1),
+		withPostage(listing("4", "croc", "40", now, false, 0), "0.00"),
+		usd,
+	}
+	res, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Equal(t, []map[string]float64{{"lba big box": 19}}, gem.priced,
+		"only uncommon-or-better Buy It Now in pounds, with postage; Croc has your price")
+	assert.True(t, gem.searched, "looked up")
+
+	rows := res.Blocks[0].Rows
+	assert.Equal(t, monitor.Cell{Text: "good deal", Detail: "£25–40", Tone: monitor.ToneGood}, rows[0][2])
+	assert.Equal(t, monitor.Cell{}, rows[1][2], "common: not judged")
+	assert.Equal(t, monitor.Cell{}, rows[2][2], "an auction: not judged")
+	assert.Equal(t, monitor.Cell{Text: "overpriced", Detail: "yours £30", Tone: monitor.ToneWarn}, rows[3][2], "£40 against your £30")
+	assert.Equal(t, monitor.Cell{}, rows[4][2], "not in pounds")
+	assert.Equal(t, "£14 +£5 postage · uncommon · good deal", res.Events[0].Body)
+
+	// Judged once a price; a new price is judged again.
+	_, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Len(t, gem.priced, 1)
+	eb.items[0] = withPostage(listing("1", "lba big box", "30", now, false, 0), "5.00")
+	_, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]float64{"lba big box": 35}, gem.priced[1])
+
+	// Out of the model's hands, your price still settles it.
+	gem.fail = true
+	eb.items[3] = withPostage(listing("4", "croc", "20", now, false, 0), "0.00")
+	res, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Equal(t, "good deal", res.Blocks[0].Rows[3][2].Text)
+}
+
+func TestHide(t *testing.T) {
+	eb, gem := newFakeEbay(t), newFakeGemini(t)
+	m := newMonitorWith(t, eb.URL, gem.URL, map[string]any{"notify": "uncommon", "grails": []string{"Need for Speed: Underground 2"}})
+	env := monitortest.Env(now)
+	_, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+
+	gem.names["nfsu2 dud"], gem.rarity["nfsu2 dud"] = "Need for Speed: Underground 2", "common"
+	gem.names["nfsu2 good"], gem.rarity["nfsu2 good"] = "Need for Speed: Underground 2", "common"
+	eb.items = []map[string]any{listing("1", "nfsu2 dud", "150", now, false, 0)}
+	res, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	require.Equal(t, []string{"listing/v1|1|0"}, monitortest.Keys(res.Events))
+	hide := res.Blocks[0].Rows[0][4].Action
+	require.NotNil(t, hide)
+	assert.Equal(t, monitor.CellAction{Type: "hide", ID: "v1|1|0", Label: "Hide this listing (a dud); keep looking for the game", Icon: "delete"}, *hide)
+
+	require.NoError(t, m.Act(context.Background(), env, monitor.Action{Type: "hide", ID: "v1|1|0"}))
+	res, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	assert.Empty(t, res.Blocks[0].Rows, "hidden")
+	require.Len(t, res.Events, 1)
+	assert.True(t, res.Events[0].Update)
+	assert.Equal(t, "Hidden", res.Events[0].Body)
+	assert.Equal(t, now, res.Events[0].Until, "its notification ends")
+	assert.True(t, res.Background, "nothing left worth seeing")
+
+	// The game's still looked for: a new listing of it notifies.
+	eb.items = append(eb.items, listing("2", "nfsu2 good", "30", now, false, 0))
+	res, err = m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	require.Len(t, res.Blocks[0].Rows, 1)
+	assert.Equal(t, grail, res.Blocks[0].Rows[0][0].Detail)
+	assert.Equal(t, []string{"listing/v1|2|0"}, monitortest.Keys(res.Events))
+	assert.ErrorIs(t, m.Act(context.Background(), env, monitor.Action{Type: "hide"}), monitor.ErrBadAction)
 }

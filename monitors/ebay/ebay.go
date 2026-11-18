@@ -5,12 +5,16 @@
 package ebay
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
+	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -52,6 +56,16 @@ type Config struct {
 	// entry ending in "*" matches names starting with it, e.g. "Metal Gear
 	// Solid*" for the whole series.
 	Grails []string `json:"grails"`
+	// Deals judges the asking price (postage included) of Buy It Now
+	// listings in pounds that are uncommon, rare or grail: a good deal,
+	// fair or overpriced against what such things sell for, asked of the
+	// model with web search, once a price.
+	Deals bool `json:"deals"`
+	// Prices are fair prices you know, in pounds with postage, by game
+	// name as for Grails (one game, not lots). They settle any Buy It Now
+	// listing of the game without asking the model: under 80% of the
+	// price is a good deal, over 125% overpriced.
+	Prices map[string]float64 `json:"prices"`
 	// Notify is the least rarity Gemini must give a new listing for it to
 	// notify: "uncommon", "rare" or "grail". Others make no event, so they're only
 	// in the panel. Empty notifies for every new listing, as does one
@@ -345,7 +359,14 @@ const (
 	rarityKey   = "rarity"    // how rare Gemini said each listing is, by ID
 	ignoredKey  = "ignored"   // games never to flag, by key(name), with their names
 	clearKey    = "clear"     // games just ignored, by key(name): their listings' events to end
+	hiddenKey   = "hidden"    // listings hidden by hand (duds), by ID, with when
+	unshownKey  = "unshown"   // listings just hidden, by ID: their events to end
+	dealsKey    = "deals"     // what each listing's asking price is, by ID
 )
+
+// maxDeals is how many listings' prices the model is asked about in one
+// poll; the rest wait for the next.
+const maxDeals = 16
 
 // forget is how long a listing is remembered after it was last in the
 // results, so one that drops out and back isn't reported again.
@@ -413,6 +434,17 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		return rarity[it.ItemID]
 	}
 
+	hidden := map[string]time.Time{}
+	if _, err := env.State.Get(hiddenKey, &hidden); err != nil {
+		return monitor.Result{}, err
+	}
+	items = slices.DeleteFunc(items, func(it item) bool { _, ok := hidden[it.ItemID]; return ok })
+	deals := map[string]deal{}
+	if _, err := env.State.Get(dealsKey, &deals); err != nil {
+		return monitor.Result{}, err
+	}
+	m.judgeDeals(ctx, env, items, nameOf, rarityOf, deals)
+
 	var seen map[string]time.Time
 	if _, err := env.State.Get(seenKey, &seen); err != nil {
 		return monitor.Result{}, err
@@ -448,6 +480,9 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 				}
 				if rank(r) > 0 {
 					body += " · " + r
+				}
+				if d, ok := deals[it.ItemID]; ok && d.Verdict != "fair" {
+					body += " · " + dealLabel(d.Verdict)
 				}
 				priority := monitor.PriorityNormal
 				if r == grail {
@@ -488,23 +523,42 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 			return monitor.Result{}, err
 		}
 	}
+	// Listings just hidden: their notifications end too.
+	unshown := map[string]bool{}
+	if _, err := env.State.Get(unshownKey, &unshown); err != nil {
+		return monitor.Result{}, err
+	}
+	if len(unshown) > 0 {
+		for _, id := range slices.Sorted(maps.Keys(unshown)) {
+			events = append(events, monitor.Event{Key: "listing/" + id, Update: true, Title: cmp.Or(names[id], "Listing"), Body: "Hidden", Until: now})
+		}
+		if err := env.State.Set(unshownKey, map[string]bool{}); err != nil {
+			return monitor.Result{}, err
+		}
+	}
 	for id, t := range seen {
 		if now.Sub(t) > forget {
 			delete(seen, id)
 			delete(names, id)
 			delete(rarity, id)
+			delete(deals, id)
+		}
+	}
+	for id, t := range hidden {
+		if now.Sub(t) > forget {
+			delete(hidden, id)
 		}
 	}
 	for _, kv := range []struct {
 		key string
 		v   any
-	}{{seenKey, seen}, {namesKey, names}, {rarityKey, rarity}, {baselineKey, true}} {
+	}{{seenKey, seen}, {namesKey, names}, {rarityKey, rarity}, {baselineKey, true}, {dealsKey, deals}, {hiddenKey, hidden}} {
 		if err := env.State.Set(kv.key, kv.v); err != nil {
 			return monitor.Result{}, err
 		}
 	}
 
-	table := m.table(items, nameOf, rarityOf, now)
+	table := m.table(items, nameOf, rarityOf, deals, now)
 	// Short, only the newest uncommon and rare listings from the last
 	// day: nothing at all when there are none.
 	var worth []item
@@ -513,7 +567,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 			worth = append(worth, it)
 		}
 	}
-	short := m.table(worth, nameOf, rarityOf, now)
+	short := m.table(worth, nameOf, rarityOf, deals, now)
 	var summary []monitor.Stat
 	for _, it := range worth {
 		summary = append(summary, monitor.Stat{Label: nameOf(it), Value: it.price(), Detail: m.when(it.ItemCreationDate, now)})
@@ -539,13 +593,15 @@ func (m *Monitor) notifies(rarity string) bool {
 // table lists the listings; uncommon, rare and grail ones say so under
 // their name, rare and grail ones stand out, and all have a button to
 // ignore the game. A price with postage over half of it is marked.
-func (m *Monitor) table(items []item, nameOf, rarityOf func(item) string, now time.Time) monitor.Block {
+func (m *Monitor) table(items []item, nameOf, rarityOf func(item) string, deals map[string]deal, now time.Time) monitor.Block {
 	b := monitor.Block{
 		Type: monitor.BlockTable,
 		Columns: []monitor.Column{
 			{Title: "Listing", Fill: true},
 			{Title: "Price", Align: monitor.AlignRight},
+			{Title: "Deal"},
 			{Title: "Listed", Align: monitor.AlignRight},
+			{Title: ""},
 			{Title: ""},
 		},
 		Rows: [][]monitor.Cell{},
@@ -576,7 +632,9 @@ func (m *Monitor) table(items []item, nameOf, rarityOf func(item) string, now ti
 		b.Rows = append(b.Rows, []monitor.Cell{
 			name,
 			price,
+			dealCell(deals[it.ItemID]),
 			{Text: m.when(it.ItemCreationDate, now), Tone: monitor.ToneMuted},
+			{Action: &monitor.CellAction{Type: hideAction, ID: it.ItemID, Label: "Hide this listing (a dud); keep looking for the game", Icon: "delete"}},
 			ignore,
 		})
 	}
@@ -603,6 +661,138 @@ func (m *Monitor) when(t, now time.Time) string {
 	return t.Format("2 Jan 2006")
 }
 
+// dealCell shows a listing's deal: the verdict, and the fair range (or
+// your price) under it.
+func dealCell(d deal) monitor.Cell {
+	if d.Verdict == "" {
+		return monitor.Cell{}
+	}
+	c := monitor.Cell{Text: dealLabel(d.Verdict), Detail: fmt.Sprintf("£%.0f–%.0f", d.Low, d.High)}
+	if d.Yours {
+		c.Detail = fmt.Sprintf("yours £%.0f", d.Low/yourLow)
+	}
+	switch d.Verdict {
+	case "good":
+		c.Tone = monitor.ToneGood
+	case "overpriced":
+		c.Tone = monitor.ToneWarn
+	default:
+		c.Tone = monitor.ToneMuted
+	}
+	return c
+}
+
+// dealLabel is a verdict as people say it.
+func dealLabel(v string) string {
+	if v == "good" {
+		return "good deal"
+	}
+	return v
+}
+
+// asking is what a Buy It Now listing in pounds costs with postage; false
+// for auctions and other currencies.
+func (it item) asking() (float64, bool) {
+	if it.auction() || it.Price == nil || it.Price.Currency != "GBP" {
+		return 0, false
+	}
+	v, err := strconv.ParseFloat(it.Price.Value, 64)
+	if err != nil {
+		return 0, false
+	}
+	if p := it.postage(); p != nil {
+		if p.Currency != "GBP" {
+			return 0, false
+		}
+		post, err := strconv.ParseFloat(p.Value, 64)
+		if err != nil {
+			return 0, false
+		}
+		v += post
+	}
+	return v, true
+}
+
+// yourLow and yourHigh make a price you know into a fair range.
+const (
+	yourLow  = 0.8
+	yourHigh = 1.25
+)
+
+// yourDeal judges asking against a price you know.
+func yourDeal(asking, price float64) deal {
+	d := deal{Verdict: "fair", Low: price * yourLow, High: price * yourHigh, Asking: asking, Yours: true}
+	switch {
+	case asking < d.Low:
+		d.Verdict = "good"
+	case asking > d.High:
+		d.Verdict = "overpriced"
+	}
+	return d
+}
+
+// judgeDeals fills deals for listings that need one: Buy It Now in pounds,
+// at a price not yet judged; your price for a game in Prices, else (with
+// Deals) the model's view for uncommon, rare and grail listings. A failure
+// is logged and tried again next poll.
+func (m *Monitor) judgeDeals(ctx context.Context, env monitor.Env, items []item, nameOf, rarityOf func(item) string, deals map[string]deal) {
+	asking := map[string]float64{}
+	var ask []item
+	for _, it := range items {
+		total, ok := it.asking()
+		if !ok {
+			continue
+		}
+		if d, ok := deals[it.ItemID]; ok && math.Abs(d.Asking-total) < 0.005 {
+			continue
+		}
+		if price, ok := m.yourPrice(nameOf(it)); ok {
+			deals[it.ItemID] = yourDeal(total, price)
+			continue
+		}
+		if m.cfg.Deals && m.gemini != nil && rank(rarityOf(it)) > 0 && len(ask) < maxDeals {
+			asking[it.ItemID] = total
+			ask = append(ask, it)
+		}
+	}
+	for i := 0; i < len(ask); i += dealBatch {
+		got, err := m.gemini.deals(ctx, env.HTTP, m.cfg.Name, ask[i:min(i+dealBatch, len(ask))], asking)
+		if err != nil {
+			env.Log.Warn("judging prices", "err", err)
+			return
+		}
+		maps.Copy(deals, got)
+	}
+}
+
+// yourPrice is the config's price for a game named name, if it has one.
+func (m *Monitor) yourPrice(name string) (float64, bool) {
+	if strings.Contains(name, " + ") {
+		return 0, false
+	}
+	k := key(name)
+	for g, price := range m.cfg.Prices {
+		if nameMatches(g, k) {
+			return price, true
+		}
+	}
+	return 0, false
+}
+
+// nameMatches says whether a game name's key k is the one pattern names:
+// equal ignoring capitals and punctuation, or starting with it when it
+// ends in "*".
+func nameMatches(pattern, k string) bool {
+	if prefix, ok := strings.CutSuffix(pattern, "*"); ok {
+		p := key(prefix)
+		return k == p || strings.HasPrefix(k, p+" ")
+	}
+	return k == key(pattern)
+}
+
+// hideAction hides one listing (a dud) for good, without ignoring its game.
+const hideAction = "hide"
+
 // ignoreAction is the action that ignores a listing's game: from then on,
 // its listings count as common, so they're neither marked nor notified.
 const ignoreAction = "ignore"
@@ -611,13 +801,8 @@ const ignoreAction = "ignore"
 // one in it.
 func (m *Monitor) grail(name string) bool {
 	for _, part := range strings.Split(name, " + ") {
-		k := key(part)
 		for _, g := range m.cfg.Grails {
-			if prefix, ok := strings.CutSuffix(g, "*"); ok {
-				if p := key(prefix); k == p || strings.HasPrefix(k, p+" ") {
-					return true
-				}
-			} else if k == key(g) {
+			if nameMatches(g, key(part)) {
 				return true
 			}
 		}
@@ -648,6 +833,9 @@ func key(name string) string {
 // Act ignores a listing's game (an action of type "ignore" with the
 // listing's item ID).
 func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) error {
+	if a.Type == hideAction {
+		return m.hide(env, a.ID)
+	}
 	if a.Type != ignoreAction {
 		return fmt.Errorf("%w: %s", monitor.ErrBadAction, a.Type)
 	}
@@ -675,4 +863,26 @@ func (m *Monitor) Act(ctx context.Context, env monitor.Env, a monitor.Action) er
 	}
 	clear[key(name)] = true
 	return env.State.Set(clearKey, clear)
+}
+
+// hide hides one listing for good: it leaves the panel and its
+// notification ends, but its game is still looked for.
+func (m *Monitor) hide(env monitor.Env, id string) error {
+	if id == "" {
+		return fmt.Errorf("%w: hide needs a listing ID", monitor.ErrBadAction)
+	}
+	hidden := map[string]time.Time{}
+	if _, err := env.State.Get(hiddenKey, &hidden); err != nil {
+		return err
+	}
+	hidden[id] = env.Now()
+	if err := env.State.Set(hiddenKey, hidden); err != nil {
+		return err
+	}
+	unshown := map[string]bool{}
+	if _, err := env.State.Get(unshownKey, &unshown); err != nil {
+		return err
+	}
+	unshown[id] = true
+	return env.State.Set(unshownKey, unshown)
 }

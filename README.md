@@ -318,6 +318,18 @@ price isn't known, so auctions aren't judged).
 }
 ```
 
+With `deals`, each Buy It Now listing in pounds that's uncommon, rare or
+grail has its asking price (postage included) judged once a price: a good
+deal, fair or overpriced, with a fair range, from the model with web search
+for what such things sell for (in tests, told the price with search did
+best: without search it goes along with whatever's asked). `prices` are
+fair prices you know, by game name as for `grails`; they settle any Buy It
+Now listing of that game without asking (under 80% is a good deal, over
+125% overpriced). Each row also has a bin button (action `hide`, cell
+action `icon` `"delete"`) that hides that one listing for good and ends its
+notification, while its game is still looked for; the cross (`ignore`)
+ignores the whole game.
+
 `TestLiveCompare` (in `monitors/ebay`, run with `EBAY_LIVE_COMPARE` set)
 rates the newest listings with Gemini and with Claude and lists where they
 differ.
@@ -622,7 +634,7 @@ drawn from the same few block types, so clients need no per-monitor code:
 | Block `type` | Fields |
 | --- | --- |
 | `stats` | `stats`: `label`, `value`, `detail`, `tone`, `series` (a sparkline), `icon` (a weather picture by the value: `sun`, `moon`, `sun-cloud`, `moon-cloud`, `cloud`, `fog`, `drizzle`, `rain`, `showers`, `snow` or `storm`), `level` (0 to 1, drawn faintly behind the chip as a chart joined to its neighbours', e.g. the chance of rain; 0 draws along the bottom, absent draws nothing); `chips` (draw them as a grid of chips, e.g. the watchlist's charts) and `views` (`label` and `stats` each: sets to switch between, e.g. Today, 1W and 1M; `stats` is the first's) |
-| `table` | `columns` (`title`, `align`, `fill` for the column that takes spare width) and `rows` of cells (`text`, `tone`, `url`, `detail` for a smaller line under the text, `open`: an app on the client's own machine to open `url` with, where it's installed (else the browser opens it as usual), and `local`: `{"app", "arg"}`, a button for an app on the client's own machine, e.g. the watchlist's downloader, drawn only by clients that have it; and `action`: `{"type", "id", "label"}`, a button that sends the monitor that action, with `label` saying what it does, e.g. eBay's ignore; and `choice`: `{"action", "id", "value", "options": [{"label", "value"}], "hint"}`, a drop-down in place of the text that sends `action` with `id` and the picked option's value as text, e.g. the `ai` monitor's models; clients that don't draw it show `text`) |
+| `table` | `columns` (`title`, `align`, `fill` for the column that takes spare width) and `rows` of cells (`text`, `tone`, `url`, `detail` for a smaller line under the text, `open`: an app on the client's own machine to open `url` with, where it's installed (else the browser opens it as usual), and `local`: `{"app", "arg"}`, a button for an app on the client's own machine, e.g. the watchlist's downloader, drawn only by clients that have it; and `action`: `{"type", "id", "label", "icon"}`, a button that sends the monitor that action, with `label` saying what it does, e.g. eBay's ignore, and `icon` `"delete"` for a bin rather than a cross (eBay's hide); and `choice`: `{"action", "id", "value", "options": [{"label", "value"}], "hint"}`, a drop-down in place of the text that sends `action` with `id` and the picked option's value as text, e.g. the `ai` monitor's models; clients that don't draw it show `text`) |
 | `list` | `items`: `title`, `subtitle`, `detail`, `url`, `open` (as for a table cell), `image`, `tone` |
 | `checklist` | `items` (`id`, `title`, `done`, `tone`) with checkboxes that send `toggle` and `delete` actions; `addHint` adds a box for `add`, `deleteHint` names what delete does when it isn't deleting (the reorders' "Stop tracking") and `noDelete` leaves it out; `movable` adds up and down buttons that send `move` with text `up` or `down` (reordering the to-do list), named by `upHint` and `downHint` when they do something else (the chores' days); `switch` draws items as on/off switches, on while not `done` (the lights); an item's `slider` (`value` 0-100, `action`, `hint`) is a control that sends its `action` with the new value as text when let go, and its `colour` (`value` `#rrggbb`, `action`, `wheel` for any colour, `presets` of `label`, `value` sent, `show` drawn) a swatch that opens a picker sending its `action` with the colour (the lights) |
 | `text` | `text` |

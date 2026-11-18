@@ -271,33 +271,6 @@ func TestLivePrices(t *testing.T) {
 	t.Log(b.String())
 }
 
-const dealInstruction = `You judge eBay listings of boxed PC games for a collector in the UK: is the asking price (postage included) a good deal, fair, or overpriced, against what such items actually sell for on eBay UK today (not what sellers ask)? Go by the game as described (complete, sealed, disc only, manual only, a lot of several) in the condition the title suggests, used and in good order if it doesn't say.
-
-For each give:
-- verdict: "good" if it's clearly below what it sells for, "overpriced" if clearly above, else "fair".
-- low, high: the fair range in whole pounds, postage included.
-- why: a few words, e.g. "sells for £25-35 complete".`
-
-var dealSchema = map[string]any{
-	"type": "array",
-	"items": map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"id":      map[string]any{"type": "string"},
-			"verdict": map[string]any{"type": "string", "enum": []string{"good", "fair", "overpriced"}},
-			"low":     map[string]any{"type": "number"},
-			"high":    map[string]any{"type": "number"},
-			"why":     map[string]any{"type": "string"},
-		},
-		"required": []string{"id", "verdict", "low", "high", "why"},
-	},
-}
-
-type deal struct {
-	ID, Verdict, Why string
-	Low, High        float64
-}
-
 // priced are the user's reference games at a price they'd call fair and
 // one they wouldn't, to see whether a verdict follows the price.
 var priced = []struct {
