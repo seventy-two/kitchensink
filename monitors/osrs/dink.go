@@ -577,12 +577,15 @@ var aliases = map[string]string{
 	"crystalline_hunllef":          "the_gauntlet",
 	"corrupted_hunllef":            "the_corrupted_gauntlet",
 	"royal_titan":                  "the_royal_titans",
-	"nightmare_of_ashihama":        "nightmare",
-	"rewards_guardian":             "guardians_of_the_rift",
-	"supply_crate_wintertodt":      "wintertodt",
-	"reward_cart_wintertodt":       "wintertodt",
-	"reward_pool_tempoross":        "tempoross",
-	"fortis_colosseum":             "sol_heredit",
+	// Loot Logger (and the game) name the Royal Titans' loot after each titan.
+	"branda_the_fire_queen":   "the_royal_titans",
+	"eldric_the_ice_king":     "the_royal_titans",
+	"nightmare_of_ashihama":   "nightmare",
+	"rewards_guardian":        "guardians_of_the_rift",
+	"supply_crate_wintertodt": "wintertodt",
+	"reward_cart_wintertodt":  "wintertodt",
+	"reward_pool_tempoross":   "tempoross",
+	"fortis_colosseum":        "sol_heredit",
 	// Loot sources: Grotesque Guardians' loot comes from Dusk, and the
 	// Unsired is the Abyssal Sire's.
 	"dusk":    "grotesque_guardians",

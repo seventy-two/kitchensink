@@ -341,6 +341,8 @@ func TestMetricFor(t *testing.T) {
 		"Gauntlet":                         "the_gauntlet",
 		"Corrupted Gauntlet":               "the_corrupted_gauntlet",
 		"Royal Titans":                     "the_royal_titans",
+		"Branda the Fire Queen":            "the_royal_titans",
+		"Eldric the Ice King":              "the_royal_titans",
 		"Hueycoatl":                        "the_hueycoatl",
 		"Wintertodt":                       "wintertodt",
 		"Supply crate (Wintertodt)":        "wintertodt",
@@ -518,7 +520,7 @@ func TestHunting(t *testing.T) {
 		require.NoError(t, m.Act(context.Background(), env, monitor.Action{Type: monitor.UploadAction, Text: fmt.Sprintf("goatindicators.totalCaught=%d", n)}))
 	}
 	env.Now = func() time.Time { return now.Add(-54 * time.Hour) }
-	goats(500) // the first: that day starts here
+	goats(500)                                                     // the first: that day starts here
 	env.Now = func() time.Time { return now.Add(-30 * time.Hour) } // yesterday
 	goats(1000)
 	env.Now = func() time.Time { return now }
