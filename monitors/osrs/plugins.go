@@ -98,8 +98,10 @@ func (m *Monitor) uploadProfile(env monitor.Env, text string) error {
 }
 
 // uploadDelves takes the Delve Calculator's value from the profile file.
-// Its STANDARD profile is normal worlds (SEASONAL is leagues; the MANUAL
-// ones are counts typed in by hand, left out).
+// Its STANDARD profile is normal worlds, all-time: the plugin copies it
+// from the in-game delve scoreboard whenever that's read, so it includes
+// delves from before the plugin was installed. SEASONAL is leagues; the
+// MANUAL ones are a pool the player can reset, left out.
 func (m *Monitor) uploadDelves(env monitor.Env, line string) error {
 	var raw struct {
 		Profiles map[string]struct {
