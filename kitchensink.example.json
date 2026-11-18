@@ -82,6 +82,12 @@
       "config": { "user": "someone", "local": "watchgrab" }
     },
     {
+      "type": "screens",
+      "title": "On screen",
+      "interval": "1m",
+      "config": { "kinoUrl": "http://127.0.0.1:6100", "kinoKey": "${KINO_BOT_KEY}", "boxsetUrl": "http://127.0.0.1:6160", "boxsetLink": "https://example.com/boxset/" }
+    },
+    {
       "type": "reddit",
       "title": "Reddit",
       "interval": "3m",

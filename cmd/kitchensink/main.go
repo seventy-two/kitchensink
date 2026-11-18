@@ -44,6 +44,7 @@ import (
 	_ "github.com/seventy-two/kitchensink/monitors/osrs"
 	_ "github.com/seventy-two/kitchensink/monitors/reddit"
 	_ "github.com/seventy-two/kitchensink/monitors/reverb"
+	_ "github.com/seventy-two/kitchensink/monitors/screens"
 	_ "github.com/seventy-two/kitchensink/monitors/stocks"
 	_ "github.com/seventy-two/kitchensink/monitors/todo"
 	_ "github.com/seventy-two/kitchensink/monitors/weather"
