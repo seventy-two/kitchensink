@@ -439,7 +439,7 @@ func TestGrailsAndPostage(t *testing.T) {
 	rows := res.Blocks[0].Rows
 	tier := func(i int) string { return rows[i][0].Detail }
 	assert.Equal(t, grail, tier(0), "the 1995 Wipeout")
-	assert.Equal(t, monitor.ToneGood, rows[0][0].Tone)
+	assert.Equal(t, monitor.ToneMuted, rows[0][0].Tone, "a grail, greyed out by its postage")
 	assert.Equal(t, "rare", tier(1), "its sequel isn't on the list")
 	assert.Equal(t, grail, tier(2), "any Metal Gear Solid")
 	assert.Equal(t, grail, tier(3), "& and and match")
@@ -448,9 +448,10 @@ func TestGrailsAndPostage(t *testing.T) {
 	assert.Equal(t, "", tier(6), "an expansion isn't the game")
 
 	// Postage: over half a Buy It Now price is marked; half exactly isn't.
-	assert.Equal(t, monitor.ToneWarn, rows[0][1].Tone)
+	assert.Equal(t, monitor.ToneMuted, rows[0][1].Tone)
 	assert.Equal(t, "+£10.01 postage, over half", rows[0][1].Detail, "the cheapest option")
 	assert.Equal(t, monitor.ToneNone, rows[2][1].Tone)
+	assert.Equal(t, monitor.ToneGood, rows[2][0].Tone, "a grail at a fair postage stands out")
 	assert.Equal(t, "+£10 postage", rows[2][1].Detail)
 	assert.Equal(t, "", rows[1][1].Detail, "none given")
 	assert.Equal(t, monitor.ToneNone, rows[7][1].Tone, "an auction's final price isn't known")
@@ -503,7 +504,10 @@ func TestDeals(t *testing.T) {
 	assert.Equal(t, monitor.Cell{Text: "good deal", Detail: "£25–40", Tone: monitor.ToneGood}, rows[0][2])
 	assert.Equal(t, monitor.Cell{}, rows[1][2], "common: not judged")
 	assert.Equal(t, monitor.Cell{}, rows[2][2], "an auction: not judged")
-	assert.Equal(t, monitor.Cell{Text: "overpriced", Detail: "yours £30", Tone: monitor.ToneWarn}, rows[3][2], "£40 against your £30")
+	assert.Equal(t, monitor.Cell{Text: "overpriced", Detail: "yours £30", Tone: monitor.ToneMuted}, rows[3][2], "£40 against your £30")
+	assert.Equal(t, monitor.ToneMuted, rows[3][0].Tone, "the whole row greys out")
+	assert.Equal(t, monitor.ToneMuted, rows[3][1].Tone)
+	assert.Equal(t, monitor.ToneNone, rows[0][0].Tone, "a good deal doesn't")
 	assert.Equal(t, monitor.Cell{}, rows[4][2], "not in pounds")
 	assert.Equal(t, "£14 +£5 postage · uncommon · good deal", res.Events[0].Body)
 

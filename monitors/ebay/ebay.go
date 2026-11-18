@@ -592,7 +592,8 @@ func (m *Monitor) notifies(rarity string) bool {
 
 // table lists the listings; uncommon, rare and grail ones say so under
 // their name, rare and grail ones stand out, and all have a button to
-// ignore the game. A price with postage over half of it is marked.
+// ignore the game. An overpriced listing (by the deal, or postage over half
+// the price) is greyed out.
 func (m *Monitor) table(items []item, nameOf, rarityOf func(item) string, deals map[string]deal, now time.Time) monitor.Block {
 	b := monitor.Block{
 		Type: monitor.BlockTable,
@@ -625,14 +626,17 @@ func (m *Monitor) table(items []item, nameOf, rarityOf func(item) string, deals 
 			price.Detail = strings.TrimPrefix(price.Detail+" · "+p, " · ")
 		}
 		if it.highPostage() {
-			// Postage over half the price: worth knowing before buying.
-			price.Tone = monitor.ToneWarn
 			price.Detail = strings.Replace(price.Detail, "postage", "postage, over half", 1)
+		}
+		dc := dealCell(deals[it.ItemID])
+		// Overpriced, by postage or otherwise: the whole row greys out.
+		if it.highPostage() || deals[it.ItemID].Verdict == "overpriced" {
+			name.Tone, price.Tone, dc.Tone = monitor.ToneMuted, monitor.ToneMuted, monitor.ToneMuted
 		}
 		b.Rows = append(b.Rows, []monitor.Cell{
 			name,
 			price,
-			dealCell(deals[it.ItemID]),
+			dc,
 			{Text: m.when(it.ItemCreationDate, now), Tone: monitor.ToneMuted},
 			{Action: &monitor.CellAction{Type: hideAction, ID: it.ItemID, Label: "Hide this listing (a dud); keep looking for the game", Icon: "delete"}},
 			ignore,
