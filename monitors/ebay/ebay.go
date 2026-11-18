@@ -66,6 +66,12 @@ type Config struct {
 	// listing of the game without asking the model: under 80% of the
 	// price is a good deal, over 125% overpriced.
 	Prices map[string]float64 `json:"prices"`
+	// Owned are games you have, by name as for Grails: their listings are
+	// left out altogether.
+	Owned []string `json:"owned"`
+	// Sections are more searches shown in the same panel, each its own
+	// table, e.g. old graphics cards.
+	Sections []Section `json:"sections"`
 	// Notify is the least rarity Gemini must give a new listing for it to
 	// notify: "uncommon", "rare" or "grail". Others make no event, so they're only
 	// in the panel. Empty notifies for every new listing, as does one
@@ -80,11 +86,48 @@ type Config struct {
 	Timezone string `json:"timezone"`
 }
 
+// Section is a search with its own table in the panel: what it looks for
+// and how its listings are named and rated. Notify, Deals and the model
+// are the monitor's.
+type Section struct {
+	// Title heads its table, e.g. "Graphics cards"; it also names the
+	// section in the monitor's state, so keep it once set.
+	Title string `json:"title"`
+	// Kind says what's listed, for how the model names and rates it:
+	// "games" (boxed PC games, the default) or "gpus" (graphics cards).
+	Kind string `json:"kind"`
+	// Queries are searched one by one (eBay takes about 100 characters,
+	// and "(a, b)" for either), their listings together, newest first.
+	Queries  []string `json:"queries"`
+	Category string   `json:"category"`
+	// Name says what's listed, for the model, e.g. "a graphics card".
+	Name string `json:"name"`
+	// Grails, Prices and Owned are as for the monitor's own search.
+	Grails []string           `json:"grails"`
+	Prices map[string]float64 `json:"prices"`
+	Owned  []string           `json:"owned"`
+	// Limit is how many of the newest listings to show (default 50, at
+	// most 200); each query reads that many.
+	Limit int `json:"limit"`
+	// Notify replaces the monitor's Notify for this section, e.g. "rare"
+	// where uncommon things turn up often.
+	Notify string `json:"notify"`
+}
+
+// section is a Section being watched; the monitor's own search is the
+// first, untitled.
+type section struct {
+	Section
+	// baseline is its state key saying its first check has run.
+	baseline string
+}
+
 // Monitor is the eBay monitor.
 type Monitor struct {
-	cfg    Config
-	loc    *time.Location
-	gemini *gemini
+	cfg      Config
+	loc      *time.Location
+	gemini   *gemini
+	sections []*section
 
 	mu      sync.Mutex
 	token   string
@@ -137,6 +180,33 @@ func New(raw json.RawMessage) (*Monitor, error) {
 		return nil, err
 	}
 	m := &Monitor{cfg: c, loc: loc}
+	m.sections = append(m.sections, &section{Section: Section{
+		Kind: kindGames, Queries: []string{c.Query}, Category: c.Category, Name: c.Name,
+		Grails: c.Grails, Prices: c.Prices, Owned: c.Owned, Limit: c.Limit, Notify: c.Notify,
+	}, baseline: baselineKey})
+	titles := map[string]bool{}
+	for i, sc := range c.Sections {
+		if strings.TrimSpace(sc.Title) == "" || titles[key(sc.Title)] {
+			return nil, fmt.Errorf("ebay section %d needs a title of its own", i+1)
+		}
+		titles[key(sc.Title)] = true
+		if len(sc.Queries) == 0 {
+			return nil, fmt.Errorf("ebay section %q needs queries", sc.Title)
+		}
+		sc.Kind = cmp.Or(sc.Kind, kindGames)
+		if sc.Notify != "" && rank(sc.Notify) < 0 {
+			return nil, fmt.Errorf("ebay section %q: notify must be one of %s", sc.Title, strings.Join(tiers, ", "))
+		}
+		sc.Notify = cmp.Or(sc.Notify, c.Notify)
+		if sc.Kind != kindGames && sc.Kind != kindGPUs {
+			return nil, fmt.Errorf("ebay section %q: kind must be %q or %q", sc.Title, kindGames, kindGPUs)
+		}
+		if sc.Limit <= 0 {
+			sc.Limit = 50
+		}
+		sc.Limit = min(sc.Limit, 200)
+		m.sections = append(m.sections, &section{Section: sc, baseline: baselineKey + "/" + key(sc.Title)})
+	}
 	if c.Gemini.APIKey != "" {
 		m.gemini = newGemini(c.Gemini)
 	}
@@ -309,14 +379,37 @@ func (m *Monitor) accessToken(ctx context.Context, client *http.Client, now time
 }
 
 // search returns the newest listings.
-func (m *Monitor) search(ctx context.Context, client *http.Client, now time.Time) ([]item, error) {
+// sectionItems searches each of a section's queries, newest first, and
+// keeps the newest Limit of them all.
+func (m *Monitor) sectionItems(ctx context.Context, client *http.Client, now time.Time, sc *section) ([]item, error) {
+	var all []item
+	seen := map[string]bool{}
+	for _, q := range sc.Queries {
+		items, err := m.search(ctx, client, now, q, sc.Category, sc.Limit)
+		if err != nil {
+			return nil, err
+		}
+		for _, it := range items {
+			if !seen[it.ItemID] {
+				seen[it.ItemID] = true
+				all = append(all, it)
+			}
+		}
+	}
+	if len(sc.Queries) > 1 {
+		slices.SortStableFunc(all, func(a, b item) int { return b.ItemCreationDate.Compare(a.ItemCreationDate) })
+	}
+	return all[:min(len(all), sc.Limit)], nil
+}
+
+func (m *Monitor) search(ctx context.Context, client *http.Client, now time.Time, query, category string, limit int) ([]item, error) {
 	token, err := m.accessToken(ctx, client, now)
 	if err != nil {
 		return nil, err
 	}
-	q := url.Values{"q": {m.cfg.Query}, "sort": {"newlyListed"}, "limit": {strconv.Itoa(m.cfg.Limit)}}
-	if m.cfg.Category != "" {
-		q.Set("category_ids", m.cfg.Category)
+	q := url.Values{"q": {query}, "sort": {"newlyListed"}, "limit": {strconv.Itoa(limit)}}
+	if category != "" {
+		q.Set("category_ids", category)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.cfg.APIURL+"/buy/browse/v1/item_summary/search?"+q.Encode(), nil)
 	if err != nil {
@@ -381,9 +474,13 @@ const (
 
 func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, error) {
 	now := env.Now()
-	items, err := m.search(ctx, env.HTTP, now)
-	if err != nil {
-		return monitor.Result{}, err
+	found := make([][]item, len(m.sections))
+	for i, sc := range m.sections {
+		items, err := m.sectionItems(ctx, env.HTTP, now, sc)
+		if err != nil {
+			return monitor.Result{}, err
+		}
+		found[i] = items
 	}
 
 	names, rarity := map[string]string{}, map[string]string{}
@@ -397,54 +494,14 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	if _, err := env.State.Get(ignoredKey, &ignored); err != nil {
 		return monitor.Result{}, err
 	}
-	// Listings named before rarity was asked for are asked about again.
-	var unjudged []item
-	for _, it := range items {
-		if _, ok := rarity[it.ItemID]; !ok {
-			unjudged = append(unjudged, it)
-		}
-	}
-	judgedAll := true
-	if m.gemini != nil && len(unjudged) > 0 {
-		got, err := m.gemini.judge(ctx, env.HTTP, m.cfg.Name, unjudged)
-		if err != nil {
-			// Shown by title for now; tried again next poll.
-			env.Log.Warn("naming listings", "err", err)
-			judgedAll = false
-		}
-		for id, j := range got {
-			names[id], rarity[id] = j.Name, j.Rarity
-		}
-	}
-	nameOf := func(it item) string {
-		if n := names[it.ItemID]; n != "" {
-			return n
-		}
-		return strings.TrimSpace(it.Title)
-	}
-	// An ignored game counts as common, and a grail is one, whatever the
-	// model says.
-	rarityOf := func(it item) string {
-		if _, ok := ignored[key(nameOf(it))]; ok {
-			return "common"
-		}
-		if m.grail(nameOf(it)) {
-			return grail
-		}
-		return rarity[it.ItemID]
-	}
-
 	hidden := map[string]time.Time{}
 	if _, err := env.State.Get(hiddenKey, &hidden); err != nil {
 		return monitor.Result{}, err
 	}
-	items = slices.DeleteFunc(items, func(it item) bool { _, ok := hidden[it.ItemID]; return ok })
 	deals := map[string]deal{}
 	if _, err := env.State.Get(dealsKey, &deals); err != nil {
 		return monitor.Result{}, err
 	}
-	m.judgeDeals(ctx, env, items, nameOf, rarityOf, deals)
-
 	var seen map[string]time.Time
 	if _, err := env.State.Get(seenKey, &seen); err != nil {
 		return monitor.Result{}, err
@@ -452,55 +509,100 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	if seen == nil {
 		seen = map[string]time.Time{}
 	}
-	var baselined bool
-	if _, err := env.State.Get(baselineKey, &baselined); err != nil {
-		return monitor.Result{}, err
+	nameOf := func(it item) string {
+		if n := names[it.ItemID]; n != "" {
+			return n
+		}
+		return strings.TrimSpace(it.Title)
 	}
+
 	var events []monitor.Event
-	for _, it := range items {
-		if _, ok := seen[it.ItemID]; !ok {
-			// Wait for Gemini's say before reporting it, unless there's
-			// no Gemini to ask.
-			if _, ok := rarity[it.ItemID]; m.gemini != nil && !ok && !judgedAll {
-				continue
-			}
-			// Only listings worth a notification become events: the
-			// first check's, and those below notify, would only fill
-			// Recent.
-			if r := rarityOf(it); baselined && m.notifies(r) {
-				body := it.price()
-				if p := it.postageText(); p != "" {
-					body += " " + p
-				}
-				if it.highPostage() {
-					body += " (high)"
-				}
-				if k := it.kind(); k != "" {
-					body += " · " + k
-				}
-				if rank(r) > 0 {
-					body += " · " + r
-				}
-				if d, ok := deals[it.ItemID]; ok && d.Verdict != "fair" {
-					body += " · " + dealLabel(d.Verdict)
-				}
-				priority := monitor.PriorityNormal
-				if r == grail {
-					priority = monitor.PriorityHigh
-				}
-				events = append(events, monitor.Event{
-					Priority: priority,
-					Key:      "listing/" + it.ItemID,
-					Time:     it.ItemCreationDate,
-					Title:    nameOf(it),
-					Body:     body,
-					URL:      it.link(),
-					Image:    it.Image.ImageURL,
-				})
+	var blocks []monitor.Block
+	var worth []item
+	rarityOfs := map[string]func(item) string{} // by item ID, for the short view
+	sets := []struct {
+		key string
+		v   any
+	}{}
+	for i, sc := range m.sections {
+		items := found[i]
+		// Listings named before rarity was asked for are asked about again.
+		var unjudged []item
+		for _, it := range items {
+			if _, ok := rarity[it.ItemID]; !ok {
+				unjudged = append(unjudged, it)
 			}
 		}
-		seen[it.ItemID] = now
+		judgedAll := true
+		if m.gemini != nil && len(unjudged) > 0 {
+			got, err := m.gemini.judge(ctx, env.HTTP, sc.Kind, sc.Name, unjudged)
+			if err != nil {
+				// Shown by title for now; tried again next poll.
+				env.Log.Warn("naming listings", "section", sc.Title, "err", err)
+				judgedAll = false
+			}
+			for id, j := range got {
+				names[id], rarity[id] = j.Name, j.Rarity
+			}
+		}
+		// An ignored game counts as common, and a grail is one, whatever
+		// the model says.
+		rarityOf := func(it item) string {
+			if _, ok := ignored[key(nameOf(it))]; ok {
+				return "common"
+			}
+			if sc.grail(nameOf(it)) {
+				return grail
+			}
+			return rarity[it.ItemID]
+		}
+		// Hidden listings and things already owned are left out.
+		items = slices.DeleteFunc(items, func(it item) bool {
+			_, gone := hidden[it.ItemID]
+			return gone || sc.owned(nameOf(it))
+		})
+		m.judgeDeals(ctx, env, sc, items, nameOf, rarityOf, deals)
+
+		var baselined bool
+		if _, err := env.State.Get(sc.baseline, &baselined); err != nil {
+			return monitor.Result{}, err
+		}
+		for _, it := range items {
+			if _, ok := seen[it.ItemID]; !ok {
+				// Wait for the model's say before reporting it, unless
+				// there's no model to ask.
+				if _, ok := rarity[it.ItemID]; m.gemini != nil && !ok && !judgedAll {
+					continue
+				}
+				// Only listings worth a notification become events: the
+				// first check's, and those below notify, would only fill
+				// Recent.
+				if r := rarityOf(it); baselined && sc.notifies(r) {
+					events = append(events, m.event(it, nameOf(it), r, deals))
+				}
+			}
+			seen[it.ItemID] = now
+		}
+		sets = append(sets, struct {
+			key string
+			v   any
+		}{sc.baseline, true})
+
+		table := m.table(items, nameOf, rarityOf, deals, now)
+		table.Title = sc.Title
+		blocks = append(blocks, table)
+		// Short, only the newest uncommon and rare listings from the last
+		// day: nothing at all when there are none.
+		n := 0
+		for _, it := range items {
+			if rank(rarityOf(it)) > 0 && now.Sub(it.ItemCreationDate) < shortFor && n < summaryRows {
+				worth = append(worth, it)
+				rarityOfs[it.ItemID] = rarityOf
+				n++
+			}
+		}
 	}
+
 	// A game just ignored: its listings' notifications end, so clients
 	// drop them. Ones that never notified are no event at all, and the
 	// engine passes over them.
@@ -549,31 +651,22 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 			delete(hidden, id)
 		}
 	}
-	for _, kv := range []struct {
+	for _, kv := range append(sets, []struct {
 		key string
 		v   any
-	}{{seenKey, seen}, {namesKey, names}, {rarityKey, rarity}, {baselineKey, true}, {dealsKey, deals}, {hiddenKey, hidden}} {
+	}{{seenKey, seen}, {namesKey, names}, {rarityKey, rarity}, {dealsKey, deals}, {hiddenKey, hidden}}...) {
 		if err := env.State.Set(kv.key, kv.v); err != nil {
 			return monitor.Result{}, err
 		}
 	}
 
-	table := m.table(items, nameOf, rarityOf, deals, now)
-	// Short, only the newest uncommon and rare listings from the last
-	// day: nothing at all when there are none.
-	var worth []item
-	for _, it := range items {
-		if rank(rarityOf(it)) > 0 && now.Sub(it.ItemCreationDate) < shortFor && len(worth) < summaryRows {
-			worth = append(worth, it)
-		}
-	}
-	short := m.table(worth, nameOf, rarityOf, deals, now)
+	short := m.table(worth, nameOf, func(it item) string { return rarityOfs[it.ItemID](it) }, deals, now)
 	var summary []monitor.Stat
 	for _, it := range worth {
 		summary = append(summary, monitor.Stat{Label: nameOf(it), Value: it.price(), Detail: m.when(it.ItemCreationDate, now)})
 	}
 	return monitor.Result{
-		Blocks:       []monitor.Block{table},
+		Blocks:       blocks,
 		Summary:      summary,
 		SummaryBlock: &short,
 		// Nothing worth seeing today: off the dashboard until there is.
@@ -583,11 +676,44 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	}, nil
 }
 
+// event is a new listing's notification.
+func (m *Monitor) event(it item, name, r string, deals map[string]deal) monitor.Event {
+	body := it.price()
+	if p := it.postageText(); p != "" {
+		body += " " + p
+	}
+	if it.highPostage() {
+		body += " (high)"
+	}
+	if k := it.kind(); k != "" {
+		body += " · " + k
+	}
+	if rank(r) > 0 {
+		body += " · " + r
+	}
+	if d, ok := deals[it.ItemID]; ok && d.Verdict != "fair" {
+		body += " · " + dealLabel(d.Verdict)
+	}
+	priority := monitor.PriorityNormal
+	if r == grail {
+		priority = monitor.PriorityHigh
+	}
+	return monitor.Event{
+		Priority: priority,
+		Key:      "listing/" + it.ItemID,
+		Time:     it.ItemCreationDate,
+		Title:    name,
+		Body:     body,
+		URL:      it.link(),
+		Image:    it.Image.ImageURL,
+	}
+}
+
 // notifies says whether a new listing of this rarity is worth a
 // notification.
-func (m *Monitor) notifies(rarity string) bool {
+func (sc *section) notifies(rarity string) bool {
 	r := rank(rarity)
-	return m.cfg.Notify == "" || r < 0 || r >= rank(m.cfg.Notify)
+	return sc.Notify == "" || r < 0 || r >= rank(sc.Notify)
 }
 
 // table lists the listings; uncommon, rare and grail ones say so under
@@ -739,7 +865,7 @@ func yourDeal(asking, price float64) deal {
 // at a price not yet judged; your price for a game in Prices, else (with
 // Deals) the model's view for uncommon, rare and grail listings. A failure
 // is logged and tried again next poll.
-func (m *Monitor) judgeDeals(ctx context.Context, env monitor.Env, items []item, nameOf, rarityOf func(item) string, deals map[string]deal) {
+func (m *Monitor) judgeDeals(ctx context.Context, env monitor.Env, sc *section, items []item, nameOf, rarityOf func(item) string, deals map[string]deal) {
 	asking := map[string]float64{}
 	var ask []item
 	for _, it := range items {
@@ -750,7 +876,7 @@ func (m *Monitor) judgeDeals(ctx context.Context, env monitor.Env, items []item,
 		if d, ok := deals[it.ItemID]; ok && math.Abs(d.Asking-total) < 0.005 {
 			continue
 		}
-		if price, ok := m.yourPrice(nameOf(it)); ok {
+		if price, ok := sc.yourPrice(nameOf(it)); ok {
 			deals[it.ItemID] = yourDeal(total, price)
 			continue
 		}
@@ -760,7 +886,7 @@ func (m *Monitor) judgeDeals(ctx context.Context, env monitor.Env, items []item,
 		}
 	}
 	for i := 0; i < len(ask); i += dealBatch {
-		got, err := m.gemini.deals(ctx, env.HTTP, m.cfg.Name, ask[i:min(i+dealBatch, len(ask))], asking)
+		got, err := m.gemini.deals(ctx, env.HTTP, sc.Kind, sc.Name, ask[i:min(i+dealBatch, len(ask))], asking)
 		if err != nil {
 			env.Log.Warn("judging prices", "err", err)
 			return
@@ -770,12 +896,12 @@ func (m *Monitor) judgeDeals(ctx context.Context, env monitor.Env, items []item,
 }
 
 // yourPrice is the config's price for a game named name, if it has one.
-func (m *Monitor) yourPrice(name string) (float64, bool) {
+func (sc *section) yourPrice(name string) (float64, bool) {
 	if strings.Contains(name, " + ") {
 		return 0, false
 	}
 	k := key(name)
-	for g, price := range m.cfg.Prices {
+	for g, price := range sc.Prices {
 		if nameMatches(g, k) {
 			return price, true
 		}
@@ -783,15 +909,54 @@ func (m *Monitor) yourPrice(name string) (float64, bool) {
 	return 0, false
 }
 
-// nameMatches says whether a game name's key k is the one pattern names:
-// equal ignoring capitals and punctuation, or starting with it when it
-// ends in "*".
+// nameMatches says whether a name's key k is the one pattern names:
+// equal ignoring capitals, punctuation, Roman numerals against digits
+// ("Quake III" is "Quake 3") and a leading chip maker ("NVIDIA GeForce
+// 8800 GTX" is "GeForce 8800 GTX"), or starting with it when it ends in
+// "*".
 func nameMatches(pattern, k string) bool {
+	k = loose(k)
 	if prefix, ok := strings.CutSuffix(pattern, "*"); ok {
-		p := key(prefix)
+		p := loose(key(prefix))
 		return k == p || strings.HasPrefix(k, p+" ")
 	}
-	return k == key(pattern)
+	return k == loose(key(pattern))
+}
+
+// numerals are the Roman numerals loose turns into digits; I, V and X are
+// left alone, being words too often.
+var numerals = map[string]string{"ii": "2", "iii": "3", "iv": "4", "vi": "6", "vii": "7", "viii": "8", "ix": "9"}
+
+// loose makes a key easier to match: Roman numerals as digits, without a
+// leading chip maker.
+func loose(k string) string {
+	words := strings.Fields(k)
+	if len(words) > 1 {
+		switch words[0] {
+		case "nvidia", "ati", "amd":
+			words = words[1:]
+		}
+	}
+	for i, w := range words {
+		if d, ok := numerals[w]; ok {
+			words[i] = d
+		}
+	}
+	return strings.Join(words, " ")
+}
+
+// owned says whether a listing named name is something you have: one
+// thing (not a lot) on Owned.
+func (sc *section) owned(name string) bool {
+	if strings.Contains(name, " + ") {
+		return false
+	}
+	for _, o := range sc.Owned {
+		if nameMatches(o, key(name)) {
+			return true
+		}
+	}
+	return false
 }
 
 // hideAction hides one listing (a dud) for good, without ignoring its game.
@@ -803,9 +968,9 @@ const ignoreAction = "ignore"
 
 // grail says whether a listing named name is one of Grails, or a lot with
 // one in it.
-func (m *Monitor) grail(name string) bool {
+func (sc *section) grail(name string) bool {
 	for _, part := range strings.Split(name, " + ") {
-		for _, g := range m.cfg.Grails {
+		for _, g := range sc.Grails {
 			if nameMatches(g, key(part)) {
 				return true
 			}

@@ -23,6 +23,7 @@ type fakeEbay struct {
 	*httptest.Server
 	mu      sync.Mutex
 	items   []map[string]any
+	byQuery map[string][]map[string]any // answers for a query, else items
 	tokens  int
 	queries []string
 }
@@ -50,7 +51,11 @@ func newFakeEbay(t *testing.T) *fakeEbay {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		f.queries = append(f.queries, r.URL.RawQuery)
-		json.NewEncoder(w).Encode(map[string]any{"itemSummaries": f.items})
+		items := f.items
+		if q, ok := f.byQuery[r.URL.Query().Get("q")]; ok {
+			items = q
+		}
+		json.NewEncoder(w).Encode(map[string]any{"itemSummaries": items})
 	})
 	f.Server = httptest.NewServer(mux)
 	t.Cleanup(f.Close)
@@ -87,14 +92,17 @@ type fakeGemini struct {
 	deals    map[string]deal
 	priced   []map[string]float64
 	searched bool
+	// systems are the instructions naming requests came with.
+	systems []string
 }
 
 func newFakeGemini(t *testing.T) *fakeGemini {
 	g := &fakeGemini{names: map[string]string{}, rarity: map[string]string{}, deals: map[string]deal{}}
 	g.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			Input string
-			Tools []any
+			Input  string
+			Tools  []any
+			System string `json:"system_instruction"`
 		}
 		json.NewDecoder(r.Body).Decode(&req)
 		g.mu.Lock()
@@ -131,6 +139,7 @@ func newFakeGemini(t *testing.T) *fakeGemini {
 		}
 		var list []struct{ ID, Title string }
 		json.Unmarshal([]byte(req.Input[strings.Index(req.Input, "["):]), &list)
+		g.systems = append(g.systems, req.System)
 		var titles []string
 		var out []map[string]string
 		for _, l := range list {
@@ -563,4 +572,110 @@ func TestHide(t *testing.T) {
 	assert.Equal(t, grail, res.Blocks[0].Rows[0][0].Detail)
 	assert.Equal(t, []string{"listing/v1|2|0"}, monitortest.Keys(res.Events))
 	assert.ErrorIs(t, m.Act(context.Background(), env, monitor.Action{Type: "hide"}), monitor.ErrBadAction)
+}
+
+func TestSections(t *testing.T) {
+	eb, gem := newFakeEbay(t), newFakeGemini(t)
+	m := newMonitorWith(t, eb.URL, gem.URL, map[string]any{"notify": "uncommon", "owned": []string{"Quake III Arena"},
+		"sections": []map[string]any{{
+			"title": "Graphics cards", "kind": "gpus", "category": "27386", "name": "a graphics card",
+			"queries": []string{"(voodoo, 8800 gtx)", "titan"},
+			"owned":   []string{"GeForce 8800 GTX", "GeForce GTX 980"},
+			"notify":  "rare",
+		}}})
+	env := monitortest.Env(now)
+	eb.byQuery = map[string][]map[string]any{
+		"(voodoo, 8800 gtx)": {listing("g1", "voodoo5 5500 agp", "200", now.Add(-time.Hour), false, 0)},
+		"titan":              {},
+	}
+	_, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+
+	for title, j := range map[string][2]string{
+		"quake 3 big box":       {"Quake 3 Arena", "common"},
+		"ut big box":            {"Unreal Tournament", "uncommon"},
+		"voodoo5 5500 agp":      {"Voodoo5 5500", "rare"},
+		"xfx 8800 gtx":          {"NVIDIA GeForce 8800 GTX", "rare"},
+		"evga 980 ti":           {"GeForce GTX 980 Ti", "uncommon"},
+		"gtx titan black boxed": {"GeForce GTX Titan Black", "rare"},
+	} {
+		gem.names[title], gem.rarity[title] = j[0], j[1]
+	}
+	eb.items = []map[string]any{listing("1", "quake 3 big box", "20", now, false, 0), listing("2", "ut big box", "30", now, false, 0)}
+	eb.byQuery["(voodoo, 8800 gtx)"] = []map[string]any{
+		listing("g2", "xfx 8800 gtx", "60", now, false, 0),
+		listing("g1", "voodoo5 5500 agp", "200", now.Add(-time.Hour), false, 0),
+	}
+	eb.byQuery["titan"] = []map[string]any{
+		listing("g3", "gtx titan black boxed", "150", now.Add(-time.Minute), false, 0),
+		listing("g4", "evga 980 ti", "90", now.Add(-2*time.Minute), false, 0),
+		listing("g1", "voodoo5 5500 agp", "200", now.Add(-time.Hour), false, 0),
+	}
+	res, err := m.Poll(context.Background(), env)
+	require.NoError(t, err)
+	require.Len(t, res.Blocks, 2)
+	assert.Equal(t, "", res.Blocks[0].Title, "the main search's table")
+	assert.Equal(t, "Graphics cards", res.Blocks[1].Title)
+	names := func(b monitor.Block) []string {
+		var out []string
+		for _, r := range b.Rows {
+			out = append(out, r[0].Text)
+		}
+		return out
+	}
+	assert.Equal(t, []string{"Unreal Tournament"}, names(res.Blocks[0]), "Quake 3 Arena is owned (as Quake III Arena)")
+	assert.Equal(t, []string{"GeForce GTX Titan Black", "GeForce GTX 980 Ti", "Voodoo5 5500"}, names(res.Blocks[1]),
+		"both queries, once each, newest first; the 8800 GTX is owned, the 980 Ti isn't the 980")
+	assert.Equal(t, []string{"listing/v1|2|0", "listing/v1|g3|0"}, monitortest.Keys(res.Events),
+		"new listings at each section's notify (uncommon for games, rare for cards); the Voodoo was there at the first check")
+	assert.Len(t, res.Summary, 4, "up to three a section")
+
+	var gpuPrompts, gamePrompts int
+	for _, sys := range gem.systems {
+		switch {
+		case strings.Contains(sys, "graphics cards"):
+			gpuPrompts++
+		case strings.Contains(sys, "Ultima VII"):
+			gamePrompts++
+		}
+	}
+	assert.Equal(t, 2, gpuPrompts, "graphics cards are named with their own prompt")
+	assert.Equal(t, 1, gamePrompts)
+	for _, q := range eb.queries {
+		if strings.Contains(q, "titan") {
+			assert.Contains(t, q, "category_ids=27386")
+		}
+	}
+}
+
+func TestSectionConfig(t *testing.T) {
+	bad := []map[string]any{
+		{"queries": []string{"titan"}},
+		{"title": "GPUs"},
+		{"title": "GPUs", "queries": []string{"titan"}, "kind": "cars"},
+		{"title": "GPUs", "queries": []string{"titan"}, "notify": "mythic"},
+	}
+	for _, sc := range bad {
+		c, _ := json.Marshal(map[string]any{"query": "big box", "clientId": "id", "clientSecret": "secret", "sections": []any{sc}})
+		_, err := New(c)
+		assert.Error(t, err, sc)
+	}
+}
+
+func TestLoose(t *testing.T) {
+	for _, c := range []struct {
+		pattern, name string
+		want          bool
+	}{
+		{"Quake III Arena", "Quake 3 Arena", true},
+		{"Final Fantasy VII", "Final Fantasy 7", true},
+		{"Final Fantasy VII", "Final Fantasy VIII", false},
+		{"GeForce 8800 GTX", "NVIDIA GeForce 8800 GTX", true},
+		{"GeForce 8800 GT", "GeForce 8800 GTX", false},
+		{"GeForce GTX 980", "GeForce GTX 980 Ti", false},
+		{"Star Wars: Episode I: Racer", "Star Wars Episode I Racer", true},
+		{"Baldur's Gate II: Shadows of Amn", "Baldur's Gate 2: Shadows of Amn", true},
+	} {
+		assert.Equal(t, c.want, nameMatches(c.pattern, key(c.name)), "%s ~ %s", c.pattern, c.name)
+	}
 }

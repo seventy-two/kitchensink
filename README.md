@@ -330,6 +330,24 @@ action `icon` `"delete"`) that hides that one listing for good and ends its
 notification, while its game is still looked for; the cross (`ignore`)
 ignores the whole game.
 
+`owned` lists things you have, by name as for `grails` (Roman numerals
+match digits, so "Quake III Arena" covers "Quake 3 Arena", and a leading
+"NVIDIA", "ATI" or "AMD" is ignored): their listings are left out.
+`sections` are more searches shown as their own tables in the same panel,
+each with a `title`, `queries` (searched one by one and merged, newest
+first; eBay takes about 100 characters and `(a, b)` for either), a
+`category`, a `kind` saying how the model names and rates them (`games` or
+`gpus`, for collectable graphics cards up to the RTX 2080's generation),
+and its own `grails`, `prices`, `owned`, `limit` and `notify`:
+
+```json
+"sections": [{
+  "title": "Graphics cards", "kind": "gpus", "category": "27386", "notify": "rare",
+  "name": "a graphics card", "queries": ["(voodoo, geforce 256, geforce3, ti 4600)", "(gtx titan, titan v)"],
+  "owned": ["GeForce 8800 GTX"]
+}]
+```
+
 `TestLiveCompare` (in `monitors/ebay`, run with `EBAY_LIVE_COMPARE` set)
 rates the newest listings with Gemini and with Claude and lists where they
 differ.

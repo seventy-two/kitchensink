@@ -93,7 +93,7 @@ type judged struct{ Name, Rarity string }
 
 // judge asks Gemini what each listing is and how rare, by item ID. what says
 // what kind of thing they are, e.g. "a boxed PC game".
-func (g *gemini) judge(ctx context.Context, client *http.Client, what string, items []item) (map[string]judged, error) {
+func (g *gemini) judge(ctx context.Context, client *http.Client, kind, what string, items []item) (map[string]judged, error) {
 	type in struct {
 		ID    string `json:"id"`
 		Title string `json:"title"`
@@ -104,6 +104,9 @@ func (g *gemini) judge(ctx context.Context, client *http.Client, what string, it
 	}
 	input, _ := json.Marshal(list)
 	sys := instruction
+	if kind == kindGPUs {
+		sys = gpuInstruction
+	}
 	if what != "" {
 		sys += "\n\nEach listing is " + what + "."
 	}
@@ -177,7 +180,7 @@ const dealBatch = 8
 // deals asks whether each listing's asking price (pounds, postage
 // included, by item ID) is a good deal, with web search for what such
 // things sell for. what says what kind of thing they are.
-func (g *gemini) deals(ctx context.Context, client *http.Client, what string, items []item, asking map[string]float64) (map[string]deal, error) {
+func (g *gemini) deals(ctx context.Context, client *http.Client, kind, what string, items []item, asking map[string]float64) (map[string]deal, error) {
 	type in struct {
 		ID     string  `json:"id"`
 		Title  string  `json:"title"`
@@ -189,6 +192,9 @@ func (g *gemini) deals(ctx context.Context, client *http.Client, what string, it
 	}
 	input, _ := json.Marshal(list)
 	sys := dealInstruction
+	if kind == kindGPUs {
+		sys = gpuDealInstruction
+	}
 	if what != "" {
 		sys += "\n\nEach listing is " + what + "."
 	}
@@ -214,3 +220,33 @@ func (g *gemini) deals(ctx context.Context, client *http.Client, what string, it
 
 // rankDeal says whether v is a verdict the model may give.
 func rankDeal(v string) bool { return v == "good" || v == "fair" || v == "overpriced" }
+
+// Kinds of thing a section lists, which say how the model names and rates
+// them.
+const (
+	kindGames = "games"
+	kindGPUs  = "gpus"
+)
+
+// gpuInstruction names and rates graphics cards for a collector of iconic
+// ones up to the RTX 2080's generation.
+const gpuInstruction = `You name eBay listings of graphics cards for a collector's dashboard. Sellers pad their titles with keywords (board maker, memory, slot, ports, "rare", "retro", "vintage", "tested", "working"), so give only the card, by its chip's model name as it's properly written, without the board maker or "NVIDIA", "ATI" or "AMD" in front: e.g. "GeForce 8800 GTX", "Radeon HD 5870", "Voodoo5 5500", "GeForce4 Ti 4600", "Radeon 9700 Pro", "GeForce GTX 1080 Ti", "GeForce RTX 2080 Super". Keep a special edition only when it's part of what's sold ("Founders Edition", "XXX Edition"). For several cards join them with " + ", or say "N graphics cards" for a large lot. If it isn't a graphics card (a cooler, a box, a bracket, a whole PC), say briefly what it is.
+
+Then say how notable it is to a collector of iconic graphics cards from before 2019 (up to the RTX 2080's generation): how seldom such a card turns up, from what you know of the card itself, not the seller's "RARE" or the price. Being famous isn't enough: cards that sold in their millions and are still used for gaming turn up every day.
+
+"rare" is a card collectors seek that seldom turns up:
+- 3dfx's Voodoo4 and Voodoo5 cards and Voodoo2 SLI pairs, GeForce 256, GeForce2 Ultra, GeForce3 Ti 500, GeForce4 Ti 4600 and 4800, Radeon 9700 Pro, Radeon 9800 XT, Radeon X850 XT Platinum Edition, Radeon X1950 XTX, GeForce 6800 Ultra, GeForce 7800 GTX 512, GeForce 8800 Ultra.
+- Dual-GPU flagships (GeForce 7950 GX2, 9800 GX2, GTX 295, Radeon HD 3870 X2, HD 4870 X2, HD 5970, GTX 590, HD 6990, GTX 690, R9 295X2, Titan Z), Titan V and Titan RTX.
+- Any card from before about 2008 boxed and complete as new.
+
+"uncommon" is a collectable card that turns up now and then: 3dfx's Voodoo Graphics, Voodoo2 and Voodoo3 cards, other early cards' top models (Riva TNT2 Ultra, GeForce2 GTS, GeForce4 Ti 4200, Radeon 9800 Pro, GeForce 6800 GT), GeForce 7900 GTX, GeForce 8800 GTX, GTX 280 and 285, the GTX Titan, Titan Black, Titan X and Titan Xp, Radeon R9 Fury X and Radeon VII.
+
+"common" is everything else, which is nearly every listing: the high-end gaming cards that sold in large numbers (GTX 480, 580, 780 Ti, 980 Ti, 1080 Ti, RTX 2080, 2080 Super and 2080 Ti, Radeon HD 4870, 5870, 7970, R9 290X), mainstream and budget cards, OEM and workstation cards (Quadro, FirePro), laptop parts, anything newer than the RTX 2080's generation (RTX 30 series on, Radeon RX 6000 on), coolers, boxes and parts, and cards sold for parts or not working. If you're unsure, say "common".`
+
+// gpuDealInstruction asks whether graphics cards' asking prices are fair.
+const gpuDealInstruction = `You judge eBay listings of graphics cards for a collector in the UK: is the asking price (postage included) a good deal, fair, or overpriced, against what such cards actually sell for on eBay UK today (not what sellers ask)? Go by the card as described (tested and working, boxed, untested, for parts), working and used if it doesn't say.
+
+For each give:
+- verdict: "good" if it's clearly below what it sells for, "overpriced" if clearly above, else "fair".
+- low, high: the fair range in whole pounds, postage included.
+- why: a few words, e.g. "sells for £60-90 working".`

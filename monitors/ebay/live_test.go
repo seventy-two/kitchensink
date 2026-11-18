@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"os"
 	"slices"
@@ -40,7 +41,7 @@ func TestLiveCompare(t *testing.T) {
 	m, err := New(cfg)
 	require.NoError(t, err)
 	ctx := context.Background()
-	items, err := m.search(ctx, http.DefaultClient, time.Now())
+	items, err := m.sectionItems(ctx, http.DefaultClient, time.Now(), m.sections[0])
 	require.NoError(t, err)
 	t.Logf("%d listings", len(items))
 
@@ -56,7 +57,7 @@ func TestLiveCompare(t *testing.T) {
 		r := run{name: model, got: map[string]judged{}}
 		start := time.Now()
 		for i := 0; i < len(items); i += 50 {
-			got, err := m.gemini.judge(ctx, http.DefaultClient, "a boxed PC game", items[i:min(i+50, len(items))])
+			got, err := m.gemini.judge(ctx, http.DefaultClient, kindGames, "a boxed PC game", items[i:min(i+50, len(items))])
 			if err != nil {
 				t.Logf("%s, batch %d: %v", model, i/50, err)
 				r.fails++
@@ -163,7 +164,7 @@ func TestLivePrices(t *testing.T) {
 	m, err := New(cfg)
 	require.NoError(t, err)
 	ctx := context.Background()
-	items, err := m.search(ctx, http.DefaultClient, time.Now())
+	items, err := m.sectionItems(ctx, http.DefaultClient, time.Now(), m.sections[0])
 	require.NoError(t, err)
 	for i, a := range anchors {
 		items = append(items, item{ItemID: fmt.Sprintf("anchor-%d", i), Title: a.title})
@@ -310,7 +311,7 @@ func TestLiveDeals(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, ai.Shared.Set("ebay", "provider", "gemini"))
 	ctx := context.Background()
-	items, err := m.search(ctx, http.DefaultClient, time.Now())
+	items, err := m.sectionItems(ctx, http.DefaultClient, time.Now(), m.sections[0])
 	require.NoError(t, err)
 
 	// Buy It Now in pounds, with what's asked including postage.
@@ -331,11 +332,11 @@ func TestLiveDeals(t *testing.T) {
 	// Which the monitor would judge: uncommon, rare or grail.
 	tierOf := map[string]string{}
 	for i := 0; i < len(bin); i += 50 {
-		got, err := m.gemini.judge(ctx, http.DefaultClient, "a boxed PC game", bin[i:min(i+50, len(bin))])
+		got, err := m.gemini.judge(ctx, http.DefaultClient, kindGames, "a boxed PC game", bin[i:min(i+50, len(bin))])
 		require.NoError(t, err)
 		for id, j := range got {
 			tierOf[id] = j.Rarity
-			if m.grail(j.Name) {
+			if m.sections[0].grail(j.Name) {
 				tierOf[id] = grail
 			}
 		}
@@ -503,4 +504,50 @@ func TestLiveDeals(t *testing.T) {
 	}
 	fmt.Fprintf(&w, "B and C agree on %d of %d listings\n", agreeBC, len(entries)-len(priced))
 	t.Log(w.String())
+}
+
+// gpuQueries are the graphics card searches tried live, each under eBay's
+// 100 characters.
+var gpuQueries = []string{
+	"(voodoo, geforce 256, geforce2 ultra, geforce3, ti 4600, ti 4800)",
+	"(radeon 9700, 9800 xt, 9800 pro, x850, x1900, x1950)",
+	"(6800 ultra, 7800 gtx, 7900 gtx, 8800 ultra, gtx 295, hd 4870 x2)",
+	"(hd 5970, gtx 590, hd 6990, gtx 690, r9 295x2, titan z, fury x)",
+	"(gtx titan, titan black, titan xp, titan v, titan rtx, radeon vii)",
+	"(gtx 280, gtx 285, gtx 1080 ti, rtx 2080)",
+}
+
+// TestLiveGPUs names and rates the newest old graphics cards with the
+// GPU prompt and prints them. It runs only with EBAY_LIVE_GPUS set, and
+// EBAY_CLIENT_ID, EBAY_CLIENT_SECRET and GEMINI_API_KEY.
+func TestLiveGPUs(t *testing.T) {
+	if os.Getenv("EBAY_LIVE_GPUS") == "" {
+		t.Skip("EBAY_LIVE_GPUS not set")
+	}
+	cfg, _ := json.Marshal(map[string]any{
+		"query": "big box pc", "clientId": os.Getenv("EBAY_CLIENT_ID"), "clientSecret": os.Getenv("EBAY_CLIENT_SECRET"),
+		"gemini":   map[string]any{"apiKey": os.Getenv("GEMINI_API_KEY")},
+		"sections": []map[string]any{{"title": "Graphics cards", "kind": "gpus", "category": "27386", "name": "a graphics card", "queries": gpuQueries, "limit": 100}},
+	})
+	m, err := New(cfg)
+	require.NoError(t, err)
+	require.NoError(t, ai.Shared.Set("ebay", "provider", "gemini"))
+	ctx := context.Background()
+	sc := m.sections[1]
+	items, err := m.sectionItems(ctx, http.DefaultClient, time.Now(), sc)
+	require.NoError(t, err)
+	got := map[string]judged{}
+	for i := 0; i < len(items); i += 50 {
+		j, err := m.gemini.judge(ctx, http.DefaultClient, sc.Kind, sc.Name, items[i:min(i+50, len(items))])
+		require.NoError(t, err)
+		maps.Copy(got, j)
+	}
+	count := map[string]int{}
+	var b strings.Builder
+	for _, it := range items {
+		j := got[it.ItemID]
+		count[j.Rarity]++
+		fmt.Fprintf(&b, "  %-8s %-34.34s £%-8s %s\n", j.Rarity, j.Name, it.Price.Value, it.Title)
+	}
+	t.Logf("%d listings, %v\n%s", len(items), count, b.String())
 }
