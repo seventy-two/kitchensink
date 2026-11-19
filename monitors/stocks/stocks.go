@@ -188,6 +188,7 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	if err != nil {
 		return monitor.Result{}, err
 	}
+	all = newest(env, all)
 	var quotes []quote
 	for _, q := range all {
 		if got, want, odd := oddMove(q); odd {
