@@ -480,3 +480,16 @@ func TestCloseOnOrBefore(t *testing.T) {
 	_, ok = closeOnOrBefore(closes, "20260930")
 	assert.False(t, ok, "nothing that early")
 }
+
+func TestOddMove(t *testing.T) {
+	q := quote{Last: "157.08", PrevClose: "150.89", ChangePct: "+4.10%"}
+	_, _, odd := oddMove(q)
+	assert.False(t, odd)
+	q.ChangePct = "-2.89%"
+	got, want, odd := oddMove(q)
+	assert.True(t, odd)
+	assert.Equal(t, -2.89, got)
+	assert.InDelta(t, 4.10, want, 0.01)
+	_, _, odd = oddMove(quote{Last: "1", ChangePct: "+50%"})
+	assert.False(t, odd, "no previous close")
+}

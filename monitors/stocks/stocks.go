@@ -190,6 +190,10 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	}
 	var quotes []quote
 	for _, q := range all {
+		if got, want, odd := oddMove(q); odd {
+			env.Log.Warn("quote's move disagrees with its prices", "symbol", q.Symbol, "change_pct", got, "from_prices", want,
+				"last", q.Last, "prev_close", q.PrevClose, "last_time", q.LastTime, "status", q.MarketStatus)
+		}
 		if !m.extra[strings.ToUpper(q.Symbol)] {
 			quotes = append(quotes, q)
 		}
@@ -531,6 +535,21 @@ func formatPct(s string) string {
 }
 
 // parsePct parses "+1.06%"; CNBC writes no change as "UNCH".
+// oddMove reports a quote whose move (got) is more than a point away from
+// the one its last price and previous close give (want). CNBC sent one
+// around the open on 19 Nov 2026 (NVDA -2.89% between two readings of
+// about +4%); this logs any more, to find which field was wrong.
+func oddMove(q quote) (got, want float64, odd bool) {
+	got, ok1 := parsePct(q.ChangePct)
+	last, ok2 := parseNumber(q.Last)
+	prev, ok3 := parseNumber(q.PrevClose)
+	if !ok1 || !ok2 || !ok3 || prev <= 0 {
+		return 0, 0, false
+	}
+	want = (last - prev) / prev * 100
+	return got, want, math.Abs(got-want) > 1
+}
+
 func parsePct(s string) (float64, bool) {
 	if s == "UNCH" {
 		return 0, true
