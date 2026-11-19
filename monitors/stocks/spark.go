@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/seventy-two/kitchensink/monitor"
@@ -79,6 +80,13 @@ func fingerprint(q quote) string {
 	return s
 }
 
+// newSession reports whether q is in a different session from the quote
+// a cached spark was built for (none, after a failed fetch, isn't).
+func newSession(print string, q quote) bool {
+	parts := strings.Split(print, "|")
+	return len(parts) >= 2 && parts[1] != q.MarketStatus
+}
+
 // hasExtended reports whether a symbol trades outside its session (US
 // shares), which splits its chart into sessions.
 func hasExtended(q quote) bool { return q.Extended != nil }
@@ -95,7 +103,9 @@ func (m *Monitor) sparks(ctx context.Context, env monitor.Env, quotes []quote) m
 	changed := false
 	for _, q := range quotes {
 		c, ok := cache[q.Symbol]
-		if !ok || c.Print != fingerprint(q) && now.Sub(c.Fetched) >= sparkEvery {
+		// A new session (the open, the close) fetches at once; moves
+		// within one wait sparkEvery.
+		if !ok || c.Print != fingerprint(q) && (now.Sub(c.Fetched) >= sparkEvery || newSession(c.Print, q)) {
 			fresh, err := m.buildSpark(ctx, env.HTTP, q, c)
 			if err != nil {
 				env.Log.Warn("fetching spark", "symbol", q.Symbol, "err", err)
@@ -284,7 +294,9 @@ func (c cachedSpark) spark(q quote) *monitor.Spark {
 	if last, ok := parseNumber(q.Last); ok && q.MarketStatus == "REG_MKT" && c.Kind == "" {
 		s.Points = append(s.Points, last)
 	}
-	if len(c.Ext) > 0 && q.Extended != nil {
+	// Extended trading is never drawn in session: a pre-market line
+	// cached before the open is stale until the next fetch.
+	if len(c.Ext) > 0 && q.Extended != nil && q.MarketStatus != "REG_MKT" {
 		s.Ext = append([]float64(nil), c.Ext...)
 		if last, ok := parseNumber(q.Extended.Last); ok && q.MarketStatus != "REG_MKT" {
 			s.Ext = append(s.Ext, last)

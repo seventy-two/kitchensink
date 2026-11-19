@@ -176,7 +176,19 @@ func TestSparksPreMarketThenSession(t *testing.T) {
 	assert.Equal(t, 1, srv.count(chartToday))
 	assert.Equal(t, 106.0, got.spark.Ext[len(got.spark.Ext)-1], "the live price still moves")
 
-	// The session opens: today's line, live, and no extended trading.
+	// The session opens, a minute after the last fetch: the chart has no
+	// regular bars yet, but the chip's no longer pre-market.
+	q = usQuote("REG_MKT", "101.00", "105.00", "+6.06%")
+	q.ChangePct = "+3.06%"
+	env.Now = func() time.Time { return at.Add(3 * time.Minute) }
+	got = m.sparks(context.Background(), env, []quote{q})["NVDA"]
+	assert.Equal(t, 2, srv.count(chartToday), "a new session fetches at once")
+	assert.Empty(t, got.spark.Ext)
+	st = m.summary([]quote{q}, map[string]chipSpark{"NVDA": got})[0]
+	assert.Equal(t, "+3.06%", st.Value)
+	assert.Empty(t, st.Tag)
+
+	// Today's regular bars arrive: today's line, live, and no extended trading.
 	srv.mu.Lock()
 	srv.bars[chartToday] = append(pre, minutes("20261116", regOpen, regOpen+30, flat(101))...)
 	srv.mu.Unlock()
