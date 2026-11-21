@@ -110,6 +110,11 @@
       "config": { "player": "Zezima", "hookSecret": "${OSRS_HOOK_SECRET}" }
     },
     {
+      "type": "geprices",
+      "title": "GE prices",
+      "interval": "5m"
+    },
+    {
       "type": "farming",
       "title": "Farm runs",
       "interval": "30m",
