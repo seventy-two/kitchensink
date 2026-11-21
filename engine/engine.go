@@ -183,6 +183,7 @@ func (e *Engine) poll(ctx context.Context, r *runner) time.Duration {
 		snap.Background = res.Background
 		snap.Paste = res.Paste
 		snap.Upload = res.Upload
+		snap.Settings = res.Settings
 		if snap.Blocks == nil {
 			snap.Blocks = []monitor.Block{}
 		}

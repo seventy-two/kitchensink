@@ -130,6 +130,10 @@ type Result struct {
 	// Upload, if set, asks clients that can to send the monitor a file
 	// from their own machine, such as a game's saved data.
 	Upload *Upload
+	// Settings, if set, are blocks for changing what the monitor watches,
+	// e.g. items and their alerts, which clients show behind a settings
+	// button on the panel rather than on the dashboard.
+	Settings []Block
 	// Events are things that happened. The engine drops any whose Key the
 	// monitor has emitted before, so monitors can re-emit freely.
 	Events []Event
@@ -208,9 +212,11 @@ type Snapshot struct {
 	// Paste is the last good poll's Result.Paste.
 	Paste string `json:"paste,omitempty"`
 	// Upload is the last good poll's Result.Upload.
-	Upload  *Upload `json:"upload,omitempty"`
-	Blocks  []Block `json:"blocks"`
-	Summary []Stat  `json:"summary,omitempty"`
+	Upload *Upload `json:"upload,omitempty"`
+	// Settings is the last good poll's Result.Settings.
+	Settings []Block `json:"settings,omitempty"`
+	Blocks   []Block `json:"blocks"`
+	Summary  []Stat  `json:"summary,omitempty"`
 	// SummaryStyle is how to draw Summary; empty for plain tiles.
 	SummaryStyle SummaryStyle `json:"summaryStyle,omitempty"`
 	// SummaryBlock is the last good poll's Result.SummaryBlock.
@@ -439,6 +445,21 @@ type Cell struct {
 	// e.g. which model a monitor uses. Clients that don't know it show
 	// Text, which should be the chosen option's label.
 	Choice *Choice `json:"choice,omitempty"`
+	// Input, if set, is a text box drawn in place of the cell's text, e.g.
+	// an alert's price. Clients that don't know it show Text.
+	Input *Input `json:"input,omitempty"`
+}
+
+// Input is a table cell's text box: on Enter, the client sends the monitor
+// an Action of type Action, ID ID and Text what was typed (which may be
+// empty, e.g. to clear a target).
+type Input struct {
+	Action string `json:"action"`
+	ID     string `json:"id,omitempty"`
+	// Value is what the box holds to start with.
+	Value string `json:"value,omitempty"`
+	// Hint is the placeholder shown while it's empty.
+	Hint string `json:"hint,omitempty"`
 }
 
 // Choice is a table cell's drop-down: picking an option, the client sends
