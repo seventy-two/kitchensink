@@ -12,6 +12,13 @@ const latestKey = "latest"
 // quoteTime is the layout of a quote's last_time.
 const quoteTime = "2006-01-02T15:04:05.000-0700"
 
+// staleBy is how much older than the one seen a quote must be to be
+// refused. CNBC's closing print is stamped on the second (16:00:00.000),
+// just before the last tick in session (16:00:00.179): refusing that by
+// milliseconds kept every US share "in session" all evening on 23 Nov
+// 2026, so no after-hours moves showed.
+const staleBy = time.Minute
+
 // newest replaces any quote older than one already seen with that one, or
 // without a price, and
 // remembers the newest of each. CNBC's servers don't all agree: on 19 Nov
@@ -41,7 +48,7 @@ func newest(env monitor.Env, quotes []quote) []quote {
 			continue
 		}
 		if old, ok := seen[q.Symbol]; ok {
-			if had, err := time.Parse(quoteTime, old.LastTime); err == nil && got.Before(had) {
+			if had, err := time.Parse(quoteTime, old.LastTime); err == nil && got.Before(had.Add(-staleBy)) {
 				env.Log.Warn("older quote than seen, keeping the newer", "symbol", q.Symbol, "got", q.LastTime, "had", old.LastTime)
 				out[i] = old
 				continue

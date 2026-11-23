@@ -24,6 +24,15 @@ func TestNewestKeepsTheNewerQuote(t *testing.T) {
 	assert.Equal(t, odd, newest(env, []quote{odd})[0])
 }
 
+func TestNewestTakesTheClosingPrint(t *testing.T) {
+	env := monitortest.Env(time.Date(2026, 11, 23, 21, 34, 0, 0, time.UTC))
+	tick := quote{Symbol: "NVDA", Last: "165.19", MarketStatus: "REG_MKT", LastTime: "2026-11-23T16:00:00.179-0500"}
+	closed := quote{Symbol: "NVDA", Last: "165.19", MarketStatus: "POST_MKT", LastTime: "2026-11-23T16:00:00.000-0500"}
+
+	newest(env, []quote{tick})
+	assert.Equal(t, closed, newest(env, []quote{closed})[0], "stamped on the second, ms before the last tick")
+}
+
 func TestNewestFillsBlankQuotes(t *testing.T) {
 	env := monitortest.Env(time.Date(2026, 11, 23, 15, 57, 0, 0, time.UTC))
 	fx := quote{Symbol: "GBP=", Last: "1.3041", Change: "-0.004", LastTime: "2026-11-23T10:04:00.000-0500"}
