@@ -23,3 +23,16 @@ func TestNewestKeepsTheNewerQuote(t *testing.T) {
 	odd := quote{Symbol: "X", LastTime: "?"}
 	assert.Equal(t, odd, newest(env, []quote{odd})[0])
 }
+
+func TestNewestFillsBlankQuotes(t *testing.T) {
+	env := monitortest.Env(time.Date(2026, 11, 23, 15, 57, 0, 0, time.UTC))
+	fx := quote{Symbol: "GBP=", Last: "1.3041", Change: "-0.004", LastTime: "2026-11-23T10:04:00.000-0500"}
+	spx := quote{Symbol: "SPX5-GB", Last: "55,673.14", Change: "+1,812.14", PrevClose: "53,861.00", CurrencyCode: "GBP",
+		LastTime: "2026-11-23T15:48:28.000+0000"} // saved in pence by the old build
+	newest(env, []quote{fx, spx})
+
+	got := newest(env, []quote{{Symbol: "GBP=", Change: "0.00"}, {Symbol: "SPX5-GB", CurrencyCode: "GBP"}, {Symbol: "NEW"}})
+	assert.Equal(t, fx, got[0])
+	assert.Equal(t, "556.73", got[1].Last, "and put in pounds")
+	assert.Equal(t, quote{Symbol: "NEW"}, got[2], "nothing to fall back on")
+}

@@ -159,6 +159,7 @@ func (m *Monitor) fetch(ctx context.Context, client *http.Client) ([]quote, erro
 	var out []quote
 	for _, q := range qr.FormattedQuoteResult.FormattedQuote {
 		if q.Code == 0 && q.Name != "" {
+			fixPence(&q)
 			out = append(out, q)
 		}
 	}
@@ -559,6 +560,39 @@ func parsePct(s string) (float64, bool) {
 }
 
 // parseNumber parses CNBC's formatted numbers, e.g. "10,552.05".
+// penceAbove is the price over which a London quote labelled GBP is taken
+// to be in pence: London shares and ETFs priced in pounds are rarely more
+// than a few hundred.
+const penceAbove = 1000
+
+// fixPence puts a London quote that CNBC gives in pence but labels GBP
+// back in pounds, as its charts are. From 23 Nov 2026 SPX5-GB came as
+// "55,673.14 GBP" (prices 100 times over; the portfolio read £6.2M) while
+// its chart stayed at 554.
+func fixPence(q *quote) {
+	if !strings.HasSuffix(q.Symbol, "-GB") || q.CurrencyCode != "GBP" {
+		return
+	}
+	if last, ok := parseNumber(q.Last); !ok || last < penceAbove {
+		return
+	}
+	scale := func(s string) string {
+		v, ok := parseNumber(s)
+		if !ok {
+			return s
+		}
+		out := strconv.FormatFloat(v/100, 'f', 2, 64)
+		if v > 0 && strings.HasPrefix(s, "+") {
+			out = "+" + out
+		}
+		return out
+	}
+	q.Last, q.Change, q.PrevClose = scale(q.Last), scale(q.Change), scale(q.PrevClose)
+	if q.Extended != nil {
+		q.Extended.Last, q.Extended.Change = scale(q.Extended.Last), scale(q.Extended.Change)
+	}
+}
+
 func parseNumber(s string) (float64, bool) {
 	v, err := strconv.ParseFloat(strings.ReplaceAll(s, ",", ""), 64)
 	return v, err == nil

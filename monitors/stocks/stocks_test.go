@@ -493,3 +493,31 @@ func TestOddMove(t *testing.T) {
 	_, _, odd = oddMove(quote{Last: "1", ChangePct: "+50%"})
 	assert.False(t, odd, "no previous close")
 }
+
+func TestFixPence(t *testing.T) {
+	// SPX5-GB as CNBC sent it on 23 Nov 2026: pence, labelled GBP.
+	q := quote{Symbol: "SPX5-GB", Last: "55,673.14", Change: "+1,812.14", ChangePct: "+3.36%", PrevClose: "53,861.00", CurrencyCode: "GBP"}
+	fixPence(&q)
+	assert.Equal(t, "556.73", q.Last)
+	assert.Equal(t, "+18.12", q.Change)
+	assert.Equal(t, "538.61", q.PrevClose)
+	assert.Equal(t, "+3.36%", q.ChangePct)
+	v, ok := pounds(97*556.73, q, 1.3)
+	assert.True(t, ok)
+	assert.InDelta(t, 54003, v, 1)
+
+	// Left alone: a sensible pounds price, pence labelled as such, and
+	// anything not London-listed (the FTSE is in the thousands).
+	for _, q := range []quote{
+		{Symbol: "SPX5-GB", Last: "554.30", Change: "+15.69", CurrencyCode: "GBP"},
+		{Symbol: "BP.-GB", Last: "545.60", Change: "-4.20", CurrencyCode: "GBp"},
+		{Symbol: ".FTSE", Last: "10,473.23", Change: "+127.00", CurrencyCode: "GBP"},
+	} {
+		want := q
+		fixPence(&q)
+		assert.Equal(t, want, q)
+	}
+	q = quote{Symbol: "X-GB", Last: "1,500.00", Change: "-20.00", CurrencyCode: "GBP"}
+	fixPence(&q)
+	assert.Equal(t, "-0.20", q.Change)
+}
