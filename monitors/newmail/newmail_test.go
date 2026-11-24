@@ -52,14 +52,10 @@ func TestNewMailPanel(t *testing.T) {
 	assert.Equal(t, "13:00", res.Summary[0].Tag)
 	assert.Nil(t, res.SummaryBlock)
 	assert.Equal(t, "me@x", res.Blocks[0].Rows[0][0].Detail, "the open panel keeps it")
-	require.Len(t, res.Events, 2)
-	assert.True(t, res.Events[0].Quiet)
-	assert.Equal(t, "Mail from Shop", res.Events[0].Title, "oldest first")
+	assert.Empty(t, res.Events, "no events, so no notifications")
 
-	// The same list again (trashbox's heartbeat) is quiet; nothing re-raised.
+	// The same list again (trashbox's heartbeat) is quiet.
 	assert.ErrorIs(t, post(t, m, env, a, b), monitor.ErrQuiet)
-	res, _ = m.Poll(context.Background(), env)
-	assert.Empty(t, res.Events)
 
 	// One read elsewhere: gone from the panel.
 	require.NoError(t, post(t, m, env, a))

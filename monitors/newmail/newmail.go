@@ -58,9 +58,6 @@ type Mail struct {
 type saved struct {
 	Mail []Mail    `json:"mail"`
 	At   time.Time `json:"at"` // when trashbox last posted
-	// Told is the keys already raised as events (so a restart, or mail
-	// read and marked unread again, doesn't raise them twice).
-	Told []string `json:"told"`
 }
 
 const stateKey = "inbox"
@@ -140,8 +137,8 @@ func clip(s string, n int) string {
 	return s
 }
 
-// Poll shows the list and raises a quiet event for each message it hasn't
-// before.
+// Poll shows the list. It raises no events: the user wants no
+// notifications for mail, and the panel is enough.
 func (m *Monitor) Poll(_ context.Context, env monitor.Env) (monitor.Result, error) {
 	now := env.Now()
 	var st saved
@@ -149,31 +146,6 @@ func (m *Monitor) Poll(_ context.Context, env monitor.Env) (monitor.Result, erro
 		return monitor.Result{}, err
 	}
 	res := monitor.Result{Next: 5 * time.Minute}
-
-	told := map[string]bool{}
-	for _, k := range st.Told {
-		told[k] = true
-	}
-	for i := len(st.Mail) - 1; i >= 0; i-- { // oldest first, so Recent reads in order
-		x := st.Mail[i]
-		if told[x.Key] {
-			continue
-		}
-		told[x.Key] = true
-		st.Told = append(st.Told, x.Key)
-		res.Events = append(res.Events, monitor.Event{
-			Key: "mail:" + x.Key, Time: x.Date, Title: "Mail from " + x.From, Body: x.Subject, URL: x.URL,
-			Priority: monitor.PriorityLow, Quiet: true, // a list to glance at, not a ping each
-		})
-	}
-	if len(st.Told) > 500 {
-		st.Told = st.Told[len(st.Told)-500:]
-	}
-	if len(res.Events) > 0 {
-		if err := env.State.Set(stateKey, st); err != nil {
-			return res, err
-		}
-	}
 
 	if len(st.Mail) == 0 {
 		res.Background = true // nothing new: off the dashboard
