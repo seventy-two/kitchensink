@@ -195,7 +195,14 @@ func (m *Monitor) Poll(_ context.Context, env monitor.Env) (monitor.Result, erro
 		res.Blocks = []monitor.Block{{Type: monitor.BlockTable, Columns: cols, Rows: rows}}
 		// Closed, just the newest: a count means little in inboxes that
 		// never get read down to nothing.
-		latest := monitor.Block{Type: monitor.BlockTable, Columns: cols, Rows: rows[:1]}
+		// One line: no headings, no account under the sender.
+		first := append([]monitor.Cell(nil), rows[0]...)
+		first[0].Detail = ""
+		latest := monitor.Block{
+			Type:    monitor.BlockTable,
+			Columns: []monitor.Column{{}, {Fill: true}, {Align: monitor.AlignRight}},
+			Rows:    [][]monitor.Cell{first},
+		}
 		res.SummaryBlock = &latest
 		x := st.Mail[0]
 		res.Summary = []monitor.Stat{{Label: x.From, Value: rows[0][1].Text, Detail: m.when(x.Date, now), URL: x.URL}}
