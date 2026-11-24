@@ -48,12 +48,9 @@ func TestNewMailPanel(t *testing.T) {
 	require.Len(t, res.Summary, 1)
 	assert.Equal(t, "Priya", res.Summary[0].Label, "closed: the newest, not a count")
 	assert.Equal(t, "Sunday roast?", res.Summary[0].Value)
-	require.NotNil(t, res.SummaryBlock)
-	require.Len(t, res.SummaryBlock.Rows, 1)
-	assert.Empty(t, res.SummaryBlock.Rows[0][0].Detail, "one line: no account")
-	for _, c := range res.SummaryBlock.Columns {
-		assert.Empty(t, c.Title, "no headings")
-	}
+	assert.Empty(t, res.SummaryStyle, "tiles, like To do")
+	assert.Equal(t, "13:00", res.Summary[0].Tag)
+	assert.Nil(t, res.SummaryBlock)
 	assert.Equal(t, "me@x", res.Blocks[0].Rows[0][0].Detail, "the open panel keeps it")
 	require.Len(t, res.Events, 2)
 	assert.True(t, res.Events[0].Quiet)
