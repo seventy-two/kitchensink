@@ -191,14 +191,14 @@ func (m *Monitor) Poll(_ context.Context, env monitor.Env) (monitor.Result, erro
 				{Text: m.when(x.Date, now), Tone: monitor.ToneMuted},
 			})
 		}
-		res.Blocks = []monitor.Block{{
-			Type: monitor.BlockTable,
-			Columns: []monitor.Column{
-				{Title: "From"}, {Title: "Subject", Fill: true}, {Title: "When", Align: monitor.AlignRight},
-			},
-			Rows: rows,
-		}}
-		res.Summary = []monitor.Stat{{Label: "Unread", Value: fmt.Sprint(len(st.Mail)), Tone: monitor.ToneAccent}}
+		cols := []monitor.Column{{Title: "From"}, {Title: "Subject", Fill: true}, {Title: "When", Align: monitor.AlignRight}}
+		res.Blocks = []monitor.Block{{Type: monitor.BlockTable, Columns: cols, Rows: rows}}
+		// Closed, just the newest: a count means little in inboxes that
+		// never get read down to nothing.
+		latest := monitor.Block{Type: monitor.BlockTable, Columns: cols, Rows: rows[:1]}
+		res.SummaryBlock = &latest
+		x := st.Mail[0]
+		res.Summary = []monitor.Stat{{Label: x.From, Value: rows[0][1].Text, Detail: m.when(x.Date, now), URL: x.URL}}
 	}
 	if !st.At.IsZero() && now.Sub(st.At) > m.stale {
 		res.Subtitle = "As of " + m.when(st.At, now) + ": trashbox hasn't been in touch since"
