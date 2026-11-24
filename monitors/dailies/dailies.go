@@ -117,7 +117,7 @@ type day struct {
 
 // haikudle is the haiku of the day, shown after the scored games when the
 // tracker has it.
-var haikudle = game{ID: "haikudle", Name: "Haikudle", URL: "https://0x48.io/haikudle/"}
+var haikudle = game{ID: "haikudle", Name: "Haikudle", URL: "https://haikudle.0x48.io/"}
 
 // outcome is where a game stands for the player today.
 type outcome int

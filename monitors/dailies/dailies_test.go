@@ -219,7 +219,7 @@ func TestHaikudle(t *testing.T) {
 
 	res := poll(t, srv, "M")
 	require.Len(t, res.Summary, 2, "haikudle after the games")
-	assert.Equal(t, monitor.Stat{Value: "Haikudle", URL: "https://0x48.io/haikudle/", Tone: monitor.ToneGood}, res.Summary[1])
+	assert.Equal(t, monitor.Stat{Value: "Haikudle", URL: "https://haikudle.0x48.io/", Tone: monitor.ToneGood}, res.Summary[1])
 	assert.Equal(t, "Done", res.Blocks[0].Rows[1][1].Text, "written, never won or lost")
 	assert.Equal(t, monitor.ToneNone, poll(t, srv, "J").Summary[1].Tone, "J hasn't written one")
 
