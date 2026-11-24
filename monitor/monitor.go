@@ -377,6 +377,9 @@ type Stat struct {
 	Lead bool `json:"lead,omitempty"`
 	// URL, if set, is opened when the stat is clicked.
 	URL string `json:"url,omitempty"`
+	// Open, as for a Cell, names an app to open URL with where it's
+	// installed, e.g. trashbox for a mail.
+	Open string `json:"open,omitempty"`
 	// Brief, if set, replaces Value where space is tightest (a client's
 	// one-line summaries); an empty one leaves only the label. Nil keeps
 	// Value.

@@ -168,7 +168,7 @@ func (m *Monitor) Poll(_ context.Context, env monitor.Env) (monitor.Result, erro
 		// Closed, just the newest, as one quiet line like the other closed
 		// panels (a count means little in inboxes that never empty).
 		x := st.Mail[0]
-		res.Summary = []monitor.Stat{{Label: x.From, Value: rows[0][1].Text, Tag: m.when(x.Date, now), URL: x.URL}}
+		res.Summary = []monitor.Stat{{Label: x.From, Value: rows[0][1].Text, Tag: m.when(x.Date, now), URL: x.URL, Open: "trashbox"}}
 	}
 	if !st.At.IsZero() && now.Sub(st.At) > m.stale {
 		res.Subtitle = "As of " + m.when(st.At, now) + ": trashbox hasn't been in touch since"

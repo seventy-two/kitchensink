@@ -50,6 +50,7 @@ func TestNewMailPanel(t *testing.T) {
 	assert.Equal(t, "Sunday roast?", res.Summary[0].Value)
 	assert.Empty(t, res.SummaryStyle, "tiles, like To do")
 	assert.Equal(t, "13:00", res.Summary[0].Tag)
+	assert.Equal(t, "trashbox", res.Summary[0].Open, "a click opens it in trashbox")
 	assert.Nil(t, res.SummaryBlock)
 	assert.Equal(t, "me@x", res.Blocks[0].Rows[0][0].Detail, "the open panel keeps it")
 	assert.Empty(t, res.Events, "no events, so no notifications")
