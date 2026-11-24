@@ -42,6 +42,7 @@ import (
 	_ "github.com/seventy-two/kitchensink/monitors/letterboxd"
 	_ "github.com/seventy-two/kitchensink/monitors/lights"
 	_ "github.com/seventy-two/kitchensink/monitors/mail"
+	_ "github.com/seventy-two/kitchensink/monitors/newmail"
 	_ "github.com/seventy-two/kitchensink/monitors/nfl"
 	_ "github.com/seventy-two/kitchensink/monitors/osrs"
 	_ "github.com/seventy-two/kitchensink/monitors/reddit"
