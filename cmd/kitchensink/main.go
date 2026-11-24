@@ -28,6 +28,7 @@ import (
 	_ "github.com/seventy-two/kitchensink/monitors/aimodels"
 	_ "github.com/seventy-two/kitchensink/monitors/autotrader"
 	_ "github.com/seventy-two/kitchensink/monitors/battery"
+	_ "github.com/seventy-two/kitchensink/monitors/codes"
 	_ "github.com/seventy-two/kitchensink/monitors/calendar"
 	_ "github.com/seventy-two/kitchensink/monitors/chores"
 	_ "github.com/seventy-two/kitchensink/monitors/claude"
