@@ -3,6 +3,8 @@ package osrs
 import (
 	"encoding/json"
 	"math"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,6 +42,32 @@ type goatsDay struct {
 
 const goatsDayKey = "goatsDay"
 
+// Herbi comes from harvesting the herbiboar, 1/6,500 a harvest at any
+// level. The hiscores don't count harvests, but the game says the total
+// after each one ("Your herbiboar harvest count is: 5743."), which Dink's
+// chat notifier sends on.
+const (
+	herbiRate = 6_500
+	// herbiKey holds the last harvest count; herbiDayKey the count at the
+	// day's start (a goatsDay).
+	herbiKey    = "herbiboar"
+	herbiDayKey = "herbiboarDay"
+	// herbiStat is the published name for herbiboar harvests.
+	herbiStat = "herbiboar"
+)
+
+var herbiCount = regexp.MustCompile(`(?i)herbiboar harvest count is:? *([\d,]+)`)
+
+// herbiHarvests is the harvest count a game message gives, if it gives one.
+func herbiHarvests(msg string) (int64, bool) {
+	match := herbiCount.FindStringSubmatch(msg)
+	if match == nil {
+		return 0, false
+	}
+	n, err := strconv.ParseInt(strings.ReplaceAll(match[1], ",", ""), 10, 64)
+	return n, err == nil
+}
+
 // chatEvery is how often chat messages (a catch every few seconds) have
 // the panel refresh, at most; Poll catches up with the rest.
 const chatEvery = time.Minute
@@ -60,14 +88,20 @@ func chinKind(msg string) string {
 	return "grey"
 }
 
-// chat takes a message from Dink's chat notifier: a chinchompa caught is
-// counted; anything else is logged (to see what the notifier sends) and
-// ignored.
+// chat takes a message from Dink's chat notifier: a chinchompa caught or
+// the herbiboar harvest count is counted; anything else is logged (to see
+// what the notifier sends) and ignored.
 func (m *Monitor) chat(env monitor.Env, d dink, day string) error {
 	var x struct {
 		Message string `json:"message"`
 	}
 	json.Unmarshal(d.Extra, &x)
+	if n, ok := herbiHarvests(x.Message); ok {
+		if err := m.countHerbi(env, day, n); err != nil {
+			return err
+		}
+		return m.chatted(env)
+	}
 	kind := chinKind(x.Message)
 	if kind == "" {
 		if env.Log != nil {
@@ -86,6 +120,36 @@ func (m *Monitor) chat(env monitor.Env, d dink, day string) error {
 	if err := env.State.Set(catchesKey, c); err != nil {
 		return err
 	}
+	return m.chatted(env)
+}
+
+// countHerbi keeps the herbiboar harvest count and the day's starting
+// count: the last count before today's, or for the first ever, the one
+// before this harvest.
+func (m *Monitor) countHerbi(env monitor.Env, day string, n int64) error {
+	var before int64
+	ok, err := env.State.Get(herbiKey, &before)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		before = n - 1
+	}
+	var hd goatsDay
+	if _, err := env.State.Get(herbiDayKey, &hd); err != nil {
+		return err
+	}
+	if hd.Day != day {
+		if err := env.State.Set(herbiDayKey, goatsDay{Day: day, Start: max(0, min(before, n-1))}); err != nil {
+			return err
+		}
+	}
+	return env.State.Set(herbiKey, max(before, n))
+}
+
+// chatted notes the player was seen and refreshes the panel, at most once
+// every chatEvery.
+func (m *Monitor) chatted(env monitor.Env) error {
 	now := env.Now()
 	if err := env.State.Set(seenKey, now); err != nil {
 		return err
@@ -122,8 +186,8 @@ func (m *Monitor) countGoats(env monitor.Env, goats int64) error {
 	return env.State.Set(goatsDayKey, goatsDay{Day: day, Start: min(before, goats)})
 }
 
-// hunterGains are the day's chinchompa and goat rows, at the Hunter level
-// the XP gives.
+// hunterGains are the day's chinchompa, goat and herbiboar rows, at the
+// Hunter level the XP gives.
 func (m *Monitor) hunterGains(env monitor.Env, day string, hunterXP int64) ([]gain, error) {
 	level := levelFor(hunterXP)
 	var out []gain
@@ -150,6 +214,19 @@ func (m *Monitor) hunterGains(env monitor.Env, day string, hunterXP int64) ([]ga
 	}
 	if gd.Day == day {
 		if g, ok := rollGain("Goats", "Mr McGroot", "goats", map[int]int64{goatBase - 25*level: goats - gd.Start}, "caught"); ok {
+			out = append(out, g)
+		}
+	}
+	var hd goatsDay
+	var harvests int64
+	if _, err := env.State.Get(herbiDayKey, &hd); err != nil {
+		return nil, err
+	}
+	if _, err := env.State.Get(herbiKey, &harvests); err != nil {
+		return nil, err
+	}
+	if hd.Day == day {
+		if g, ok := rollGain("Herbiboar", "Herbi", "herbiboar", map[int]int64{herbiRate: harvests - hd.Start}, "harvested"); ok {
 			out = append(out, g)
 		}
 	}

@@ -527,18 +527,30 @@ func TestHunting(t *testing.T) {
 	goats(1000)
 	goats(1900)
 
+	// Herbiboar: the game's total after each harvest; the first ever
+	// counts from the harvest before it.
+	env.Now = func() time.Time { return now.Add(-30 * time.Hour) }
+	assert.ErrorIs(t, chat("Your herbiboar harvest count is: 5,742."), monitor.ErrQuiet, "within a minute of the chinchompa")
+	env.Now = func() time.Time { return now }
+	assert.ErrorIs(t, chat("You harvest herbs from the herbiboar, whereupon it escapes."), monitor.ErrQuiet)
+	chat("Your herbiboar harvest count is: 5743.")
+	chat("Your herbiboar harvest count is: 5745.")
+
 	res, err := m.Poll(context.Background(), env)
 	require.NoError(t, err)
 	assert.Equal(t, time.Minute, res.Next, "a catch not shown yet: poll again soon")
 	// Hunter 99: blacks 1/80,283 each, goats 1/37,525.
 	assert.Contains(t, res.Summary, monitor.Stat{Label: "Goats", Value: "+900 caught", Tone: monitor.ToneGood})
 	assert.Contains(t, res.Summary, monitor.Stat{Label: "Chinchompas", Value: "+2 caught", Tone: monitor.ToneGood})
+	assert.Contains(t, res.Summary, monitor.Stat{Label: "Herbiboar", Value: "+3 harvested", Tone: monitor.ToneGood})
 	for _, r := range res.Blocks[0].Rows {
 		switch r[0].Text {
 		case "Goats":
 			assert.Equal(t, "1/42", r[3].Text)
 		case "Chinchompas":
 			assert.Equal(t, "1/40,142", r[3].Text)
+		case "Herbiboar":
+			assert.Equal(t, "1/2,167", r[3].Text)
 		case "Hunter":
 			t.Error("no Hunter XP row")
 		}
@@ -547,4 +559,20 @@ func TestHunting(t *testing.T) {
 	res, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
 	assert.Greater(t, res.Next, time.Hour, "caught up")
+}
+
+func TestHerbiHarvests(t *testing.T) {
+	for msg, want := range map[string]int64{
+		"Your herbiboar harvest count is: 5743.":  5743,
+		"Your herbiboar harvest count is: 1,204.": 1204,
+		"You harvest herbs from the herbiboar.":   -1,
+	} {
+		n, ok := herbiHarvests(msg)
+		if want < 0 {
+			assert.False(t, ok, msg)
+			continue
+		}
+		assert.True(t, ok, msg)
+		assert.Equal(t, want, n, msg)
+	}
 }

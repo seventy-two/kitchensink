@@ -12,8 +12,8 @@ import (
 
 // published is what the monitor writes to the config's Publish file: the
 // player's latest counts (Wise Old Man's, raised by Dink's; Doom delve
-// levels as "doom_delve_6" to "doom_delve_9", 9 being past 8, and goats
-// caught as "goats_caught") and every drop
+// levels as "doom_delve_6" to "doom_delve_9", 9 being past 8, goats
+// caught as "goats_caught" and herbiboar harvests as "herbiboar") and every drop
 // in the history. It holds nothing the hiscores and the player's own
 // loot don't already show, so it can be served publicly.
 type published struct {
@@ -51,6 +51,12 @@ func (m *Monitor) publish(env monitor.Env, counts stats) error {
 		return err
 	} else if ok {
 		out.Stats[goatsStat] = goats
+	}
+	var harvests int64
+	if ok, err := env.State.Get(herbiKey, &harvests); err != nil {
+		return err
+	} else if ok {
+		out.Stats[herbiStat] = harvests
 	}
 	if _, err := env.State.Get(seenKey, &out.Seen); err != nil {
 		return err
