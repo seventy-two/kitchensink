@@ -1,7 +1,9 @@
 // Package fantasy follows the user's fantasy football teams on Sleeper and
 // ESPN: their matchup scores, and notable plays (touchdowns, big gains,
 // turnovers, long or missed kicks, defensive scores) by players on any of
-// their teams, from ESPN's live play-by-play.
+// their teams, from ESPN's live play-by-play. Plays are only listed in the
+// panel; the one alert is a player of the user's reaching BigDay points
+// in the week (in any league).
 package fantasy
 
 import (
@@ -44,6 +46,9 @@ type Config struct {
 	// BigPlayYards is the gain that counts as a big play. It defaults to
 	// 20.
 	BigPlayYards int `json:"bigPlayYards"`
+	// BigDay is the fantasy points in a week at which one of the user's
+	// players is notified, once. It defaults to 30.
+	BigDay float64 `json:"bigDay"`
 	// LiveInterval is how often to check while the user's players are
 	// playing. It defaults to 30 seconds.
 	LiveInterval monitor.Duration `json:"liveInterval"`
@@ -71,6 +76,7 @@ func (m *Monitor) Teams() []string { return m.teams }
 func New(raw json.RawMessage) (*Monitor, error) {
 	c := Config{
 		BigPlayYards: 20,
+		BigDay:       30,
 		LiveInterval: monitor.Duration(30 * time.Second),
 		SleeperURL:   "https://api.sleeper.app/v1",
 		ESPNURL:      "https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl",
@@ -171,14 +177,13 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 	}
 	sort.Strings(m.teams)
 
-	var events []monitor.Event
 	var next time.Duration
 	live := false // whether any of the user's players' games are on
 	for _, g := range board {
 		if !watched[g.Home] && !watched[g.Away] {
 			continue
 		}
-		gs, known := games[g.ID]
+		gs := games[g.ID]
 		switch {
 		case g.State == "pre":
 			if d := g.Kickoff.Sub(now); d > 0 && (next == 0 || d < next) {
@@ -195,10 +200,6 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 			env.Log.Warn("reading plays", "game", g.Name, "err", err)
 			continue
 		}
-		// The monitor wakes for kick-off, so it sees each play as it
-		// happens. Joining a game well under way instead (e.g. after a
-		// restart), its plays so far are logged quietly, not notified.
-		quiet := !known && now.Sub(g.Kickoff) > joinLate
 		for _, p := range plays {
 			gs.Seen = append(gs.Seen, p.ID)
 			defence := g.Home
@@ -209,13 +210,6 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 				n := noted{ID: p.ID, Kind: sig.Kind, Good: sig.Good, Text: describe(p), Game: g.Name, When: when(p),
 					Leagues: sig.Leagues, Week: r.Week, At: now}
 				notes = append(notes, n)
-				events = append(events, monitor.Event{
-					Key:      "play:" + p.ID + ":" + n.Kind,
-					Title:    n.Kind + ": " + n.Text,
-					Body:     strings.Join([]string{n.Game, n.When, strings.Join(n.Leagues, ", ")}, " · "),
-					Priority: priority(n.Kind),
-					Quiet:    quiet,
-				})
 			}
 		}
 		gs.Done = g.State == "post"
@@ -241,12 +235,12 @@ func (m *Monitor) Poll(ctx context.Context, env monitor.Env) (monitor.Result, er
 		return monitor.Result{}, err
 	}
 
-	scores := m.matchups(ctx, env.HTTP, r, env.Log.Warn)
+	scores, players := m.matchups(ctx, env.HTTP, r, env.Log.Warn)
 	return monitor.Result{
 		Blocks:       blocks(scores, notes),
 		Summary:      summary(scores),
 		SummaryStyle: monitor.SummaryChips,
-		Events:       events,
+		Events:       bigDays(players, r.Season, r.Week, m.cfg.BigDay),
 		Next:         next,
 		Timely:       live,
 	}, nil
@@ -260,7 +254,7 @@ func (m *Monitor) roster(ctx context.Context, env monitor.Env, now time.Time) (*
 		return nil, err
 	}
 	// One saved before the shown week was kept is read again.
-	if saved.Roster != nil && saved.Roster.Shown > 0 && now.Sub(saved.Read) < rosterEvery {
+	if saved.Roster != nil && saved.Roster.Shown > 0 && now.Sub(saved.Read) < rosterEvery && saved.Roster.hasNames() {
 		r := saved.Roster
 		if r.shownWeek() == r.Week || now.Sub(laterOf(saved.Read, saved.Checked)) < weekEvery {
 			return r, nil
@@ -351,10 +345,6 @@ func (m *Monitor) scoreboard(ctx context.Context, env monitor.Env) ([]game, erro
 	return out, nil
 }
 
-// joinLate is how long after kick-off a game first seen counts as joined
-// late.
-const joinLate = 10 * time.Minute
-
 // playsPage is how many plays are asked for at a time.
 const playsPage = 50
 
@@ -388,13 +378,44 @@ func (m *Monitor) newPlays(ctx context.Context, env monitor.Env, id string, seen
 	return out, nil
 }
 
-// priority is how loudly to notify a kind of play: sacks are low and the
-// rest normal. Touchdowns come too often on game days to stand out as high.
-func priority(kind string) monitor.Priority {
-	if kind == kindSack {
-		return monitor.PriorityLow
+// bigDays is an event for each of the user's players with at least
+// limit points this week in any league, keyed by season, week and player
+// so the engine sends each only once. A player in several leagues is one
+// event, with each league's points.
+func bigDays(players []scored, season string, week int, limit float64) []monitor.Event {
+	type day struct {
+		name   string
+		best   float64
+		scores []string
 	}
-	return monitor.PriorityNormal
+	byKey := map[string]*day{}
+	var order []string
+	for _, p := range players {
+		k := nameKey(p.Name, "")
+		d := byKey[k]
+		if d == nil {
+			d = &day{name: p.Name}
+			byKey[k] = d
+			order = append(order, k)
+		}
+		d.best = max(d.best, p.Points)
+		d.scores = append(d.scores, fmt.Sprintf("%s %.1f", p.League, p.Points))
+	}
+	var out []monitor.Event
+	for _, k := range order {
+		d := byKey[k]
+		if d.best < limit {
+			continue
+		}
+		sort.Strings(d.scores)
+		out = append(out, monitor.Event{
+			Key:      fmt.Sprintf("bigday:%s:%d:%s", season, week, k),
+			Title:    fmt.Sprintf("%s: %.1f points", d.name, d.best),
+			Body:     strings.Join(d.scores, " · "),
+			Priority: monitor.PriorityNormal,
+		})
+	}
+	return out
 }
 
 // summary is a chip for each league: the user's score against their

@@ -75,8 +75,14 @@ func newFakeAPIs(t *testing.T) *fakeAPIs {
 	})
 	mux.HandleFunc("/sleeper/league/L1/matchups/5", func(w http.ResponseWriter, r *http.Request) {
 		js(w, []any{
-			map[string]any{"roster_id": 1, "matchup_id": 1, "points": 32.9},
-			map[string]any{"roster_id": 2, "matchup_id": 1, "points": 14.64},
+			map[string]any{"roster_id": 1, "matchup_id": 1, "points": 32.9, "players_points": map[string]any{"jw": 30.1, "bi": 2.8, "TB": 0}},
+			map[string]any{"roster_id": 2, "matchup_id": 1, "points": 14.64, "players_points": map[string]any{"xx": 40}},
+		})
+	})
+	mux.HandleFunc("/sleeper/league/L1/matchups/6", func(w http.ResponseWriter, r *http.Request) {
+		js(w, []any{
+			map[string]any{"roster_id": 1, "matchup_id": 1, "points": 0, "players_points": map[string]any{"jw": 0}},
+			map[string]any{"roster_id": 2, "matchup_id": 1, "points": 0},
 		})
 	})
 	// ESPN fantasy.
@@ -104,7 +110,9 @@ func newFakeAPIs(t *testing.T) *fakeAPIs {
 			},
 			"schedule": []any{
 				map[string]any{"matchupPeriodId": 4, "home": map[string]any{"teamId": 10, "totalPoints": 99}, "away": map[string]any{"teamId": 1, "totalPoints": 1}},
-				map[string]any{"matchupPeriodId": 5, "home": map[string]any{"teamId": 1, "totalPoints": 0, "totalPointsLive": 70.2}, "away": map[string]any{"teamId": 10, "totalPoints": 0, "totalPointsLive": live}},
+				map[string]any{"matchupPeriodId": 5,
+					"home": map[string]any{"teamId": 1, "totalPoints": 0, "totalPointsLive": 70.2, "rosterForCurrentScoringPeriod": espnRoster(map[string]float64{"Their Star": 45})},
+					"away": map[string]any{"teamId": 10, "totalPoints": 0, "totalPointsLive": live, "rosterForCurrentScoringPeriod": espnRoster(map[string]float64{"Dak Prescott": 29.9, "Brandon Aubrey": 12, "Javonte Williams": 27.5})}},
 			},
 		})
 	})
@@ -189,6 +197,15 @@ func newMonitor(t *testing.T, f *fakeAPIs) *Monitor {
 	return m
 }
 
+// espnRoster is an ESPN side's players with their points this week.
+func espnRoster(points map[string]float64) map[string]any {
+	var entries []any
+	for name, pts := range points {
+		entries = append(entries, map[string]any{"playerPoolEntry": map[string]any{"appliedStatTotal": pts, "player": map[string]any{"fullName": name}}})
+	}
+	return map[string]any{"entries": entries}
+}
+
 func TestPlays(t *testing.T) {
 	f := newFakeAPIs(t)
 	m := newMonitor(t, f)
@@ -197,9 +214,16 @@ func TestPlays(t *testing.T) {
 	res, err := m.Poll(context.Background(), env)
 	require.NoError(t, err)
 
+	// Plays are listed, not notified; the one alert is Javonte Williams'
+	// 30-point week (on Sleeper), not Dak's 29.9 nor the opponents' players.
+	require.Len(t, res.Events, 1)
+	assert.Equal(t, "Javonte Williams: 30.1 points", res.Events[0].Title)
+	assert.Equal(t, "Test League 30.1 · Work 27.5", res.Events[0].Body)
+	assert.Equal(t, "bigday:2026:5:javonte williams|", res.Events[0].Key)
+
 	var got []string
-	for _, e := range res.Events {
-		got = append(got, e.Title+" | "+e.Body)
+	for _, row := range res.Blocks[1].Rows {
+		got = append(got, row[0].Text+": "+row[1].Text+" | "+row[1].Detail)
 	}
 	assert.Equal(t, []string{
 		"Big play: Javonte Williams 21 Yd Rush | TB @ DAL · Q1 13:19 · Test League",
@@ -215,11 +239,6 @@ func TestPlays(t *testing.T) {
 		"D/ST takeaway: Alex Anzalone Interception Return, No Gain | TB @ DAL · Q4 1:22 · Test League",
 		"INT thrown: Alex Anzalone Interception Return, No Gain | TB @ DAL · Q4 1:22 · Work",
 	}, got, "kickoffs, short gains and a 41-yard field goal don't count; an interception counts both ways")
-	for _, e := range res.Events {
-		assert.False(t, e.Quiet, "a game with its plays read from the start notifies")
-	}
-	assert.Equal(t, monitor.PriorityNormal, res.Events[2].Priority, "touchdowns are normal: they're too frequent to stand out")
-	assert.Equal(t, monitor.PriorityLow, res.Events[8].Priority, "sacks are low")
 	assert.Equal(t, 30*time.Second, res.Next, "checks often while the game's on")
 	assert.True(t, res.Timely, "its age matters while the game's on")
 
@@ -234,7 +253,6 @@ func TestPlays(t *testing.T) {
 	assert.Len(t, plays.Rows, 12)
 	assert.Equal(t, "Big play", plays.Rows[0][0].Text)
 	assert.Equal(t, monitor.ToneGood, plays.Rows[0][0].Tone)
-	assert.Equal(t, "TB @ DAL · Q1 13:19 · Test League", plays.Rows[0][1].Detail)
 	assert.Contains(t, f.cookie, "espn_s2=s3cret", "the ESPN league is read with the cookies")
 
 	// The next check reads only new plays: there are none.
@@ -242,7 +260,7 @@ func TestPlays(t *testing.T) {
 	require.NoError(t, err)
 	res, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
-	assert.Empty(t, res.Events)
+	assert.Len(t, res.Blocks[1].Rows, 12)
 	assert.Equal(t, 1, f.count("/sleeper/players/nfl"), "rosters are kept between checks")
 }
 
@@ -259,6 +277,7 @@ func TestShowsTheWeekJustPlayed(t *testing.T) {
 		{Label: "Work", Value: "61.5–70.2", Detail: "v Their Team", Tone: monitor.ToneBad},
 	}, res.Summary, "week 5's matchups, from both Sleeper and ESPN")
 	assert.Equal(t, 1, f.count("/sleeper/league/L1/matchups/5"))
+	assert.Empty(t, res.Events, "players' points are week 6's, not the shown week's")
 }
 
 func TestMovesOnWithSleeper(t *testing.T) {
@@ -275,14 +294,14 @@ func TestMovesOnWithSleeper(t *testing.T) {
 	f.display = 6
 	f.mu.Unlock()
 	env.Now = func() time.Time { return now.Add(5 * time.Minute) }
-	_, err = m.Poll(context.Background(), env)
+	res, err := m.Poll(context.Background(), env)
 	require.NoError(t, err)
-	assert.Zero(t, f.count("/sleeper/league/L1/matchups/6"), "not asked again so soon")
+	assert.Contains(t, res.Summary, monitor.Stat{Label: "Test League", Value: "32.9–14.6", Detail: "v Rival FC", Tone: monitor.ToneGood}, "not asked again so soon")
 
 	env.Now = func() time.Time { return now.Add(20 * time.Minute) }
-	_, err = m.Poll(context.Background(), env)
+	res, err = m.Poll(context.Background(), env)
 	require.NoError(t, err)
-	assert.Equal(t, 1, f.count("/sleeper/league/L1/matchups/6"), "week 6's matchups")
+	assert.Contains(t, res.Summary, monitor.Stat{Label: "Test League", Value: "0.0–0.0", Detail: "v Rival FC"}, "week 6's matchups")
 	assert.Equal(t, 1, f.count("/sleeper/players/nfl"), "rosters aren't read again")
 }
 
@@ -305,17 +324,16 @@ func TestESPNMovesOnBeforeTheRosters(t *testing.T) {
 	assert.Contains(t, res.Summary, monitor.Stat{Label: "Work", Value: "61.5–70.2", Detail: "v Their Team", Tone: monitor.ToneBad}, "still week 5's matchup")
 }
 
-func TestJoiningLate(t *testing.T) {
-	// First seen well after kick-off, a game's plays so far are logged
-	// quietly rather than notified all at once.
-	f := newFakeAPIs(t)
-	res, err := newMonitor(t, f).Poll(context.Background(), monitortest.Env(now.Add(time.Hour)))
-	require.NoError(t, err)
-	require.Len(t, res.Events, 12)
-	for _, e := range res.Events {
-		assert.True(t, e.Quiet)
-	}
-	assert.Len(t, res.Blocks[1].Rows, 12, "but they're still on the panel")
+func TestBigDays(t *testing.T) {
+	got := bigDays([]scored{
+		{Name: "A.J. Brown", League: "glebs", Points: 31},
+		{Name: "AJ Brown", League: "TwitSP", Points: 29.5},
+		{Name: "Sam LaPorta", League: "glebs", Points: 14.4},
+	}, "2026", 12, 30)
+	require.Len(t, got, 1, "one event for a player in two leagues")
+	assert.Equal(t, "A.J. Brown: 31.0 points", got[0].Title)
+	assert.Equal(t, "TwitSP 29.5 · glebs 31.0", got[0].Body)
+	assert.Empty(t, bigDays([]scored{{Name: "X", League: "L", Points: 29.99}}, "2026", 12, 30))
 }
 
 func TestBetweenGames(t *testing.T) {
@@ -324,7 +342,7 @@ func TestBetweenGames(t *testing.T) {
 	m := newMonitor(t, f)
 	res, err := m.Poll(context.Background(), monitortest.Env(time.Date(2026, 10, 8, 20, 0, 0, 0, time.UTC)))
 	require.NoError(t, err)
-	assert.Empty(t, res.Events)
+	assert.Equal(t, monitor.BlockText, res.Blocks[1].Type, "no plays yet")
 	assert.Equal(t, 4*time.Hour+15*time.Minute, res.Next, "wakes for kick-off")
 	assert.False(t, res.Timely)
 	assert.Zero(t, f.count("/core/"), "no plays read before kick-off")

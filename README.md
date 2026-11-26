@@ -28,7 +28,7 @@ notification for each event.
 | `autotrader` | AutoTrader UK search (only dealers' adverts with `dealersOnly`); left off the dashboard (as `background`) unless an advert first turned up in the last week (AutoTrader gives no listing date, so it's when the monitor first saw it) | newly listed cars |
 | `todo` | a to-do list kept on the server, changed from clients | nothing; ticked tasks clear after `clearAfter` (default `24h`) |
 | `chores` | recurring chores planned around each other (below), ticked off from clients | each morning at `remindAt` (default `08:00`), the day's chores |
-| `fantasy` | Sleeper and ESPN fantasy leagues, and ESPN's play-by-play | notable plays by players on any of your teams: touchdowns, big gains, turnovers, long or missed kicks, and your defences' takeaways, sacks and scores |
+| `fantasy` | Sleeper and ESPN fantasy leagues, and ESPN's play-by-play | one of your players (bench included) reaching `bigDay` (default 30) fantasy points in the week, in any league; once each |
 | `calendar` | iCalendar (ICS) feeds, e.g. Google or Outlook | each timed event, `remindMinutes` (default 10) before it starts |
 | `football` | `nfl` and `fantasy` together as one panel (see below) | what each of them notifies |
 | `groceries` | food from grocery deliveries (receipts passed on by `mail`), read by Gemini once an order for how long each thing keeps: what goes off within three weeks, soonest first, each with a button for when it's used up or thrown away (action `used` with its ID), and recipes for what's going off soon (below) | nothing |
@@ -62,10 +62,15 @@ the `espn_s2` and `SWID` cookies from a signed-in browser as `s2` and
 `swid` for private leagues; `SWID` also identifies your team). Sleeper
 players are matched to ESPN athletes by Sleeper's ESPN ID where it has
 one, else by name and team. During games it reads ESPN's play-by-play for
-games involving your players or team defences, and notifies touchdowns,
-gains of `bigPlayYards` (default 20) or more, interceptions thrown,
-fumbles lost, 50+ yard and missed kicks, and your defences' takeaways,
-sacks, safeties and scores. Plays called back for penalties don't count.
+games involving your players or team defences, and lists in its panel
+touchdowns, gains of `bigPlayYards` (default 20) or more, interceptions
+thrown, fumbles lost, 50+ yard and missed kicks, and your defences'
+takeaways, sacks, safeties and scores (plays called back for penalties
+don't count). It doesn't notify plays: its only event is one of your
+players reaching `bigDay` (default 30) fantasy points in the NFL's week,
+from each league's own scoring (Sleeper's `players_points`, ESPN's
+`rosterForCurrentScoringPeriod`), once per player and week, with each
+league's points.
 Its summary is a chip per league with your live matchup score (the
 week Sleeper shows, which stays on the week just played until midweek, so
 Monday night's results are still there the morning after; until it moves

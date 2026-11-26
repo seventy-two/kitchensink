@@ -50,6 +50,9 @@ type league struct {
 	// Sleeper: the user's roster, and owners' names by roster ID.
 	RosterID int            `json:"rosterID,omitempty"`
 	Owners   map[int]string `json:"owners,omitempty"`
+	// Names are the user's players' names, by Sleeper player ID, for
+	// their points in the matchups.
+	Names map[string]string `json:"names,omitempty"`
 }
 
 // roster is everything the user has, refreshed now and then.
@@ -63,6 +66,17 @@ type roster struct {
 	Leagues  []league            `json:"leagues"`
 	Players  map[string]owned    `json:"players"`  // by ESPN athlete ID
 	Defences map[string][]string `json:"defences"` // league names, by team abbreviation
+}
+
+// hasNames says whether the Sleeper leagues have their players' names,
+// which rosters saved before 26 Nov 2026 lack.
+func (r *roster) hasNames() bool {
+	for _, l := range r.Leagues {
+		if l.Kind == "sleeper" && l.Names == nil {
+			return false
+		}
+	}
+	return true
 }
 
 // sleeperState is the NFL's season and week, from Sleeper, and the week
@@ -221,12 +235,18 @@ func (m *Monitor) loadSleeper(ctx context.Context, client *http.Client, r *roste
 				continue
 			}
 			lg.RosterID = ro.RosterID
+			lg.Names = map[string]string{}
 			for _, pid := range ro.Players {
 				p, ok := players[pid]
 				if !ok {
 					continue
 				}
 				team := sleeperTeam(p.Team)
+				if p.Position == "DEF" {
+					lg.Names[pid] = sleeperTeam(pid) + " D/ST"
+				} else {
+					lg.Names[pid] = p.FullName
+				}
 				if p.Position == "DEF" {
 					r.Defences[sleeperTeam(pid)] = union(r.Defences[sleeperTeam(pid)], []string{lg.Name})
 					continue
@@ -384,6 +404,18 @@ type espnSide struct {
 	TeamID     int      `json:"teamId"`
 	Points     float64  `json:"totalPoints"`
 	PointsLive *float64 `json:"totalPointsLive"`
+	// Roster is the team's players with their points in ESPN's current
+	// scoring period (asked for with the mScoreboard view).
+	Roster *struct {
+		Entries []struct {
+			Entry struct {
+				Points float64 `json:"appliedStatTotal"`
+				Player struct {
+					FullName string `json:"fullName"`
+				} `json:"player"`
+			} `json:"playerPoolEntry"`
+		} `json:"entries"`
+	} `json:"rosterForCurrentScoringPeriod"`
 }
 
 func (s espnSide) points() float64 {
@@ -413,21 +445,53 @@ type matchup struct {
 	Opponent string
 }
 
-// matchups reads the live score of the user's matchup in each league.
-// A league that can't be read is left out.
-func (m *Monitor) matchups(ctx context.Context, client *http.Client, r *roster, logf func(string, ...any)) []matchup {
+// scored is one of the user's players' fantasy points this week (the
+// NFL's week, not the shown one) in one league.
+type scored struct {
+	Name   string
+	League string
+	Points float64
+}
+
+// sleeperMatchup is a roster's entry in a Sleeper league's matchups.
+type sleeperMatchup struct {
+	RosterID      int                `json:"roster_id"`
+	MatchupID     int                `json:"matchup_id"`
+	Points        float64            `json:"points"`
+	PlayersPoints map[string]float64 `json:"players_points"`
+}
+
+// matchups reads the live score of the user's matchup in each league,
+// and their players' points this week. A league that can't be read is
+// left out.
+func (m *Monitor) matchups(ctx context.Context, client *http.Client, r *roster, logf func(string, ...any)) ([]matchup, []scored) {
 	var out []matchup
+	var players []scored
 	for _, l := range r.Leagues {
 		switch l.Kind {
 		case "sleeper":
-			var ms []struct {
-				RosterID  int     `json:"roster_id"`
-				MatchupID int     `json:"matchup_id"`
-				Points    float64 `json:"points"`
-			}
+			var ms []sleeperMatchup
 			if err := getJSON(ctx, client, fmt.Sprintf("%s/league/%s/matchups/%d", m.cfg.SleeperURL, l.ID, r.shownWeek()), &ms); err != nil {
 				logf("reading matchups", "league", l.Name, "err", err)
 				continue
+			}
+			// Players' points are this week's, while the week before is shown.
+			week := ms
+			if r.shownWeek() != r.Week {
+				week = nil
+				if err := getJSON(ctx, client, fmt.Sprintf("%s/league/%s/matchups/%d", m.cfg.SleeperURL, l.ID, r.Week), &week); err != nil {
+					logf("reading this week's matchups", "league", l.Name, "err", err)
+				}
+			}
+			for _, x := range week {
+				if x.RosterID != l.RosterID {
+					continue
+				}
+				for pid, pts := range x.PlayersPoints {
+					if name := l.Names[pid]; name != "" {
+						players = append(players, scored{Name: name, League: l.Name, Points: pts})
+					}
+				}
 			}
 			mu := matchup{League: l.Name}
 			mid := -1
@@ -447,7 +511,7 @@ func (m *Monitor) matchups(ctx context.Context, client *http.Client, r *roster, 
 		case "espn":
 			cfg := m.cfg.ESPN[l.Index]
 			var data espnLeague
-			if err := getJSON(ctx, client, m.espnLeagueURL(r.Season, l.ID, "mMatchupScore", "mTeam"), &data, "Cookie", cfg.cookie()); err != nil {
+			if err := getJSON(ctx, client, m.espnLeagueURL(r.Season, l.ID, "mMatchupScore", "mScoreboard", "mTeam"), &data, "Cookie", cfg.cookie()); err != nil {
 				logf("reading matchups", "league", l.Name, "err", err)
 				continue
 			}
@@ -466,6 +530,20 @@ func (m *Monitor) matchups(ctx context.Context, client *http.Client, r *roster, 
 				week = r.Week
 			}
 			period := data.Status.CurrentMatchupPeriod - (week - r.shownWeek())
+			// Players' points are for ESPN's current week.
+			for _, s := range data.Schedule {
+				if week != r.Week || s.MatchupPeriodID != data.Status.CurrentMatchupPeriod {
+					continue
+				}
+				for _, side := range []espnSide{s.Home, s.Away} {
+					if side.TeamID != mine || side.Roster == nil {
+						continue
+					}
+					for _, e := range side.Roster.Entries {
+						players = append(players, scored{Name: e.Entry.Player.FullName, League: l.Name, Points: e.Entry.Points})
+					}
+				}
+			}
 			for _, s := range data.Schedule {
 				if s.MatchupPeriodID != period {
 					continue
@@ -480,5 +558,5 @@ func (m *Monitor) matchups(ctx context.Context, client *http.Client, r *roster, 
 			}
 		}
 	}
-	return out
+	return out, players
 }
